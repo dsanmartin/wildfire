@@ -21,6 +21,9 @@ G23 = lambda x, y, z: H * (z - H) * hy(x, y) / (H - h(x, y)) ** 2
 Gx = lambda x, y, z: -hx(x, y) / H
 Gy = lambda x, y, z: -hy(x, y) / H
 Gz = lambda x, y, z: 0 * z
+G13z = lambda x, y, z: hx(x, y) / (H - h(x, y))
+G23z = lambda x, y, z: hy(x, y) / (H - h(x, y))
 
 # Z change of variable
 zc = lambda x, y, z: z * (H - h(x, y)) / H + h(x, y)
+zz = lambda x, y, z: H * (z - h(x, y)) / (H - h(x, y))

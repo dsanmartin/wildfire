@@ -50,21 +50,6 @@ def plotXZ(x, z, u, w, h, r, t, p):
 def plotYZ(y, z, v, w, h, r, t, p):
     genericPlot(y, z, v, w, h, r, t, p, axis_x='y', axis_y='z')
 
-# h = lambda x, y: 20 * np.exp(-((x - 200) ** 2 + (y - 200) ** 2) / 5000)
-# hx = lambda x, y: -2 / 5000 * (x - 200) * h(x, y)
-# hy = lambda x, y: -2 / 5000 * (y - 200) * h(x, y)
-# # h = lambda x, y: 0 * x + 0 * y
-# # hx = lambda x, y: 0 * x + 0 * y
-# # hy = lambda x, y: 0 * x + 0 * y
-# H = 125
-# zc = lambda x, y, z: z * (H - h(x, y)) / H + h(x, y)
-# # Jacobian
-# Hh = lambda x, y: H / (H - h(x, y)) ** 2
-# #G = lambda x, y, z: (np.abs((Hh(x, y) * (z - H) * hx(x, y)) ** 2 + Hh(x, y) ** 2 + Hh(x, y) * (z - H) * hx(x, y))) ** (-.5)
-# G = lambda x, y, z: (H - h(x, y)) / H
-# G13 = lambda x, y, z: Hh(x, y) * (z - H) * hx(x, y)
-# G23 = lambda x, y, z: Hh(x, y) * (z - H) * hy(x, y)
-
 
 filename = 'output/higrad.npz'
 #filename = "output/higrad_t_1_51x51x31x1001.npz"
@@ -94,7 +79,7 @@ Ge = G(X, Y, Z)
 G13e = G13(X, Y, Z)
 G23e = G23(X, Y, Z)
 
-plot_ = 'xz'
+plot_ = 'xy'
 
 #for n in [0]:
 #for n in range(0, 201, 40): # last_ok.npz / last_periodic.npz

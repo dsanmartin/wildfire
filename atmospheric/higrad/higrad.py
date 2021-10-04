@@ -1,6 +1,7 @@
+from zipfile import PyZipFile
 import numpy as np
 import matplotlib.pyplot as plt
-from utils import h, hx, hy, G, Gx, Gy, Gz, G13, G23
+from utils import h, hx, hy, G, Gx, Gy, Gz, G13, G23, G13z, G23z, zc, zz
 
 def Phi(t, A, **kwargs):
     """
@@ -13,6 +14,8 @@ def Phi(t, A, **kwargs):
     Ge = kwargs['G']
     G13e = kwargs['G13']
     G23e = kwargs['G23']
+    G13ze = kwargs['G13z']
+    G23ze = kwargs['G23z']
     Gxe = kwargs['Gx']
     Gye = kwargs['Gy']
     Gze = kwargs['Gz']
@@ -28,6 +31,9 @@ def Phi(t, A, **kwargs):
     p_o = kwargs['p_o']
     rho_e = kwargs['rho_e']
     p_e = kwargs['p_e']
+    px_e = kwargs['px_e']
+    py_e = kwargs['py_e']
+    pz_e = kwargs['pz_e']
     dx = x[0, 1, 0] - x[0, 0, 0]
     dy = y[1, 0, 0] - y[0, 0, 0]
     dz = z[0, 0, 1] - z[0, 0, 0]
@@ -64,15 +70,17 @@ def Phi(t, A, **kwargs):
     Rz = (R[1:-1, 1:-1, 2:] - R[1:-1, 1:-1, :-2]) / 2 / dz
 
     # G function
+    G = Ge[1:-1, 1:-1, 1:-1]
     Gx = Gxe[1:-1, 1:-1, 1:-1]
     Gy = Gye[1:-1, 1:-1, 1:-1]
-    Gz = Gze[1:-1, 1:-1, 1:-1]
+    G13 = G13e[1:-1, 1:-1, 1:-1]
+    G23 = G23e[1:-1, 1:-1, 1:-1]
+    G13z = G13ze[1:-1, 1:-1, 1:-1]
+    G23z = G23ze[1:-1, 1:-1, 1:-1]
 
     # omega
     omega = G13e * U + G23e * V +  W / Ge
-    omegax = (omega[1:-1, 2:, 1:-1] - omega[1:-1, :-2, 1:-1]) / 2 / dx
-    omegay = (omega[2:, 1:-1, 1:-1] - omega[:-2, 1:-1, 1:-1]) / 2 / dy
-    omegaz = (omega[1:-1, 1:-1, 2:] - omega[1:-1, 1:-1, :-2]) / 2 / dz
+    omegaz = G13z * U[1:-1, 1:-1, 1:-1] + G13 * Uz + G23z * V[1:-1, 1:-1, 1:-1]  + G23 * Vz + Wz / G
 
     # # Other omega
     # G13ez = (G13e[1:-1, 1:-1, 2:] - G13e[1:-1, 1:-1, :-2]) / 2 / dz
@@ -84,30 +92,30 @@ def Phi(t, A, **kwargs):
     # div(V), V=(u, v, \omega)
     divVel = Ux + Vy + omegaz
     # phi = G\rho u
-    phiu = Ge[1:-1, 1:-1, 1:-1] * R[1:-1, 1:-1, 1:-1] * U[1:-1, 1:-1, 1:-1]
-    phiux = Gx * R[1:-1, 1:-1, 1:-1] * U[1:-1, 1:-1, 1:-1] + Ge[1:-1, 1:-1, 1:-1] * (Rx * U[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Ux)
-    phiuy = Gy * R[1:-1, 1:-1, 1:-1] * U[1:-1, 1:-1, 1:-1] + Ge[1:-1, 1:-1, 1:-1] * (Ry * U[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Uy)
-    phiuz = Gz * R[1:-1, 1:-1, 1:-1] * U[1:-1, 1:-1, 1:-1] + Ge[1:-1, 1:-1, 1:-1] * (Rz * U[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Uz)
+    phiu = R[1:-1, 1:-1, 1:-1] * U[1:-1, 1:-1, 1:-1]
+    phiux = Gx * phiu / G + (Rx * U[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Ux)
+    phiuy = Gy * phiu / G + (Ry * U[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Uy)
+    phiuz = Rz * U[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Uz
     # phi = G\rho v
-    phiv = Ge[1:-1, 1:-1, 1:-1] * R[1:-1, 1:-1, 1:-1] * V[1:-1, 1:-1, 1:-1]
-    phivx = Gx * R[1:-1, 1:-1, 1:-1] * V[1:-1, 1:-1, 1:-1] + Ge[1:-1, 1:-1, 1:-1] * (Rx * V[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Vx)
-    phivy = Gy * R[1:-1, 1:-1, 1:-1] * V[1:-1, 1:-1, 1:-1] + Ge[1:-1, 1:-1, 1:-1] * (Ry * V[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Vy)
-    phivz = Gz * R[1:-1, 1:-1, 1:-1] * V[1:-1, 1:-1, 1:-1] + Ge[1:-1, 1:-1, 1:-1] * (Rz * V[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Vz)
+    phiv = R[1:-1, 1:-1, 1:-1] * V[1:-1, 1:-1, 1:-1]
+    phivx = Gx * phiv / G + (Rx * V[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Vx)
+    phivy = Gy * phiv / G + (Ry * V[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Vy)
+    phivz = Rz * V[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Vz
     # phi = G\rho w
-    phiw = Ge[1:-1, 1:-1, 1:-1] * R[1:-1, 1:-1, 1:-1] * W[1:-1, 1:-1, 1:-1]
-    phiwx = Gx * R[1:-1, 1:-1, 1:-1] * W[1:-1, 1:-1, 1:-1] + Ge[1:-1, 1:-1, 1:-1] * (Rx * W[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Wx)
-    phiwy = Gy * R[1:-1, 1:-1, 1:-1] * W[1:-1, 1:-1, 1:-1] + Ge[1:-1, 1:-1, 1:-1] * (Ry * W[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Wy)
-    phiwz = Gz * R[1:-1, 1:-1, 1:-1] * W[1:-1, 1:-1, 1:-1] + Ge[1:-1, 1:-1, 1:-1] * (Rz * W[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Wz)
+    phiw = R[1:-1, 1:-1, 1:-1] * W[1:-1, 1:-1, 1:-1]
+    phiwx = Gx * phiw / G + (Rx * W[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Wx)
+    phiwy = Gy * phiw / G + (Ry * W[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Wy)
+    phiwz = Rz * W[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Wz
     # phi = G\rho\theta
-    phitheta = Ge[1:-1, 1:-1, 1:-1] * R[1:-1, 1:-1, 1:-1] * T[1:-1, 1:-1, 1:-1]
-    phithetax = Gx * R[1:-1, 1:-1, 1:-1] * T[1:-1, 1:-1, 1:-1] + Ge[1:-1, 1:-1, 1:-1] * (Rx * T[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Tx)
-    phithetay = Gy * R[1:-1, 1:-1, 1:-1] * T[1:-1, 1:-1, 1:-1] + Ge[1:-1, 1:-1, 1:-1] * (Ry * T[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Ty)
-    phithetaz = Gz * R[1:-1, 1:-1, 1:-1] * T[1:-1, 1:-1, 1:-1] + Ge[1:-1, 1:-1, 1:-1] * (Rz * T[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Tz)
+    phitheta = R[1:-1, 1:-1, 1:-1] * T[1:-1, 1:-1, 1:-1]
+    phithetax = Gx * phitheta / G + (Rx * T[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Tx)
+    phithetay = Gy * phitheta / G + (Ry * T[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Ty)
+    phithetaz = Rz * T[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Tz
     # phi = G\rho
-    phir = Ge[1:-1, 1:-1, 1:-1] * R[1:-1, 1:-1, 1:-1]
-    phirx = Gx * R[1:-1, 1:-1, 1:-1] + Ge[1:-1, 1:-1, 1:-1] * Rx
-    phiry = Gy * R[1:-1, 1:-1, 1:-1] + Ge[1:-1, 1:-1, 1:-1] * Ry
-    phirz = Gz * R[1:-1, 1:-1, 1:-1] + Ge[1:-1, 1:-1, 1:-1] * Rz
+    phir = R[1:-1, 1:-1, 1:-1]
+    phirx = Gx / G + Rx
+    phiry = Gy / G + Ry
+    phirz = Rz
     # Divergences
     divU = phiux * U[1:-1, 1:-1, 1:-1] + phiuy * V[1:-1, 1:-1, 1:-1] + phiuz * omega[1:-1, 1:-1, 1:-1] + phiu * divVel
     divV = phivx * U[1:-1, 1:-1, 1:-1] + phivy * V[1:-1, 1:-1, 1:-1] + phivz * omega[1:-1, 1:-1, 1:-1] + phiv * divVel
@@ -117,28 +125,30 @@ def Phi(t, A, **kwargs):
 
     # Pressure
     P = (R_d * R * T) ** (C_v / C_p) / (p_o ** (R_d / C_v))
-    Pp = P - p_e(Z) # p'
+    Pp = P - p_e # p'
 
     # Forces
     px = (Pp[1:-1, 2:, 1:-1] - Pp[1:-1, :-2, 1:-1]) / 2 / dx
     py = (Pp[2:, 1:-1, 1:-1] - Pp[:-2, 1:-1, 1:-1]) / 2 / dy
     pz = (Pp[1:-1, 1:-1, 2:] - Pp[1:-1, 1:-1, :-2]) / 2 / dz
-    rhop = R - rho_e(Z) # Rho'
-    Rup = -px - G13e[1:-1, 1:-1, 1:-1] * pz + f * R[1:-1, 1:-1, 1:-1] * (V[1:-1, 1:-1, 1:-1] - ve) - fh * R[1:-1, 1:-1, 1:-1] * (W[1:-1, 1:-1, 1:-1] - we)
-    Rvp = -py - G23e[1:-1, 1:-1, 1:-1] * pz - f * R[1:-1, 1:-1, 1:-1] * (U[1:-1, 1:-1, 1:-1] - ue) 
-    Rwp = -pz / Ge[1:-1, 1:-1, 1:-1] - rhop[1:-1, 1:-1, 1:-1] * g + fh * R[1:-1, 1:-1, 1:-1] * (U[1:-1, 1:-1, 1:-1] - ue)
+    pxp = px - px_e[1:-1, 1:-1, 1:-1]
+    pyp = py - py_e[1:-1, 1:-1, 1:-1]
+    pzp = pz - pz_e[1:-1, 1:-1, 1:-1]
+    rhop = R - rho_e # Rho'
+    Rup = -pxp - G13e[1:-1, 1:-1, 1:-1] * pzp + f * R[1:-1, 1:-1, 1:-1] * (V[1:-1, 1:-1, 1:-1] - ve) - fh * R[1:-1, 1:-1, 1:-1] * (W[1:-1, 1:-1, 1:-1] - we)
+    Rvp = -pyp - G23e[1:-1, 1:-1, 1:-1] * pzp - f * R[1:-1, 1:-1, 1:-1] * (U[1:-1, 1:-1, 1:-1] - ue) 
+    Rwp = -pzp / Ge[1:-1, 1:-1, 1:-1] - rhop[1:-1, 1:-1, 1:-1] * g + fh * R[1:-1, 1:-1, 1:-1] * (U[1:-1, 1:-1, 1:-1] - ue)
     
     # Computation of RHS
-    Uf[1:-1, 1:-1, 1:-1] = -divU + Ge[1:-1, 1:-1, 1:-1] * Rup
-    Vf[1:-1, 1:-1, 1:-1] = -divV + Ge[1:-1, 1:-1, 1:-1] * Rvp
-    Wf[1:-1, 1:-1, 1:-1] = -divW + Ge[1:-1, 1:-1, 1:-1] * Rwp
+    Uf[1:-1, 1:-1, 1:-1] = -divU + Rup
+    Vf[1:-1, 1:-1, 1:-1] = -divV + Rvp
+    Wf[1:-1, 1:-1, 1:-1] = -divW + Rwp
     Tf[1:-1, 1:-1, 1:-1] = -divT
     Rf[1:-1, 1:-1, 1:-1] = -divR
-    Uf[1:-1, 1:-1, 1:-1] = Uf[1:-1, 1:-1, 1:-1] / (Ge[1:-1, 1:-1, 1:-1] * R[1:-1, 1:-1, 1:-1])
-    Vf[1:-1, 1:-1, 1:-1] = Vf[1:-1, 1:-1, 1:-1] / (Ge[1:-1, 1:-1, 1:-1] * R[1:-1, 1:-1, 1:-1])
-    Wf[1:-1, 1:-1, 1:-1] = Wf[1:-1, 1:-1, 1:-1] / (Ge[1:-1, 1:-1, 1:-1] * R[1:-1, 1:-1, 1:-1])
-    Tf[1:-1, 1:-1, 1:-1] = Tf[1:-1, 1:-1, 1:-1] / (Ge[1:-1, 1:-1, 1:-1] * R[1:-1, 1:-1, 1:-1])
-    Rf[1:-1, 1:-1, 1:-1] = Rf[1:-1, 1:-1, 1:-1] / Ge[1:-1, 1:-1, 1:-1] #(Ge[1:-1, 1:-1, 1:-1] * R[1:-1, 1:-1, 1:-1])
+    Uf[1:-1, 1:-1, 1:-1] /= R[1:-1, 1:-1, 1:-1]
+    Vf[1:-1, 1:-1, 1:-1] /= R[1:-1, 1:-1, 1:-1]
+    Wf[1:-1, 1:-1, 1:-1] /= R[1:-1, 1:-1, 1:-1]
+    Tf[1:-1, 1:-1, 1:-1] /= R[1:-1, 1:-1, 1:-1]
 
     # Boundary conditions
     # Fixed in U and W
@@ -244,8 +254,8 @@ R_d = 287 # Gas constant for dry air [J K^{-1} kg^{-1}]
 p_o = 100000 # Base-state pressure [N m^{-2}]
 H = z_max - z_min # Model depth [m]
 # Balanced enviornment velocities
-ue = 5 # [m s^{-1}]
-ve = 5 # [m s^{-1}]
+ue = 2 # [m s^{-1}]
+ve = 0 # [m s^{-1}]
 we = 0 # [m s^{-1}]
 g = 9.80665 # [m s^{-2}]
 phi = np.pi # 
@@ -253,41 +263,52 @@ Omega = 7.2921e-5 # Earth rotation rate [rad s^{-1}]
 f  = 2 * Omega * np.sin(phi) # [rad s^{-1}]
 fh = 2 * Omega * np.cos(phi) # [rad s^{-1}]
 T_0 = 300 # Initial temperature of dry gas [K]
+# Z correction
+#Z = zc(X, Y, Z)
 # Pressure
-#p = p_o + 1 # Initial pressure? [N m^{-2}]
-p = lambda z: p_o * np.exp(-g * z / (T_0 * R_d)) # Environmental pressure [N m^{-2}]
-p_0 = p(Z) # Initial pressure [N m^{-2}]
+p = lambda x, y, z: p_o * np.exp(-g / (T_0 * R_d) * ((H - h(x, y)) * z / H + h(x, y))) # Environmental pressure [N m^{-2}]
+p_0 = p(X, Y, Z) # Initial pressure [N m^{-2}]
+# Pressure derivatives
+px = lambda x, y, z: -p_0 * g * (H - z) / (R_d * T_0 * H) * np.exp(-g / (R_d * T_0) * ((H - h(x, y)) * z / H + h(x, y))) * hx(x, y) # [N m^{-2}]
+py = lambda x, y, z: -p_0 * g * (H - z) / (R_d * T_0 * H) * np.exp(-g / (R_d * T_0) * ((H - h(x, y)) * z / H + h(x, y))) * hy(x, y) 
+pz = lambda x, y, z: -p_0 * g * (H - z) / (R_d * T_0 * H) * np.exp(-g / (R_d * T_0) * ((H - h(x, y)) * z / H + h(x, y))) 
 # Density
 L = 0.0065 # Temperature lapse [K/m]
 rho_0 = p_o / (R_d * T_0) # Initial density [kg m^{-3}]
-rho = lambda z: rho_0 * (1 - L * z / T_0) ** (g / (R_d * L) - 1) # Environmental density [kg m^{-3}]
-# Initial condition
-u0 = lambda x, y, z: x * 0 + 2 # [m s^{-1}]
+#rho = lambda z: rho_0 * (1 - L * z / T_0) ** (g / (R_d * L) - 1) # Environmental density [kg m^{-3}]
+rho = lambda x, y, z: rho_0 * (1 - L / T_0 * ((H - h(x, y)) / H * z + h(x, y))) ** (g / (R_d * L) - 1) # Environmental density [kg m^{-3}]
+# Initial condition functions
+u0 = lambda x, y, z: x * 0 + 5 # [m s^{-1}]
 v0 = lambda x, y, z: x * 0 # [m s^{-1}]
 w0 = lambda x, y, z: x * 0 # [m s^{-1}]
 theta0 = lambda x, y, z: x * 0 + T_0 * (p_o / p_0) ** (R_d / C_v) # Potential temperature [K]
 rho0 = lambda x, y, z: x * 0 + rho_0 #1.18 # Density [kg m^{-3}]
-U0 = u0(X, Y, Z)
-V0 = v0(X, Y, Z)
-W0 = w0(X, Y, Z)
-T0 = theta0(X, Y, Z)
-R0 = rho0(X, Y, Z)
-
-# Density perturbation
-#rho_e = lambda z: z * 0 + .1
 
 # Evaluation of G
 Ge = G(X, Y, Z)
 G13e = G13(X, Y, Z)
 G23e = G23(X, Y, Z)
+G13ze = G13z(X, Y, Z)
+G23ze = G23z(X, Y, Z)
 Gxe = Gx(X, Y, Z)
 Gye = Gy(X, Y, Z)
 Gze = Gz(X, Y, Z)
+# Evaluation of density and pressure
+rhoe = rho(X, Y, Z)
+pe = p(X, Y, Z)
+pxe = px(X, Y, Z)
+pye = py(X, Y, Z)
+pze = pz(X, Y, Z)
 
-# Solve
+# Initial condition
+U0 = u0(X, Y, Z)
+V0 = v0(X, Y, Z)
+W0 = w0(X, Y, Z)
+T0 = theta0(X, Y, Z)
+R0 = rho0(X, Y, Z)
 y0 = np.array([U0, V0, W0, T0, R0])
 
-# yy = np.zeros((Nt, 5, Ny, Nx, Nz))
+# Array for approximations
 samples = 100
 yy = np.zeros((Nt // samples + 1, 5, Ny, Nx, Nz))
 yy[0] = y0
@@ -308,10 +329,15 @@ args = {
     'f': f,
     'fh': fh,
     'G': Ge,
-    'rho_e': rho,
-    'p_e': p,
+    'rho_e': rhoe,
+    'p_e': pe,
+    'px_e': pxe,
+    'py_e': pye,
+    'pz_e': pze,
     'G13': G13e,
     'G23': G23e,
+    'G13z': G13ze,
+    'G23z': G23ze,
     'Gx': Gxe,
     'Gy': Gye,
     'Gz': Gze,
@@ -337,6 +363,7 @@ args = {
 #     k4 = Phi(t[n] + dt, yy[n] + dt * k3, **args)
 #     yy[n+1] = yy[n] + (1/6) * dt * (k1 + 2 * k2 + 2 * k3 + k4)
 
+# Solve
 y_tmp = yy[0]
 for n in range(Nt-1):
     #print("Step:", n)
