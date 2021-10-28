@@ -38,39 +38,12 @@ def Phi(t, A, **kwargs):
     dz = z[0, 0, 1] - z[0, 0, 0]
 
     # Get the values 
-    Uh, Vh, Wh, Th, R = A
-    U = Uh / R
-    V = Vh / R
-    W = Wh / R
-    T = Th / R
-
-    # Temporal arrays
-    Uf = np.zeros_like(U)
-    Vf = np.zeros_like(V)
-    Wf = np.zeros_like(W)
-    Tf = np.zeros_like(T)
-    Rf = np.zeros_like(R)
-
-    # Derivatives #
-    # Velocities
-    Ux = (U[1:-1, 2:, 1:-1] - U[1:-1, :-2, 1:-1]) / 2 / dx
-    Uy = (U[2:, 1:-1, 1:-1] - U[:-2, 1:-1, 1:-1]) / 2 / dy
-    Uz = (U[1:-1, 1:-1, 2:] - U[1:-1, 1:-1, :-2]) / 2 / dz
-    Vx = (V[1:-1, 2:, 1:-1] - V[1:-1, :-2, 1:-1]) / 2 / dx
-    Vy = (V[2:, 1:-1, 1:-1] - V[:-2, 1:-1, 1:-1]) / 2 / dy
-    Vz = (V[1:-1, 1:-1, 2:] - V[1:-1, 1:-1, :-2]) / 2 / dz
-    Wx = (W[1:-1, 2:, 1:-1] - W[1:-1, :-2, 1:-1]) / 2 / dx
-    Wy = (W[2:, 1:-1, 1:-1] - W[:-2, 1:-1, 1:-1]) / 2 / dy
-    Wz = (W[1:-1, 1:-1, 2:] - W[1:-1, 1:-1, :-2]) / 2 / dz
-
-    # Temperature
-    Tx = (T[1:-1, 2:, 1:-1] - T[1:-1, :-2, 1:-1]) / 2 / dx
-    Ty = (T[2:, 1:-1, 1:-1] - T[:-2, 1:-1, 1:-1]) / 2 / dy
-    Tz = (T[1:-1, 1:-1, 2:] - T[1:-1, 1:-1, :-2]) / 2 / dz
-    # Rho
-    Rx = (R[1:-1, 2:, 1:-1] - R[1:-1, :-2, 1:-1]) / 2 / dx
-    Ry = (R[2:, 1:-1, 1:-1] - R[:-2, 1:-1, 1:-1]) / 2 / dy
-    Rz = (R[1:-1, 1:-1, 2:] - R[1:-1, 1:-1, :-2]) / 2 / dz
+    Uh, Vh, Wh, Th, Rh = A
+    R = Rh / Ge
+    U = Uh / R / Ge
+    V = Vh / R / Ge
+    W = Wh / R / Ge
+    T = Th / R / Ge
 
     # G function
     G = Ge[1:-1, 1:-1, 1:-1]
@@ -81,50 +54,65 @@ def Phi(t, A, **kwargs):
     G13z = G13ze[1:-1, 1:-1, 1:-1]
     G23z = G23ze[1:-1, 1:-1, 1:-1]
 
-    # omega
+    # Temporal arrays
+    Uf = np.zeros_like(U)
+    Vf = np.zeros_like(V)
+    Wf = np.zeros_like(W)
+    Tf = np.zeros_like(T)
+    Rf = np.zeros_like(R)
+
+    # Omega
     omega = G13e * U + G23e * V +  W / Ge
-    omegaz = G13z * U[1:-1, 1:-1, 1:-1] + G13 * Uz + G23z * V[1:-1, 1:-1, 1:-1]  + G23 * Vz + Wz / G
 
-    # # Other omega
-    # G13ez = (G13e[1:-1, 1:-1, 2:] - G13e[1:-1, 1:-1, :-2]) / 2 / dz
-    # G23ez = (G23e[1:-1, 1:-1, 2:] - G23e[1:-1, 1:-1, :-2]) / 2 / dz
-    # omegaz = G13ez * U[1:-1, 1:-1, 1:-1] + G13e[1:-1, 1:-1, 1:-1] * Uz + \
-    #     G23ez * V[1:-1, 1:-1, 1:-1] + G23e[1:-1, 1:-1, 1:-1] * Vz + Wz / Ge[1:-1, 1:-1, 1:-1]
+    # u velocities
+    UGUh = U * Uh
+    VGUh = V * Uh
+    OGUh = omega * Uh
+    # Derivatives
+    UGUhx = (UGUh[1:-1, 2:, 1:-1] - UGUh[1:-1, :-2, 1:-1]) / (2 * dx)
+    VGUhy = (VGUh[2:, 1:-1, 1:-1] - VGUh[:-2, 1:-1, 1:-1]) / (2 * dy)
+    OGUhz = (OGUh[1:-1, 1:-1, 2:] - OGUh[1:-1, 1:-1, :-2]) / (2 * dz)
+    divU = UGUhx + VGUhy + OGUhz
 
-    # div(phi V), phi={G\rho u, G\rho v, G\rho w, G\rho\theta, G\rho}
-    # div(V), V=(u, v, \omega)
-    divVel = Ux + Vy + omegaz
-    # phi = G\rho u
-    phiu = R[1:-1, 1:-1, 1:-1] * U[1:-1, 1:-1, 1:-1]
-    phiux = Gx * phiu / G + (Rx * U[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Ux)
-    phiuy = Gy * phiu / G + (Ry * U[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Uy)
-    phiuz = Rz * U[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Uz
-    # phi = G\rho v
-    phiv = R[1:-1, 1:-1, 1:-1] * V[1:-1, 1:-1, 1:-1]
-    phivx = Gx * phiv / G + (Rx * V[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Vx)
-    phivy = Gy * phiv / G + (Ry * V[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Vy)
-    phivz = Rz * V[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Vz
-    # phi = G\rho w
-    phiw = R[1:-1, 1:-1, 1:-1] * W[1:-1, 1:-1, 1:-1]
-    phiwx = Gx * phiw / G + (Rx * W[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Wx)
-    phiwy = Gy * phiw / G + (Ry * W[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Wy)
-    phiwz = Rz * W[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Wz
-    # phi = G\rho\theta
-    phitheta = R[1:-1, 1:-1, 1:-1] * T[1:-1, 1:-1, 1:-1]
-    phithetax = Gx * phitheta / G + (Rx * T[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Tx)
-    phithetay = Gy * phitheta / G + (Ry * T[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Ty)
-    phithetaz = Rz * T[1:-1, 1:-1, 1:-1] + R[1:-1, 1:-1, 1:-1] * Tz
-    # phi = G\rho
-    phir = R[1:-1, 1:-1, 1:-1]
-    phirx = Gx / G + Rx
-    phiry = Gy / G + Ry
-    phirz = Rz
-    # Divergences
-    divU = phiux * U[1:-1, 1:-1, 1:-1] + phiuy * V[1:-1, 1:-1, 1:-1] + phiuz * omega[1:-1, 1:-1, 1:-1] + phiu * divVel
-    divV = phivx * U[1:-1, 1:-1, 1:-1] + phivy * V[1:-1, 1:-1, 1:-1] + phivz * omega[1:-1, 1:-1, 1:-1] + phiv * divVel
-    divW = phiwx * U[1:-1, 1:-1, 1:-1] + phiwy * V[1:-1, 1:-1, 1:-1] + phiwz * omega[1:-1, 1:-1, 1:-1] + phiw * divVel
-    divT = phithetax * U[1:-1, 1:-1, 1:-1] + phithetay * V[1:-1, 1:-1, 1:-1] + phithetaz * omega[1:-1, 1:-1, 1:-1] + phitheta * divVel
-    divR = phirx * U[1:-1, 1:-1, 1:-1] + phiry * V[1:-1, 1:-1, 1:-1] + phirz * omega[1:-1, 1:-1, 1:-1] + phir * divVel
+    # v velocities
+    UGVh = U * Vh
+    VGVh = V * Vh
+    OGVh = omega * Vh
+    # Derivatives
+    UGVhx = (UGVh[1:-1, 2:, 1:-1] - UGVh[1:-1, :-2, 1:-1]) / (2 * dx)
+    VGVhy = (VGVh[2:, 1:-1, 1:-1] - VGVh[:-2, 1:-1, 1:-1]) / (2 * dy)
+    OGVhz = (OGVh[1:-1, 1:-1, 2:] - OGVh[1:-1, 1:-1, :-2]) / (2 * dz)
+    divV = UGVhx + VGVhy + OGVhz
+
+    # w velocities
+    UGWh = U * Wh
+    VGWh = V * Wh
+    OGWh = omega * Wh
+    # Derivatives
+    UGWhx = (UGWh[1:-1, 2:, 1:-1] - UGWh[1:-1, :-2, 1:-1]) / (2 * dx)
+    VGWhy = (VGWh[2:, 1:-1, 1:-1] - VGWh[:-2, 1:-1, 1:-1]) / (2 * dy)
+    OGWhz = (OGWh[1:-1, 1:-1, 2:] - OGWh[1:-1, 1:-1, :-2]) / (2 * dz)
+    divW = UGWhx + VGWhy + OGWhz
+
+    # Temperature
+    UGTh = U * Th
+    VGTh = V * Th  
+    OGTh = omega * Th
+    # Derivatives
+    UGThx = (UGTh[1:-1, 2:, 1:-1] - UGTh[1:-1, :-2, 1:-1]) / (2 * dx)
+    VGThy = (VGTh[2:, 1:-1, 1:-1] - VGTh[:-2, 1:-1, 1:-1]) / (2 * dy)
+    OGThz = (OGTh[1:-1, 1:-1, 2:] - OGTh[1:-1, 1:-1, :-2]) / (2 * dz)
+    divT = UGThx + VGThy + OGThz
+
+    # Density
+    UGR = U * Rh
+    VGR = V * Rh
+    OGR = omega * Rh
+    # Derivatives
+    UGRx = (UGR[1:-1, 2:, 1:-1] - UGR[1:-1, :-2, 1:-1]) / (2 * dx)
+    VGRy = (VGR[2:, 1:-1, 1:-1] - VGR[:-2, 1:-1, 1:-1]) / (2 * dy)
+    OGRz = (OGR[1:-1, 1:-1, 2:] - OGR[1:-1, 1:-1, :-2]) / (2 * dz)
+    divR = UGRx + VGRy + OGRz
 
     # Pressure
     P = (R_d * R * T) ** (C_v / C_p) / (p_o ** (R_d / C_v))
@@ -138,15 +126,15 @@ def Phi(t, A, **kwargs):
     pyp = py - py_e[1:-1, 1:-1, 1:-1]
     pzp = pz - pz_e[1:-1, 1:-1, 1:-1]
     rhop = R - rho_e # Rho'
-    Rup = -pxp - G13e[1:-1, 1:-1, 1:-1] * pzp + f * R[1:-1, 1:-1, 1:-1] * (V[1:-1, 1:-1, 1:-1] - ve) - fh * R[1:-1, 1:-1, 1:-1] * (W[1:-1, 1:-1, 1:-1] - we)
-    Rvp = -pyp - G23e[1:-1, 1:-1, 1:-1] * pzp - f * R[1:-1, 1:-1, 1:-1] * (U[1:-1, 1:-1, 1:-1] - ue) 
+    Rup = -pxp - G13e[1:-1, 1:-1, 1:-1] * pzp + f * R[1:-1, 1:-1, 1:-1] * (V[1:-1, 1:-1, 1:-1]  -  ve) - fh * R[1:-1, 1:-1, 1:-1] *(W[1:-1, 1:-1, 1:-1] - we)
+    Rvp = -pyp - G23e[1:-1, 1:-1, 1:-1] * pzp - f * R[1:-1, 1:-1, 1:-1] * (U[1:-1, 1:-1, 1:-1] - ue)
     Rwp = -pzp / Ge[1:-1, 1:-1, 1:-1] - rhop[1:-1, 1:-1, 1:-1] * g + fh * R[1:-1, 1:-1, 1:-1] * (U[1:-1, 1:-1, 1:-1] - ue)
     
     # Computation of RHS
-    Uf[1:-1, 1:-1, 1:-1] = -divU + Rup
-    Vf[1:-1, 1:-1, 1:-1] = -divV + Rvp
-    Wf[1:-1, 1:-1, 1:-1] = -divW + Rwp
-    Tf[1:-1, 1:-1, 1:-1] = -divT
+    Uf[1:-1, 1:-1, 1:-1] = -divU + G * Rup
+    Vf[1:-1, 1:-1, 1:-1] = -divV + G * Rvp
+    Wf[1:-1, 1:-1, 1:-1] = -divW + G * Rwp
+    Tf[1:-1, 1:-1, 1:-1] = -divT + 100
     Rf[1:-1, 1:-1, 1:-1] = -divR
 
     # Boundary conditions
@@ -183,7 +171,7 @@ def Phi(t, A, **kwargs):
 x_min, x_max = 0, 400 
 y_min, y_max = 0, 400 
 z_min, z_max = 0, 125
-t_min, t_max = 0, 3
+t_min, t_max = 0, 2
 Nx, Ny, Nz, Nt = 41, 41, 21, 501 # 
 ## OK ##
 # t_min, t_max = 0, 1
@@ -213,12 +201,12 @@ phi = np.pi #
 Omega = 7.2921e-5 # Earth rotation rate [rad s^{-1}]
 f  = 2 * Omega * np.sin(phi) # [rad s^{-1}]
 fh = 2 * Omega * np.cos(phi) # [rad s^{-1}]
+f = fh = 0
 T_0 = 300 # Initial temperature of dry gas [K]
 # Z correction
 #Z = zc(X, Y, Z)
 # Pressure
 p = lambda x, y, z: p_o * np.exp(-g / (T_0 * R_d) * ((H - h(x, y)) * z / H + h(x, y))) # Environmental pressure [N m^{-2}]
-#p = lambda x, y, z: x * 0 + 1
 p_0 = p(X, Y, Z) # Initial pressure [N m^{-2}]
 # Pressure derivatives
 px = lambda x, y, z: -p_o * g * (H - z) / (R_d * T_0 * H) * np.exp(-g / (R_d * T_0) * ((H - h(x, y)) * z / H + h(x, y))) * hx(x, y) # [N m^{-2}]
@@ -229,7 +217,6 @@ L = 0.0065 # Temperature lapse [K/m]
 rho_0 = p_o / (R_d * T_0) # Initial density [kg m^{-3}]
 #rho = lambda z: rho_0 * (1 - L * z / T_0) ** (g / (R_d * L) - 1) # Environmental density [kg m^{-3}]
 rho = lambda x, y, z: rho_0 * (1 - L / T_0 * ((H - h(x, y)) / H * z + h(x, y))) ** (g / (R_d * L) - 1) # Environmental density [kg m^{-3}]
-#rho = lambda x, y, z: x * 0 + 1
 # Initial condition functions
 u0 = lambda x, y, z: x * 0 + 2 # [m s^{-1}]
 v0 = lambda x, y, z: x * 0 # [m s^{-1}]
@@ -258,16 +245,15 @@ U0 = u0(X, Y, Z)
 V0 = v0(X, Y, Z)
 W0 = w0(X, Y, Z)
 T0 = theta0(X, Y, Z)
-T0[:, 15:20, :2] = 501
 R0 = rho0(X, Y, Z)
 #y0 = np.array([U0, V0, W0, T0, R0])
-y0 = np.array([U0 * R0, V0 * R0, W0 * R0, T0 * R0, R0])
+y0 = np.array([U0 * R0, V0 * R0, W0 * R0, T0 * R0, R0]) 
 
 # Array for approximations
 samples = 100
 yy = np.zeros((Nt // samples + 1, 5, Ny, Nx, Nz))
 # yy = np.zeros((Nt, 5, Ny, Nx, Nz))
-yy[0] = y0
+yy[0] = y0 * Ge
 
 # Arguments for RHS
 args = {
@@ -335,12 +321,12 @@ yy[-1] = y_tmp
 # yy[-1] = y_tmp
 
 # Get velocities
-R = yy[:, 4]
-U = yy[:, 0] / R
-V = yy[:, 1] / R
-W = yy[:, 2] / R
-T = yy[:, 3] / R
+R = yy[:, 4] / Ge
+U = yy[:, 0] / R / Ge
+V = yy[:, 1] / R / Ge
+W = yy[:, 2] / R / Ge
+T = yy[:, 3] / R / Ge
 P = (R_d * R * T) ** (C_v / C_p) / (p_o ** (R_d / C_v))
 
 # Save 
-np.savez('output/higrad.npz', U=U, V=V, W=W, T=T, R=R, P=P, X=X, Y=Y, Z=Z, t=t[::samples])
+np.savez('output/higrad-test.npz', U=U, V=V, W=W, T=T, R=R, P=P, X=X, Y=Y, Z=Z, t=t[::samples])

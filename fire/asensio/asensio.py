@@ -1,10 +1,11 @@
-#%%
+# Library imports
 import numpy as np
 import matplotlib.pyplot as plt
 import utils
 from time_solver import *
 import time
 
+# Function for boundary conditions
 def boundaryConditions(U, B):
     Ub = np.copy(U)
     Bb = np.copy(B)
@@ -23,19 +24,15 @@ def boundaryConditions(U, B):
 
     return Ub, Bb
 
+# Rigth hand side of the equations
 def RHS(t, r, **kwargs):
     # Parameters 
     X, Y = kwargs['x'], kwargs['y']
     x, y = X[0], Y[:, 0] 
     V   = kwargs['V']
     kap = kwargs['kap']
-    eps = kwargs['eps']
-    upc = kwargs['upc']
-    alp = kwargs['alp']
     f = kwargs['f']
     g = kwargs['g']
-    K = kwargs['K']
-    Ku = kwargs['Ku']
     Nx = x.shape[0]
     Ny = y.shape[0]
     dx = x[1] - x[0]
@@ -44,9 +41,7 @@ def RHS(t, r, **kwargs):
     # Vector field evaluation
     V1, V2 = V(x, y, t)
     
-    # Recover u and b from y
-    # U = np.copy(r[:Ny * Nx].reshape((Ny, Nx), order='F'))
-    # B = np.copy(r[Ny * Nx:].reshape((Ny, Nx), order='F'))
+    # Recover u and b from vector. Reshape them into matrices
     U = np.copy(r[:Ny * Nx].reshape((Ny, Nx)))
     B = np.copy(r[Ny * Nx:].reshape((Ny, Nx)))
 
@@ -55,39 +50,36 @@ def RHS(t, r, **kwargs):
     Uy = np.zeros_like(U)
     Uxx = np.zeros_like(U)
     Uyy = np.zeros_like(U)
-    # First derivatives
+    # First derivatice (forward finite difference)
     Ux[1:-1, 1:-1] = (U[1:-1, 1:-1] - U[1:-1, :-2]) / dx
     Uy[1:-1, 1:-1] = (U[1:-1, 1:-1] - U[:-2, 1:-1]) / dy
-    # Vx = (V[1:-1, 1:-1] - V[1:-1, :-2]) / dx
-    # Vy = (V[1:-1, 1:-1] - V[:-2, 1:-1]) / dy
-    # Second derivatives
+    # # First derivatives (central finite difference)
+    # Ux[1:-1, 1:-1] = (U[1:-1, 2:] - U[1:-1, :-2]) / 2 / dx
+    # Uy[1:-1, 1:-1] = (U[2:, 1:-1] - U[:-2, 1:-1]) / 2 / dy
+    # Second derivatives (central finite difference)
     Uxx[1:-1, 1:-1] = (U[1:-1, 2:] - 2 * U[1:-1, 1:-1] + U[1:-1, :-2]) / dx / dx
     Uyy[1:-1, 1:-1] = (U[2:, 1:-1] - 2 * U[1:-1, 1:-1] + U[:-2, 1:-1]) / dy / dy
-    # Vxx = (V[1:-1, 2:] - 2 * V[1:-1, 1:-1] + V[1:-1, :-2]) / dx / dx
-    # Vyy = (V[2:, 1:-1] - 2 * V[1:-1, 1:-1] + V[:-2, 1:-1]) / dy / dy
         
     # Laplacian of u
     lapU = Uxx + Uyy
 
-    # Compute diffusion
-    #diffusion = Ku(U) * (Ux ** 2 + Uy ** 2) + K(U) * lapU
-    diffusion = kap * lapU 
-    
+    # Compute diffusion term
+    diffusion = kap * lapU # \kappa \Delta u
+    # Compute convection term
     convection = Ux * V1 + Uy * V2 # v \cdot grad u.    
+    # Compute reaction term
     reaction = f(U, B) # eval fuel
     
     # Compute RHS
-    Uf = diffusion - convection + reaction 
-    Bf = g(U, B)
+    Uf = diffusion - convection + reaction # Temperature
+    Bf = g(U, B) # Fuel
     
     # Add boundary conditions
     Uf, Bf = boundaryConditions(Uf, Bf)
 
-    # Build y = [vec(u), vec(\beta)]^T and return
-    #return np.r_[Uf.flatten('F'), Bf.flatten('F')] 
+    # Build \mathbf{y} = [vec(u), vec(\beta)]^T and return
     return np.r_[Uf.flatten(), Bf.flatten()] 
 
-#%%
 ### PARAMETERS ###
 # Model parameters #
 kap = 1e-1
@@ -97,41 +89,19 @@ alp = 1e-3
 q = 1
 x_min, x_max = 0, 90
 y_min, y_max = 0, 90
-t_min, t_max = 0, 10
-
-# # Asensio parameters
-# Tinf = 300
-# Tpc = 550
-# eps = 3e-2
-# upc = (Tpc - Tinf) / (eps * Tinf)
-# x_min, x_max = 0, 300
-# y_min, y_max = 0, 300
-# t_min, t_max = 0, 0.1625
+t_min, t_max = 0, 20
 
 # Re-define PDE funtions with parameters #
-s = lambda u: utils.H(u, upc) #if sf == 'step' else sigmoid(u)
+s = lambda u: utils.H(u, upc)
 ff = lambda u, b: utils.f(u, b, eps, alp, s)
 gg = lambda u, b: utils.g(u, b, eps, q, s)
-KK = lambda u: utils.K(u, kap, eps)
-KKu = lambda u: utils.Ku(u, kap, eps)
 
 # Numerical #
-# Space
+# Space nodes
 Nx = 128
 Ny = 128
-# Time
+# Time nodes
 Nt = 1000
-
-# # A&F
-# dx = dy = 1.875
-# dt = 2.5e-7
-# dx = dy = 7.5
-# dt = 1e-6
-# dx = dy = 0.46875
-# dt = 6.25e-8
-# Nx = int(x_max / dx) + 1
-# Ny = int(y_max / dy) + 1
-# Nt = int(t_max / dt) + 1
 
 # Domain #
 x = np.linspace(x_min, x_max, Nx)
@@ -140,60 +110,52 @@ t = np.linspace(t_min, t_max, Nt)
 X, Y = np.meshgrid(x, y)
 
 # Initial conditions
-u0 = lambda x, y: 6 * utils.G(x - 20, y - 20, 20)
-b0 = lambda x, y: x * 0 + 1
-w1 = lambda x, y, t: np.cos(np.pi/4 + x * 0)
-w2 = lambda x, y, t: np.sin(np.pi/4 + x * 0)
-
-
-# # Real asensio & Ferragut
-# u0 = lambda x, y: 30 * G(x - 50, y - 50, 100)
-# b0 = lambda x, y: b0_af2002(x, y)
-# w1 = lambda x, y, t: 300 + x * 0
-# w2 = lambda x, y, t: 300 + x * 0
+u0 = lambda x, y: 6 * utils.G(x - 20, y - 20, 20) # Temperature
+b0 = lambda x, y: x * 0 + 1 # Fuel
+w1 = lambda x, y, t: np.cos(np.pi/4 + x * 0) # Wind 
+w2 = lambda x, y, t: np.sin(np.pi/4 + x * 0) # Wind
 
 # Wind effect
 V = lambda x, y, t: (w1(x, y, t), w2(x, y, t))
 
-print("upc = ", upc)
-print("Nx = ", Nx)
-print("Ny = ", Ny)
-print("Nt = ", Nt)
+# Just log
+print("Nx =", Nx)
+print("Ny =", Ny)
+print("Nt =", Nt)
 print("dx =", x[1] - x[0])
 print("dy =", y[1] - y[0])
 print("dt =", t[1] - t[0])
 
 # Parameters #
-params = {'x': X, 'y': Y, 'V': V, 'kap': kap, 'eps': eps, 'upc': upc, 'alp': alp, 'f': ff, 'g': gg, 'K': KK, 'Ku': KKu}
+# Domain, functions, etc.
+params = {'x': X, 'y': Y, 'V': V, 'kap': kap, 'f': ff, 'g': gg,}
 
-#y0 = np.r_[u0(X, Y).flatten('F'), b0(X, Y).flatten('F')]
+# Initial condition (vectorized)
 y0 = np.r_[u0(X, Y).flatten(), b0(X, Y).flatten()]
 
+# Mask RHS to include parameters
 F = lambda t, y: RHS(t, y, **params)
 
-# Solve #
+# Solve IVP #
 time_start = time.time()
-# R = IVP(t, y0, F, 'RK45')
-R = RK4(t, y0, F)
-
+R = IVP(t, y0, F, 'RK45') # Use solve_ivp from scipy.integrate 
+# R = RK4(t, y0, F) # Use RK4 'from scratch'
 time_end = time.time()
 solve_time = time_end - time_start
 print("Time: ", solve_time, "[s]")
 
-#R = sol.y.T
-# U = R[:, :Nx*Ny].reshape((Nt, Ny, Nx), order='F')
-# B = R[:, Nx*Ny:].reshape((Nt, Ny, Nx), order='F')
+# Recover u and b from approximation. Reshape them into matrices
 U = R[:, :Nx*Ny].reshape((Nt, Ny, Nx))
 B = R[:, Nx*Ny:].reshape((Nt, Ny, Nx))
 
-#%%
-# plt.figure(figsize=(12, 6))
-# plt.subplot(1, 2, 1)
-# plt.contourf(X, Y, U[-1], cmap=plt.cm.jet)
-# plt.colorbar()
-# plt.subplot(1, 2, 2)
-# plt.contourf(X, Y, B[-1], cmap=plt.cm.viridis)
-# plt.colorbar()
-# plt.tight_layout()
-# plt.show()
-# %%
+# Plot last time step approximation
+fig, axs = plt.subplots(1, 2, sharey=True, figsize=(12, 6))
+temp = axs[0].contourf(X, Y, U[-1], cmap=plt.cm.jet)
+fuel = axs[1].contourf(X, Y, B[-1], cmap=plt.cm.Oranges)
+fig.colorbar(temp, ax=axs[0])
+fig.colorbar(fuel, ax=axs[1])
+axs[0].set_xlabel(r"$x$")
+axs[1].set_xlabel(r"$x$")
+axs[0].set_ylabel(r"$y$")
+plt.tight_layout()
+plt.show()

@@ -1,6 +1,6 @@
 import numpy as np
 
-# Generic #
+# Generic Gaussian #
 def G(x, y, s):
     return np.exp(-(x ** 2 + y ** 2) / s)
 
@@ -29,7 +29,7 @@ def sigmoid(u, k=.5):
 def scale(u, a=-10, b=10):
     return (b - a) * (u - np.min(u)) / (np.max(u) - np.min(u)) + a
 
-
+# Fuel boundary
 def b0_bc(B):
     rows, cols = B.shape
     B[ 0,:] = np.zeros(cols)

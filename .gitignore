@@ -132,3 +132,6 @@ dmypy.json
 # Extra folders
 atmospheric/higrad/output/
 atmospheric/higrad/backups/
+coupled/higrad_firetec/output/
+coupled/higrad_firetec/backups/
+coupled/test/output

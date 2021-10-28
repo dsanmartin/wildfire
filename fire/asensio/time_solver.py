@@ -44,7 +44,7 @@ def AB5(t, y0, f):
         y[n+5] = y[n+4] + dt / 720 * (1901 * fn4 - 2774 * fn3 + 2616 * fn2 - 1274 * fn1 + 251 * fn)
     return y
 
-# IVP
+# IVP using solve_ivp from scipy https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html
 def IVP(t, y0, f, method):
     sol = solve_ivp(f, (t[0], t[-1]), y0, t_eval=t, method=method)
     return sol.y.T

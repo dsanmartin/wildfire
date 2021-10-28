@@ -15,14 +15,16 @@ def genericPlot(x, y, u, v, h, r, t, p, axis_x='x', axis_y='y'):
     else:
         axs[0,0].plot(x[:,0], h, 'k-')
     # Plot vector field
-    axs[0,0].quiver(x, y, u, v)
-    #axs[0,0].streamplot(x[:,0], z[-1,:], u.T, w.T)
+    # axs[0,0].quiver(x, y, u, v)
+    axs[0,0].quiver(x[::2,::2], y[::2,::2], u[::2,::2], v[::2,::2])
+    # axs[0,0].streamplot(x[:,0], y[-1,:], u.T, v.T)
     # Magnitude
     mag = axs[0,0].contourf(x, y, np.sqrt(u**2 + v**2), alpha=0.5, cmap=plt.cm.viridis)
     # Pressure 
     pres = axs[0,1].contourf(x, y, p, alpha=0.5, cmap=plt.cm.viridis) 
     # Temperature
     temp = axs[1,0].contourf(x, y, t, alpha=0.5, cmap=plt.cm.jet) 
+    #temp = axs[1, 0].imshow(t, origin="lower", cmap=plt.cm.jet, extent=[np.min(x), np.max(x), np.min(y), np.max(y)])
     # Density
     dens = axs[1,1].contourf(x, y, r, alpha=0.5, cmap=plt.cm.GnBu) 
     # Colorbars
@@ -52,6 +54,8 @@ def plotYZ(y, z, v, w, h, r, t, p):
 
 
 filename = 'output/higrad.npz'
+# filename = 'output/higrad-test.npz'
+# filename = 'output/higrad-notopo.npz'
 #filename = "output/higrad_t_1_51x51x31x1001.npz"
 #filename = "higrad_firetec_t_0.4.npz"
 #filename = "higrad_firetec_t_0.3.npz" # Este está ok
@@ -79,12 +83,12 @@ Ge = G(X, Y, Z)
 G13e = G13(X, Y, Z)
 G23e = G23(X, Y, Z)
 
-plot_ = 'xy'
+plot_ = 'xz'
 
-#for n in [0]:
+#for n in [-1]:
 #for n in range(0, 201, 40): # last_ok.npz / last_periodic.npz
-#for n in range(0, len(t), 5): # Vector implementation
-for n in range(0, len(t)): # Last samples
+for n in range(0, len(t), 1): # Samples
+#for n in range(0, len(t)): # Last samples
     Ul = U[n]
     Vl = V[n]
     Wl = W[n]
