@@ -130,8 +130,11 @@ dmypy.json
 
 
 # Extra folders
+.vscode/
 atmospheric/higrad/output/
 atmospheric/higrad/backups/
 coupled/higrad_firetec/output/
 coupled/higrad_firetec/backups/
-coupled/test/output
+coupled/test/output/
+coupled/testing/output/
+coupled/testing/backups/

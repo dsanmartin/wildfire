@@ -76,14 +76,14 @@ t = data['t']
 n = 70 # 83
 i = U.shape[2] // 2 + 1
 j = U.shape[1] // 2 + 1
-k = 5#20#U.shape[3] // 4 
+k = 1#5#20#U.shape[3] // 4 
 N = -1
 
 Ge = G(X, Y, Z)
 G13e = G13(X, Y, Z)
 G23e = G23(X, Y, Z)
 
-plot_ = 'xz'
+plot_ = 'yz'
 
 #for n in [-1]:
 #for n in range(0, 201, 40): # last_ok.npz / last_periodic.npz
@@ -121,6 +121,7 @@ for n in range(0, len(t), 1): # Samples
         rr = Rl[:,i,:]
         pp = Pl[:,i,:]
         hh = h(X[j-1,i-1,k], Y[:,i,k])
+        hh = np.zeros_like(yy)
         plotYZ(yy, zz, vv, ww, hh, rr, tt, pp)
     elif plot_ == 'xy':
         xx = X[:,:,k]

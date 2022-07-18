@@ -184,7 +184,7 @@ x_min, x_max = 0, 400
 y_min, y_max = 0, 400 
 z_min, z_max = 0, 125
 t_min, t_max = 0, 3
-Nx, Ny, Nz, Nt = 41, 41, 21, 501 # 
+Nx, Ny, Nz, Nt = 41, 41, 21, 1001 # 
 ## OK ##
 # t_min, t_max = 0, 1
 # Nx, Ny, Nz, Nt = 51, 51, 31, 1001 # 
@@ -205,7 +205,7 @@ R_d = 287 # Gas constant for dry air [J K^{-1} kg^{-1}]
 p_o = 100000 # Base-state pressure [N m^{-2}]
 H = z_max - z_min # Model depth [m]
 # Balanced enviornment velocities
-ue = 2 # [m s^{-1}]
+ue = 10 # [m s^{-1}]
 ve = 0 # [m s^{-1}]
 we = 0 # [m s^{-1}]
 g = 9.80665 # [m s^{-2}]
@@ -231,7 +231,7 @@ rho_0 = p_o / (R_d * T_0) # Initial density [kg m^{-3}]
 rho = lambda x, y, z: rho_0 * (1 - L / T_0 * ((H - h(x, y)) / H * z + h(x, y))) ** (g / (R_d * L) - 1) # Environmental density [kg m^{-3}]
 #rho = lambda x, y, z: x * 0 + 1
 # Initial condition functions
-u0 = lambda x, y, z: x * 0 + 2 # [m s^{-1}]
+u0 = lambda x, y, z: x * 0 + ue # [m s^{-1}]
 v0 = lambda x, y, z: x * 0 # [m s^{-1}]
 w0 = lambda x, y, z: x * 0 # [m s^{-1}]
 theta0 = lambda x, y, z: x * 0 + T_0 #* (p_o / p_0) ** (R_d / C_v) # Potential temperature [K]
@@ -258,7 +258,7 @@ U0 = u0(X, Y, Z)
 V0 = v0(X, Y, Z)
 W0 = w0(X, Y, Z)
 T0 = theta0(X, Y, Z)
-T0[:, 15:20, :2] = 501
+T0[Ny // 2 - 5: Ny // 2 + 5, 15:20, :2] = 501
 R0 = rho0(X, Y, Z)
 #y0 = np.array([U0, V0, W0, T0, R0])
 y0 = np.array([U0 * R0, V0 * R0, W0 * R0, T0 * R0, R0])

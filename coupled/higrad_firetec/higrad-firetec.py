@@ -1,5 +1,7 @@
 import numpy as np
 
+SIGMA = 5.670374e-8
+
 def Phi(t, A, **kwargs):
     
     # Parameters
@@ -18,10 +20,11 @@ def Phi(t, A, **kwargs):
     F = kwargs['F']
     c_pf = kwargs['c_pf']
     c_pw = kwargs['c_pw']
-    Q_rad = kwargs['Q_rad']
+    Q_rad_s = kwargs['Q_rad_s']
+    Q_rad_g = kwargs['Q_rad_g']
     h = kwargs['h']
     a_v = kwargs['a_v']
-    Tg = kwargs['Tg']
+    # Tg = kwargs['Tg']
     H_w = kwargs['H_w']
     T_vap = kwargs['T_vap']
     Theta = kwargs['Theta']
@@ -29,11 +32,16 @@ def Phi(t, A, **kwargs):
     T_pyr = kwargs['T_pyr']
     nu_T = kwargs['nu_T']
     C_D = kwargs['C_D']
+    c_p = kwargs['c_p']
+    c_v = kwargs['c_v']
+    R_d = kwargs['R_d']
+    p_o = kwargs['p_o']
 
     # RHS
-    Rf, Rw, Ts, Rg, RgU, RgV, Ro = A
+    Rf, Rw, Ts, Rg, RgU, RgV, RgT, Ro = A
     U = RgU / Rg
     V = RgV / Rg
+    Th = RgT / Rg
     Rf_ = np.zeros_like(Rf)
     Rw_ = np.zeros_like(Rw)
     Ts_ = np.zeros_like(Ts)
@@ -41,13 +49,23 @@ def Phi(t, A, **kwargs):
     Ro_ = np.zeros_like(Ro)
     U_  = np.zeros_like(U)
     V_  = np.zeros_like(V)
+    Th_ = np.zeros_like(Th)
+
+    p = (R_d * RgT) ** (c_v / c_p) / p_o ** (R_d / c_v)
+    Tg = Th / (p_o / p) ** (R_d / c_p)
+
+    # A = 1e-5
+    # eps = .5
+    # Q_rad_s = A * eps * SIGMA * Ts ** 4
+    # Q_rad_g = A * eps * SIGMA * Tg ** 4
+    # Q_rad_g = Q_rad_g[1:-1, 1:-1]
 
     # Solid phase #
     Ff = F(Rf, Ro, Ts)
     Fw = F(Rw, Ro, Ts)
     Rf_ = -N_f * Ff
     Rw_ = -Fw
-    Ts_ = Q_rad + h * a_v * (Tg - Ts) \
+    Ts_ = Q_rad_s + h * a_v * (Tg - Ts) \
         - Fw * (H_w + c_pw * T_vap) \
         + Ff * (Theta * H_f - c_pf * T_pyr * N_f)
     Ts_ /= (c_pf * Rf + c_pw * Rw)
@@ -83,10 +101,33 @@ def Phi(t, A, **kwargs):
     gy = 0
     Ru = 0
     Rv = 0
-    px = 0
-    py = 0
+    px = (p[1:-1, 2:] - p[1:-1, :-2]) / (2 * dx)
+    py = (p[2:, 1:-1] - p[:-2, 1:-1]) / (2 * dy)
     U_[1:-1, 1:-1] = -divRgU - px + Rg[1:-1, 1:-1] * gx - Ru - Rg[1:-1, 1:-1] * C_D * a_v * normU[1:-1, 1:-1] * U[1:-1, 1:-1]
     V_[1:-1, 1:-1] = -divRgV - py + Rg[1:-1, 1:-1] * gy - Rv - Rg[1:-1, 1:-1] * C_D * a_v * normU[1:-1, 1:-1] * V[1:-1, 1:-1]
+
+    # Temperature #
+    # \div(\rho_g\theta)
+    # Version 1 (direct)
+    RgTU = RgT * U
+    RgTV = RgT * V
+    RgTUx = (RgTU[1:-1, 2:] - RgTU[1:-1, :-2]) / (2 * dx)
+    RgTVy = (RgTV[2:, 1:-1] - RgTV[:-2, 1:-1]) / (2 * dy)
+    divRgTUV = RgTUx + RgTVy
+    # \div(\rho_g\grad\theta)
+    # Version 1 (direct)
+    Thx = np.zeros_like(Th)
+    Thy = np.zeros_like(Th)
+    Thx[1:-1, 1:-1] = (Th[1:-1, 2:] - Th[1:-1, :-2]) / (2 * dx)
+    Thy[1:-1, 1:-1] = (Th[2:, 1:-1] - Th[:-2, 1:-1]) / (2 * dy)
+    RNTx = Rg * nu_T * Thx
+    RNTy = Rg * nu_T * Thy
+    RNTxx = (RNTx[1:-1, 2:] - RNTx[1:-1, :-2]) / (2 * dx)
+    RNTyy = (RNTy[2:, 1:-1] - RNTy[:-2, 1:-1]) / (2 * dy)
+    divGradTh = RNTxx + RNTyy
+    Th_[1:-1, 1:-1] = -divRgTUV  \
+        - divGradTh \
+        + Th[1:-1, 1:-1] / (c_p * Tg[1:-1, 1:-1]) * (h * a_v * (Ts[1:-1, 1:-1] - Tg[1:-1, 1:-1]) * Q_rad_g + (1 - Theta) * Ff[1:-1, 1:-1] * H_f)
 
     # Ro mass #
     NoFf = N_o * Ff
@@ -138,16 +179,16 @@ def Phi(t, A, **kwargs):
 
     Ro_[1:-1, 1:-1] = divRgRo - divRoUV - NoFf[1:-1, 1:-1]
 
-    return np.array([Rf_, Rw_, Ts_, Rg_, U_, V_, Ro_])
+    return np.array([Rf_, Rw_, Ts_, Rg_, U_, V_, Th_, Ro_])
 
 
 ### MAIN ###
 # Domain
-x_min, x_max = 0, 400 
-y_min, y_max = 0, 400 
+x_min, x_max = 0, 160#400 
+y_min, y_max = 0, 160#400 
 z_min, z_max = 0, 120
 t_min, t_max = 0, 2
-Nx, Ny, Nz, Nt = 51, 51, 21, 501 # 
+Nx, Ny, Nz, Nt = 41, 41, 21, 501 # 
 # Arrays
 x = np.linspace(x_min, x_max, Nx)
 y = np.linspace(y_min, y_max, Ny)
@@ -172,21 +213,29 @@ rho_o = 1.3311 # 1.42902 [kg/m^3] This is variable
 c_pf = 2380 # Specific heat of wood [J/kg/K] https://theengineeringmindset.com/specific-heat-capacity-of-materials/
 c_pw = 4184 # Specific heat of water [J/kg/K] https://en.wikipedia.org/wiki/Specific_heat_capacity
 #Q_rad = 1e6 # Thermal radiation heat flux  [J/m^2/s] ? This is variable
-Q_rad = 1e3
-h =  3000 # Convective heat exchange coefficient [J/m^2/K/s] https://www.engineeringtoolbox.com/convective-heat-transfer-d_430.html
+Q_rad_s = 1e2
+Q_rad_g = 1e2
+h = 3000 # Convective heat exchange coefficient [J/m^2/K/s] https://www.engineeringtoolbox.com/convective-heat-transfer-d_430.html
 a_v = 1 # The contact area per unit volume between the gas and the solid [m] ?
-Tg = 500 # Temperature of the combined gases [K] ?
+Tg = 300 # Temperature of the combined gases [K] ?
 H_w = 2.259e6 # 2257e3 Heat energy per unit of mass (water) [J/kg] https://www.khanacademy.org/science/biology/water-acids-and-bases/water-as-a-solid-liquid-and-gas/a/specific-heat-heat-of-vaporization-and-freezing-of-water
 T_vap = 373.15 #  Temperature at which the liquid water evaporates [K] https://www.usgs.gov/special-topic/water-science-school/science/evaporation-and-water-cycle?qt-science_center_objects=0#qt-science_center_objects
-Theta = 0.25 #  ?? [1]
+Theta = .5 #  ? [1]
 H_f = 21.20e6 # Heat energy per unit of mass (wood) [J/kg] https://en.wikipedia.org/wiki/Heat_of_combustion
+H_f = 8914e3
 T_pyr = 773.15 # The temperature at which the solid fuel begins to pyrolyse [K] https://www.sciencedirect.com/science/article/pii/B978012815497700004X
 nu_T = 1e-1 # Turbulent Viscosity [m^2/s] 
+C_D = .5 # ? Coefficient of drag
+R_d = 287 # Gas constant for dry air [J/kg/K] 
+c_p = 1004 # Specific heat of air at constant pressure [J/kg/K]
+c_v = 717 # Specific heat of air at constant volumex [J/kg/K]
+p_o = 1e5 # Base state pressure [N m^2]
+rho_g = 1.225 # Density of air [kg/m^3]
 # Psi density function
 b = 200
 m = np.sqrt(2)
 Psi = lambda T: m * T + b
-C_D = .1 # Coefficient of drag
+
 
 # Lambda
 lamb = lambda rho_f: rho_f * rho_o / (rho_f / N_f + rho_o / N_o) ** 2
@@ -196,14 +245,18 @@ F = lambda rho_f, rho_o, T: c_F * rho_f * rho_o * sigma * Psi(T) * lamb(rho_f) /
 
 # Initial conditions
 # Solid phase
-T = 100 # [K]
+T = 200 # [K]
 Rf0 = lambda x, y: 1 + x * 0
 Rw0 = lambda x, y: 1 + y * 0
-Ts0 = lambda x, y: T * np.exp(-((x - 200) ** 2 + (y - 200) ** 2) / 1000) + 300
+x_0, y_0 = (x_max - x_min) / 2, (y_max - y_min) / 2
+ss = 500 # 1000
+Ts0 = lambda x, y: T * np.exp(-((x - x_0) ** 2 + (y - y_0) ** 2) / ss) + 300
 # Gas phase
-U0 = lambda x, y: 0 * x + 1
-V0 = lambda x, y: 0 * y + 1
-Rg0 = lambda x, y: 1 + x * 0
+p = p_o + 1
+Rg0 = lambda x, y: rho_g + x * 0
+U0 = lambda x, y: 0 * x + 3
+V0 = lambda x, y: 0 * y + 0
+Th0 = lambda x, y: Tg * (p_o / p) ** (R_d / c_p) + x * 0 
 Ro0 = lambda x, y: rho_o + x * 0
 
 # Initial condition
@@ -213,9 +266,12 @@ Ts_0 = Ts0(X, Y)
 Rg_0 = Rg0(X, Y)
 U_0 = U0(X, Y) 
 V_0 = V0(X, Y)
+Th_0 = Th0(X, Y)
 Ro_0 = Ro0(X, Y)
-y0 = np.array([Rf_0, Rw_0, Ts_0, Rg_0, U_0 * Rg_0, V_0 * Rg_0, Ro_0])
+y0 = np.array([Rf_0, Rw_0, Ts_0, Rg_0, U_0 * Rg_0, V_0 * Rg_0, Th_0 * Rg_0, Ro_0])
 # y0 = np.array([Rf_0, Rw_0, Ts_0, Rg_0, U_0, V_0, Ro_0])
+
+print(np.min(Th_0), np.max(Th_0))
 
 # Array for approximations
 samples = 100
@@ -230,7 +286,8 @@ args = {
     'N_o': N_o,
     'c_pf': c_pf,
     'c_pw': c_pw,
-    'Q_rad': Q_rad,
+    'Q_rad_s': Q_rad_s,
+    'Q_rad_g': Q_rad_g,
     'h': h,
     'a_v': a_v,
     'Tg': Tg,
@@ -242,6 +299,10 @@ args = {
     'F': F,
     'nu_T': nu_T,
     'C_D': C_D,
+    'c_p': c_p,
+    'c_v': c_v,
+    'p_o': p_o,
+    'R_d': R_d,
 }
 
 # Solve Euler
@@ -276,7 +337,8 @@ Ts = yy[:, 2]
 Rg = yy[:, 3]
 U = yy[:, 4] / Rg
 V = yy[:, 5] / Rg
-Ro = yy[:, 6]
+Tg = yy[:, 6] / Rg
+Ro = yy[:, 7]
 
 # Save 
-np.savez('output/higrad-firetec.npz', Rf=Rf, Rw=Rw, Ts=Ts, Rg=Rg, U=U, V=V, Ro=Ro, X=X, Y=Y, t=t[::samples])
+np.savez('output/higrad-firetec.npz', Rf=Rf, Rw=Rw, Ts=Ts, Rg=Rg, U=U, V=V, Tg=Tg, Ro=Ro, X=X, Y=Y, t=t[::samples])

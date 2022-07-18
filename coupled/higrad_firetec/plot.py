@@ -1,7 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def generic_plot(x, y, Rf, Rw, Ts, Rg, U, V, Ro, axis_x='x', axis_y='y'):
+#def generic_plot(x, y, Rf, Rw, Ts, Rg, U, V, Ro, axis_x='x', axis_y='y'):
+def generic_plot(x, y, Rf, Rw, Ts, Rg, U, V, Tg, Ro, axis_x='x', axis_y='y'):
     # Plot setup
     fig, axs = plt.subplots(2, 3, sharex=True, sharey=True, figsize=(14, 7))
     # Set limits
@@ -15,7 +16,8 @@ def generic_plot(x, y, Rf, Rw, Ts, Rg, U, V, Ro, axis_x='x', axis_y='y'):
     # \rho_w
     rw = axs[0, 2].contourf(x, y, Rw, alpha=0.5, cmap=plt.cm.Blues)
     # u, v
-    uv = axs[1, 0].contourf(x, y, np.sqrt(U ** 2 + V** 2), alpha=0.5, cmap=plt.cm.jet)
+    #uv = axs[1, 0].contourf(x, y, np.sqrt(U ** 2 + V** 2), alpha=0.5, cmap=plt.cm.jet)
+    uv = axs[1, 0].contourf(x, y, Tg, alpha=0.5, cmap=plt.cm.jet)
     axs[1, 0].quiver(x, y, U, V)
     # \rho_g
     rg = axs[1, 1].contourf(x, y, Rg, alpha=0.5, cmap=plt.cm.Greens)
@@ -57,6 +59,7 @@ Rw = data['Rw']
 Ts = data['Ts']
 Rg = data['Rg']
 Ro = data['Ro']
+Tg = data['Tg']
 U = data['U']
 V = data['V']
 t = data['t']
@@ -66,6 +69,7 @@ t = data['t']
 # rw_min, rw_max = np.min(Rw), np.max(Rw)
 
 for n in range(0, len(t)):
-    generic_plot(X, Y, Rf[n], Rw[n], Ts[n], Rg[n], U[n], V[n], Ro[n], axis_x='x', axis_y='y')
+    #generic_plot(X, Y, Rf[n], Rw[n], Ts[n], Rg[n], U[n], V[n], Ro[n], axis_x='x', axis_y='y')
+    generic_plot(X, Y, Rf[n], Rw[n], Ts[n], Rg[n], U[n], V[n], Tg[n], Ro[n], axis_x='x', axis_y='y')
     # generic_plot(X, Y, Rf[n], Rw[n], Ts[n], Rg[n], U, V, Ro[n], axis_x='x', axis_y='y')
 

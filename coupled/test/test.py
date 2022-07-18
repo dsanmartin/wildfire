@@ -13,6 +13,9 @@ def Phi(t, A, **kwargs):
     d_1 = kwargs['d_1']
     d_2 = kwargs['d_2']
     d_3 = kwargs['d_3']
+    Ea = 20#1000
+    Rd = 1.9872#287
+    Ax = 1
 
 
     U, V, R, T = A
@@ -44,8 +47,9 @@ def Phi(t, A, **kwargs):
     s = S(R, T)
     Uf_[1:-1, 1:-1] = -c_1 * (U[1:-1, 1:-1] * Ux + V[1:-1, 1:-1] * Uy) + d_1 * (Uxx + Uyy) + fx[1:-1, 1:-1]
     Vf_[1:-1, 1:-1] = -c_1 * (U[1:-1, 1:-1] * Vx + V[1:-1, 1:-1] * Vy) + d_1 * (Vxx + Vyy) + fy[1:-1, 1:-1]
-    Rf_[1:-1, 1:-1] = -c_2 * (U[1:-1, 1:-1] * Rx + V[1:-1, 1:-1] * Ry) + d_2 * (Rxx + Ryy) - s[1:-1, 1:-1]
+    #Rf_[1:-1, 1:-1] = -c_2 * (U[1:-1, 1:-1] * Rx + V[1:-1, 1:-1] * Ry) + d_2 * (Rxx + Ryy) - s[1:-1, 1:-1]
     Tf_[1:-1, 1:-1] = -c_3 * (U[1:-1, 1:-1] * Tx + V[1:-1, 1:-1] * Ty) + d_3 * (Txx + Tyy) + s[1:-1, 1:-1]
+    Rf_[1:-1, 1:-1] = -R[1:-1, 1:-1] * Ax * np.exp(-Ea / T[1:-1, 1:-1] / Rd)
 
 
     return np.array([Uf_, Vf_, Rf_, Tf_])
@@ -55,8 +59,8 @@ def Phi(t, A, **kwargs):
 x_min, x_max = 0, 1
 y_min, y_max = 0, 1 
 z_min, z_max = 0, 1
-t_min, t_max = 0, 1
-Nx, Ny, Nz, Nt = 51, 51, 21, 501 # 
+t_min, t_max = 0, 2
+Nx, Ny, Nz, Nt = 101, 101, 21, 1001 # 
 # Arrays
 x = np.linspace(x_min, x_max, Nx)
 y = np.linspace(y_min, y_max, Ny)
@@ -70,8 +74,8 @@ X, Y = np.meshgrid(x, y)
 dx, dy, dz, dt = x[1] - x[0], y[1] - y[0], z[1] - z[0], t[1] - t[0]
 print(dx, dy, dz, dt)
 
-u0 = lambda x, y: x * 0 + 5
-v0 = lambda x, y: x * 0 - 5 
+u0 = lambda x, y: x * 0 + 1
+v0 = lambda x, y: x * 0 - 0 
 R0 = lambda x, y: x * 0 + 1
 A = .5
 s = .001

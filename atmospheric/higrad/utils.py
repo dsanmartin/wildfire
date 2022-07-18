@@ -9,9 +9,9 @@ s = 5000
 h = lambda x, y: A * np.exp(-((x - x0) ** 2 + (y - y0) ** 2) / s) #* 0
 hx = lambda x, y: -2 * (x - x0) * h(x, y) / s #* 0
 hy = lambda x, y: -2 * (y - y0) * h(x, y) / s #* 0
-# h = lambda x, y: 0 * x
-# hx = lambda x, y: 0 * x
-# hy = lambda x, y: 0 * y
+h = lambda x, y: 0 * x
+hx = lambda x, y: 0 * x
+hy = lambda x, y: 0 * y
 
 # Coordinate transformation
 # Jacobian
