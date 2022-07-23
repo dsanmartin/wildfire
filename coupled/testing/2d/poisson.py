@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.linalg as spla
 
+
 def fftfd_solver(x, y, f, p_top):
     Nx, Ny = x.shape[0], y.shape[0]
     dx, dy = x[1] - x[0], y[1] - y[0]

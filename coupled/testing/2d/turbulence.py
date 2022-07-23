@@ -1,7 +1,7 @@
 import numpy as np
 
 f_w1 = lambda z, u_tau, nu: 1 - np.exp(-z * u_tau / 25 / nu)
-f_w2 = lambda z, u_tau, nu: (1 - np.exp(-(z * u_tau / 25 / nu)) ** 3) ** 0.5
+f_w2 = lambda z, u_tau, nu: (1 - np.exp(-(z * u_tau / 25 / nu) ** 3)) ** 0.5
 
 def turbulence1(ux, uy, vx, vy, uxx, uyy, vxx, vyy, args):
     dx = args['dx']
@@ -83,7 +83,6 @@ def turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, args)
     Y = args['Y']
     nu = args['nu']
     Delta = (dx * dy) ** (1/2)
-    #z_plus = y * u / (v + 1e-16)
 
     # Turbulence
     S_ij_mod = (2 * (ux ** 2 + vy ** 2) + (uy + vx) ** 2) ** (1 / 2)
@@ -104,13 +103,13 @@ def turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, args)
     psi_x = 4 * (ux * uxx + vy * vyx) + 2 * (uy + vx) * (uyx + vxx) 
     psi_y = 4 * (ux * uxy + vy * vyy) + 2 * (uy + vx) * (uyy + vxy)
 
-    # u_tau
-    tau_w = 1
-    u_tau = (tau_w / rho) ** 0.5
-    fw = f_w2(Y, u_tau, nu)
+    # Wall damping function
+    #tau_w = 1e-1
+    #u_tau = (tau_w / rho) ** 0.5
+    tau_p = ((0.5 * nu * (uy + vx)[0]) ** 2) ** 0.5 
+    u_tau = (tau_p) ** 0.5
+    fw = f_w1(Y, u_tau, nu)
     l = C_s * Delta * fw
-    #l[0,:] = l[1,:] = 1e-1
-    #print(np.mean(fw[1]))
 
     sgs_x = -2 * l ** 2 * ( 
         1 / (2 * S_ij_mod) * psi_x * ux + 0.5 * psi_y * (uy + vx) +

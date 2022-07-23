@@ -32,13 +32,19 @@ x, y = np.meshgrid(x, y)
 
 modU = np.sqrt(U**2 + V**2)
 
-divU = (np.roll(U, -1, axis=1) - np.roll(U, 1, axis=1)) / (2 * dx) + (np.roll(V, -1, axis=2) - np.roll(V, 1, axis=2)) / (2 * dy)
+ux = (np.roll(U, -1, axis=2) - np.roll(U, 1, axis=2)) / (2 * dx)
+uy = (np.roll(U, -1, axis=1) - np.roll(U, 1, axis=1)) / (2 * dy)
+vx = (np.roll(V, -1, axis=2) - np.roll(V, 1, axis=2)) / (2 * dx)
+vy = (np.roll(V, -1, axis=1) - np.roll(V, 1, axis=1)) / (2 * dy)
+
+divU =  ux + vy
+curlU = vx - uy
 
 filenames = []
 
 # Plot
 for n in range(t.shape[0]):
-    fig, axes = plt.subplots(1, 3, sharey=True, figsize=(12, 4), dpi=200)
+    fig, axes = plt.subplots(1, 3, sharey=True, figsize=(9, 3))
     axes[0].set_ylabel(r'$z$')
     axes[0].set_ylim(y_min, y_max)
     for i in range(len(axes)):
@@ -55,26 +61,18 @@ for n in range(t.shape[0]):
     axes[0].title.set_text(r'$\mathbf{u}, ||\mathbf{u}||_2$')
     
     # Second plot T or P
-    if temperature:
-        levels = np.linspace(np.min(T), np.max(T), 31)
-        levels = None
-        # p2 = axes[1].contourf(x, y, T[n], cmap=plt.cm.jet, vmin=np.min(T), vmax=np.max(T))
-        p2 = axes[1].contourf(x, y, T[n], levels=levels, cmap=plt.cm.jet)#, vmin=np.min(T), vmax=np.max(T))
-        # plt.imshow(T[n], cmap=plt.cm.jet, origin="lower")
-        #plt.plot([500, 500], [0, 200], 'k-')
-        # plt.plot([(x_max + x_min) / 2, (x_max + x_min) / 2], [0, y_max], 'k-')
-        axes[1].title.set_text(r'$T$')
-    else:
-        p2 = axes[1].contourf(x, y, P[n], cmap=plt.cm.viridis)#, vmin=np.min(P), vmax=np.max(P))
-        axes[1].title.set_text(r'$p$')
+    # levels = np.linspace(np.min(divU), np.max(divU), 21)
+    p2 = axes[1].contourf(x, y, divU[n], cmap=plt.cm.viridis, vmin=np.min(divU), vmax=np.max(divU)) # levels=levels,
+    axes[1].title.set_text(r'$\nabla\cdot\mathbf{u}$')
     fig.colorbar(p2, ax=axes[1])
 
     # Third plot Y - div(u)
     # p3 = axes[2].contourf(x, y, divU[n], cmap=plt.cm.viridis)#, vmin=np.min(P), vmax=np.max(P))
     # axes[2].title.set_text(r'$\nabla\cdot\mathbf{u}$')
-    levels = np.linspace(np.min(Y), np.max(Y), 21)
-    p3 = axes[2].contourf(x, y, Y[n], levels=levels, cmap=plt.cm.Oranges, vmin=np.min(Y), vmax=np.max(Y))
-    plt.title(r'$Y$')
+    levels = np.linspace(np.min(curlU), np.max(curlU), 21)
+    p3 = axes[2].contourf(x, y, curlU[n], levels=levels, cmap=plt.cm.viridis, vmin=np.min(curlU), vmax=np.max(curlU))
+    axes[2].title.set_text(r'$\nabla\times\mathbf{u}$')
+
     fig.colorbar(p3, ax=axes[2])
     fig.tight_layout()
     name = f'{n}.png'

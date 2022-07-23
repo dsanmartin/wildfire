@@ -1,6 +1,8 @@
 import numpy as np
-from poisson import fftfd_solver
-from turbulence import turbulence
+from poisson import fft_solver
+from ibm import boundary
+
+f_sgs = lambda z, A: (1 - np.exp(-z / A)) ** (3 / 2) #1 - np.exp(-z / A)
 
 def grad_pressure(p, **kwargs):
     dx = kwargs['dx']
@@ -18,9 +20,9 @@ def grad_pressure(p, **kwargs):
 
     # Derivatives at boundary, dp/dy at y = y_min and y = y_max
     # Periodic on x, included before
-    # Forward/backward difference O(h^2)
-    py[0, 1:-1] = (-3 * p[0, 1:-1] + 4 * p[1, 1:-1] - p[2, 1:-1]) / (2 * dy) # Forward at y=y_min
-    py[-1, 1:-1] = (3 * p[-1, 1:-1] - 4 * p[-2, 1:-1] + p[-3, 1:-1]) / (2 * dy) # Backward at y=y_max
+    # Periodic on y, included before
+    # py[0, 1:-1] = (-3 * p[0, 1:-1] + 4 * p[1, 1:-1] - p[2, 1:-1]) / (2 * dy) # Forward at y=y_min
+    # py[-1, 1:-1] = (3 * p[-1, 1:-1] - 4 * p[-2, 1:-1] + p[-3, 1:-1]) / (2 * dy) # Backward at y=y_max
 
     return np.array([px, py])
 
@@ -68,9 +70,9 @@ def solve_pressure_iterative(u, v, p, n_iter=1000, **kwargs):
         # Boundary conditions
         # dp/dy = 0 at y = y_min
         # Forward difference O(h^2)
-        p[0] = (4 * p[1, :] - p[2, :]) / 3 
+        # p[0] = (4 * p[1, :] - p[2, :]) / 3 
         # p=p_y_max conditions at y = y_max
-        p[-1,:] = p_y_max 
+        # p[-1,:] = p_y_max 
         #p[-1] = (4 * p[-2, :] - p[-3, :]) / 3 
         
         # Bye Jacobi!
@@ -79,8 +81,7 @@ def solve_pressure_iterative(u, v, p, n_iter=1000, **kwargs):
 
     return p
 
-
-def solve_fftfd(u, v, **kwargs):
+def solve_fft(u, v, **kwargs):
     x = kwargs['x']
     y = kwargs['y']
     dt = kwargs['dt']
@@ -98,11 +99,57 @@ def solve_fftfd(u, v, **kwargs):
     ux = (u_ip1j - u_im1j) / (2 * dx)
     vy = (v_ijp1 - v_ijm1) / (2 * dy)
     f = rho / dt * (ux + vy)
+    f = np.vstack([f, f[0]])
     f = np.hstack([f, f[:,0].reshape(-1, 1)])
-    p = fftfd_solver(x, y, f, p_y_max)
+    p = fft_solver(x, y, f)
 
-    return p[:, :-1]
+    return p[:-1, :-1]
 
+def turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, args):
+    dx = args['dx']
+    dy = args['dy']
+    C_s = args['C_s'] 
+    Pr = args['Pr']
+    y = args['y']
+    Delta = (dx * dy) ** (1/2)
+    # z_plus = y * u / (v + 1e-16)
+
+    # Turbulence
+    S_ij_mod = (2 * (ux ** 2 + vy ** 2) + (uy + vx) ** 2) ** (1 / 2) + 1e-16
+    # Mixed derivatives
+    vxy = (np.roll(vx, -1, axis=0) - np.roll(vx, 1, axis=0)) / (2 * dy)
+    uyx = (np.roll(uy, -1, axis=1) - np.roll(uy, 1, axis=1)) / (2 * dx)
+    vyx = (np.roll(vy, -1, axis=1) - np.roll(vy, 1, axis=1)) / (2 * dx)
+    uxy = (np.roll(ux, -1, axis=0) - np.roll(ux, 1, axis=0)) / (2 * dy)
+    # Mixed derivatives at boundaries
+    # Periodic on x (nothing to do)
+    # On y
+    # vxy[0, :] = (-3 * vx[0, :] + 4 * vx[1, :] - vx[2, :]) / (2 * dy) # Forward at y=y_min
+    # vxy[-1, :] = (3 * vx[-1, :] - 4 * vx[-2, :] + vx[-3, :]) / (2 * dy) # Backward at y=y_max
+    # uxy[0, :] = (-3 * ux[0, :] + 4 * ux[1, :] - ux[2, :]) / (2 * dy) # Forward at y=y_min
+    # uxy[-1, :] = (3 * ux[-1, :] - 4 * ux[-2, :] + ux[-3, :]) / (2 * dy) # Backward at y=y_max
+
+    # 'psi_x' and 'psi_y'
+    psi_x = 4 * (ux * uxx + vy * vyx) + 2 * (uy + vx) * (uyx + vxx) 
+    psi_y = 4 * (ux * uxy + vy * vyy) + 2 * (uy + vx) * (uyy + vxy)
+
+    l = C_s * Delta #* f_sgs(z_plus, 25)
+
+    sgs_x = -2 * l ** 2 * ( 
+        1 / (2 * S_ij_mod) * psi_x * ux + 0.5 * psi_y * (uy + vx) +
+        S_ij_mod * (uxx + 0.5 * (vxy + uyy))
+    )
+    sgs_y = -2 * l ** 2 * (
+        1 / (2 * S_ij_mod) * psi_y * vy + 0.5 * psi_x * (vx + uy) +
+        S_ij_mod * (vyy + 0.5 * (uyx + vxx))
+    )
+
+    # SGS thermal energy
+    sgs_T = -l ** 2 / Pr * (
+        1 / (2 * S_ij_mod) * (psi_x * Tx + psi_y * Ty) + S_ij_mod * (Txx + Tyy)
+    )
+
+    return np.array([sgs_x, sgs_y, sgs_T])
 
 def Phi(t, C, **kwargs):
     dx = kwargs['dx']
@@ -120,10 +167,12 @@ def Phi(t, C, **kwargs):
     H_R = kwargs['H_R']
     h = kwargs['h']
     T_pc = kwargs['T_pc']
-    C_D = kwargs['C_D']
-    a_v = kwargs['a_v']
+    # Pr = kwargs['Pr']
+    # C_s = args['C_s'] 
     turb = kwargs['turb']
     conservative = kwargs['conservative']
+    cut_nodes = kwargs['cut_nodes']
+    dead_nodes = kwargs['dead_nodes']
 
     # Get variables
     u, v, T, Y = C
@@ -131,15 +180,8 @@ def Phi(t, C, **kwargs):
     # Forces
     F_x, F_y = F
     g_x, g_y = g
-    # Drag force
-    mod_U = np.sqrt(u ** 2 + v ** 2)
-    mask = Y > 0.5 # Valid only for solid fuel
-    F_d_x = rho * C_D * a_v * mod_U * u * mask
-    F_d_y = rho * C_D * a_v * mod_U * v * mask
-    
-    # All forces
-    F_x = F_x - g_x * (T - T_inf) / T - F_d_x 
-    F_y = F_y - g_y * (T - T_inf) / T - F_d_y
+    F_x = F_x #- g_x * (T - T_inf) / T 
+    F_y = F_y #- g_y * (T - T_inf) / T
 
     # New values (to do)
     Y_ = np.zeros_like(Y)
@@ -208,74 +250,39 @@ def Phi(t, C, **kwargs):
     sgs_x = sgs_y = sgs_T = 0
     if turb:
         sgs_x, sgs_y, sgs_T = turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, kwargs)
-    
+
     # Reaction Rate
-    K = A * np.exp(-E_A / (R * T))
-    K[T < T_pc] = 0 # Only for T > T_pc
+    # K = A * np.exp(-E_A / (R * T))
+    # K[T < T_pc] = 0 # Only for T > T_pc
 
-    # Temperature source term
-    S = rho * H_R * Y * K - h * (T - T_inf)
-
-    # # RHS Inside domain (non-conservative form - using upwind!)
-    # U_ = nu * (uxx + uyy) - (u_plu * uxm + u_min * uxp + v_plu * uym + v_min * uyp) + F_x - sgs_x
-    # V_ = nu * (vxx + vyy) - (u_plu * vxm + u_min * vxp + v_plu * vym + v_min * vyp) + F_y - sgs_y
-    # T_ = k * (Txx + Tyy) - (u * Tx  + v * Ty) + S - sgs_T
-
-    # # RHS Inside domain (conservative form - using central difference)
-    # # U_ = nu * (uxx + uyy) - (uux + uvy) + F_x - sgs_x
-    # # V_ = nu * (vxx + vyy) - (vux + vvy) + F_y - sgs_y
-    # # T_ = k * (Txx + Tyy) - (u * Tx + v * Ty) - sgs_T #+ S
+    # # Temperature source term
+    # S = rho * H_R * Y * K - h * (T - T_inf)
 
     if conservative: # RHS Inside domain (conservative form - using central difference)
         U_ = nu * (uxx + uyy) - (uux + uvy) + F_x - sgs_x
         V_ = nu * (vxx + vyy) - (vux + vvy) + F_y - sgs_y
-        T_ = k * (Txx + Tyy) - (u * Tx + v * Ty) + S - sgs_T
+        T_ = k * (Txx + Tyy) - (u * Tx + v * Ty) - sgs_T #+ S
     else: # RHS Inside domain (non-conservative form - using upwind!)
         U_ = nu * (uxx + uyy) - (u_plu * uxm + u_min * uxp + v_plu * uym + v_min * uyp) + F_x - sgs_x
         V_ = nu * (vxx + vyy) - (u_plu * vxm + u_min * vxp + v_plu * vym + v_min * vyp) + F_y - sgs_y
-        T_ = k * (Txx + Tyy) - (u * Tx  + v * Ty) + S - sgs_T 
+        T_ = k * (Txx + Tyy) - (u * Tx  + v * Ty) - sgs_T # + S
 
-    # Fuel
-    Y_ = -Y * K
-
+    # IBM
+    U_, V_ = boundary(U_, V_, cut_nodes, dead_nodes)
+    # U_[cut_nodes[0], cut_nodes[1]] = 0
+    # V_[cut_nodes[0], cut_nodes[1]] = 0
+    # U_[dead_nodes[0], dead_nodes[1]] = 0
+    # V_[dead_nodes[0], dead_nodes[1]] = 0
     # U_, V_, T_, Y_ = boundary_conditions(U_, V_, T_, Y_, kwargs)
 
     return np.array([U_, V_, T_, Y_])
 
-def boundary_conditions(u, v, T, Y, args):
-    T_inf = args['T_inf']
-    u0 = args['u0']
-    v0 = args['v0']
-    u_y_min = args['u_y_min']
-    u_y_max = args['u_y_max']
-
-    # Boundary conditions on x
-    # Nothing to do because Phi includes them
-    # Boundary conditions on y (Dirichlet)
-    # u = u_y_min, v = 0, dT/dy = 0 at y = y_min
-    # u = u_y_max, v = 0, T=T_inf at y = y_max
-    u_s, v_s, T_s, Y_s, u_n, v_n, T_n, Y_n = u_y_min, 0, T_inf, 0, u_y_max, 0, T_inf, 0
-    T_s = (4 * T[1, :] - T[2, :]) / 3 # Derivative using O(h^2)	
-    Y_s = (4 * Y[1, :] - Y[2, :]) / 3 # Derivative using O(h^2)
-
-    # Boundary on y
-    u[0] = u_s
-    u[-1] = u_n
-    v[0] = v_s
-    v[-1] = v_n
-    T[0] = T_s
-    T[-1] = T_n
-    Y[0] = Y_s
-    Y[-1] = Y_n
-
-    return np.array([u, v, T, Y])
-
 ### MAIN ###
 # Domain
-x_min, x_max = 0, 1000
-y_min, y_max = 0, 100
-t_min, t_max = 0, 10
-Nx, Ny, Nt = 32, 32, 1001 # Number of grid points
+x_min, x_max = 0, 2 * np.pi
+y_min, y_max = 0, 2 * np.pi #100
+t_min, t_max = 0, 20
+Nx, Ny, Nt = 128, 128, 2001 # Number of grid points
 samples = 100 # Samples to store data
 # Arrays
 x = np.linspace(x_min, x_max, Nx)
@@ -288,32 +295,22 @@ dx, dy, dt = x[1] - x[0], y[1] - y[0], t[1] - t[0]
 print(dx, dy, dt)
 
 # Parameters
-nu = 1e-1 #6 [m^2/s]  Viscosity
-rho = 1 # [kg/m^3] Density
-k = 1e-1 # 5 [m^2/s] Thermal diffusivity
-T_inf = 273 # [K] Temperature of the environment
-g = (0, 9.81) # [m/s^2] Gravity
-A = 1e9 # [s^{-1}] Pre-exponential factor (Asensio 2002)
-#A = 2.5e3 # [s^{-1}] Pre-exponential factor
-#A = 1e9
-#E_A = 83.68e3 # [J mol^{-1}] Activation energy (Asensio 2002)
-E_A = 20e3 # [cal mol^{-1}] (Asensio 2002)
-T_pc = 300 # [K] Temperature phase change
-H_R = 21.20e6 # [J/kg] Heat energy per unit of mass (wood) https://en.wikipedia.org/wiki/Heat_of_combustion
-H_R = 1e2
-#R = 8.314 # [J mol^{-1} K^{-1}] Universal gas constant
-R = 1.9872 # [cal mol^{-1} K^{-1}] Universal gas constant (Asensio 2002)
-h = 5e-2 # [W m^{-2}] Convection coefficient
-# Turbulence
-C_s = 0.173 # Smagorinsky constant
-Pr = .1 # Prandtl number
-Pr = nu / k # Prandtl number
-# Drag force by solid fuel
-C_D = 1 # [1] Drag coefficient "1 or near to unity according to works of Mell and Linn"
-a_v = 1 # [m] contact area per unit volume between the gas and the solid
-# Options
-turb = True
-conser = True
+nu = 1e-6
+rho = 1
+k = 1e-5
+T_inf = .5
+g = (0, 9.81)
+g = (0, 0)
+A = 2.5e3 #1e1
+E_A = 83.68e3 #2e1 #200 [cal mol^{-1}]
+T_pc = 500 # [K] Temperature phase change
+H_R = 21.20e6 * 0 # [J/kg] Heat energy per unit of mass (wood) https://en.wikipedia.org/wiki/Heat_of_combustion
+R = 8.314 # [J mol^{-1} K^{-1}] Universal gas constant
+h = 1e-1 # [W m^{-2}] Convection coefficient
+Pr = .1 #nu / k #.1
+C_s = 0.173
+turb = False
+conser = False
 
 # Force term
 fx = lambda x, y: x * 0
@@ -321,37 +318,47 @@ fy = lambda x, y: x * 0
 F = lambda x, y: (fx(x, y), fy(x, y))
 
 # Initial conditions
-u_r = 5
+u_r = 1
 y_r = 1
 alpha = 1 / 7
-u0 = lambda x, y: u_r * (y / y_r) ** alpha #+ np.random.rand(Xm.shape[0], Xm.shape[1]) * 2 # Power-law
+TU = u_r 
+x_0_u, y_0_u = (x_max - x_min) / 4, (y_max - y_min) / 2
+sx_u, sy_u = .25, .25
+# u0 = lambda x, y: u_r * (y / y_r) ** alpha #+ np.random.rand(Xm.shape[0], Xm.shape[1]) * 2 # Power-law
 # u0 = lambda x, y: - 1 / y_max / 5 *(y - y_min) * (y - y_max)#u_r * (1 - ((y - (y_max + y_min) / 2) / (y_max - y_min)) ** 2) # Parabolic
-# u0 = lambda x, y: x * 0 + u_r
-# u0 = lambda x, y: 3 * np.sin(np.pi * x) * np.cos(np.pi * y) 
-# u0 = lambda x, y: 2 + np.exp(-((x - 475) ** 2 / 100 + (y -100) ** 2 / 100)) - np.exp(-((x - 525) ** 2 / 100 + (y - 100) ** 2 / 100))
-v0 = lambda x, y: x * 0 #+ np.random.rand(Xm.shape[0], Xm.shape[1]) * 2
+u0 = lambda x, y:  TU * np.exp(-((x - x_0_u) ** 2 / sx_u + (y - y_0_u) ** 2 / sy_u)) + .1#+ u_r
+u0 = lambda x, y: (x + y) * 0 + 5
+v0 = lambda x, y: x * 0 
 # v0 = lambda x, y: 2 * np.cos(np.pi * x) * np.sin(np.pi * y) 
-Y0 = lambda x, y: x * 0 
-TA = 400 # 700 # 500
+Y0 = lambda x, y: x * 0
+TA = 1 # 700 # 500
 
 # Gaussian Temperature
-x_0_T, y_0_T = (x_max - x_min) / 4, 0#(y_max - y_min) / 4
-sx_T, sy_T = 500, 200
+x_0_T, y_0_T = (x_max - x_min) / 4, (y_max - y_min) / 2
+sx_T, sy_T = .25, .25
 T0 = lambda x, y: TA * np.exp(-((x - x_0_T) ** 2 / sx_T + (y - y_0_T) ** 2 / sy_T)) + T_inf
 
-# Gaussian fuel
-x_0_Y, y_0_Y = (x_max - x_min) / 2, 0 
-sx_Y, sy_Y = 100000, 50
-Y0 = lambda x, y: np.exp(-((x - x_0_Y) ** 2 / sx_Y + (y - y_0_Y) ** 2 / sy_Y))
 
 # import matplotlib.pyplot as plt
-# # plt.contourf(Xm, Ym, u0(Xm, Ym), cmap=plt.cm.jet)
-# # plt.colorbar()
-# # plt.show()
-# plt.contourf(Xm, Ym, Y0(Xm, Ym), cmap=plt.cm.Oranges)
+# plt.quiver(Xm, Ym, u0(Xm, Ym), v0(Xm, Ym))
+# plt.contourf(Xm, Ym, u0(Xm, Ym), cmap=plt.cm.jet, alpha=.75)
+# plt.colorbar()
+# plt.show()
+# plt.contourf(Xm, Ym, T0(Xm, Ym), cmap=plt.cm.Oranges)
 # plt.colorbar()
 # plt.show()
 # print(asdasd)
+
+# Cylinder
+x_0_C, y_0_C = (x_max - x_min) / 2, (y_max - y_min) / 2
+R = .25 # radius
+C = lambda x, y, r: (x - x_0_C) ** 2 + (y - y_0_C) ** 2 <= r ** 2 
+E = lambda x, y, r: (x - x_0_C) ** 2 + (y - y_0_C) ** 2 <= (r + (dx ** 2 + dy ** 2) ** 0.5) ** 2 
+CC = C(Xm, Ym, R)[:-1,:-1].astype(int)
+EE = E(Xm, Ym, R)[:-1,:-1].astype(int)
+# Boundary at cylinder ("cut" nodes)
+cut_nodes = np.where((EE - CC) == 1)
+dead_nodes = np.where(CC == 1)
 
 p0 = lambda x, y: x * 0 #+ 1e-12
 
@@ -360,36 +367,44 @@ V_0 = v0(Xm, Ym)
 T_0 = T0(Xm, Ym)
 Y_0 = Y0(Xm, Ym)
 
-# Removing last column
-U_0 = U_0[:, :-1]
-V_0 = V_0[:, :-1]
-Y_0 = Y_0[:, :-1]
-T_0 = T_0[:, :-1]
+# Removing last row and column
+U_0 = U_0[:-1, :-1]
+V_0 = V_0[:-1, :-1]
+Y_0 = Y_0[:-1, :-1]
+T_0 = T_0[:-1, :-1]
+
 
 # Boundary conditions
 u_y_min = U_0[0]
 u_y_max = U_0[-1]
 p_y_max = 0
 
+# Cylinder
+U_0, V_0 = boundary(U_0, V_0, cut_nodes, dead_nodes)
+
+# U_0[cut_nodes[0], cut_nodes[1]] = 0
+# V_0[cut_nodes[0], cut_nodes[1]] = 0
+# U_0[dead_nodes[0], dead_nodes[1]] = 0
+# V_0[dead_nodes[0], dead_nodes[1]] = 0
+
 y_0 = np.array([U_0, V_0, T_0, Y_0])
 p_0 = p0(Xm, Ym)
-p_0 = p_0[:, :-1]
+p_0 = p_0[:-1, :-1]
 
 # Array for approximations
-yy = np.zeros((Nt // samples + 1, y_0.shape[0], Ny, Nx - 1)) 
-P  = np.zeros((Nt // samples + 1, Ny, Nx - 1))
+yy = np.zeros((Nt // samples + 1, y_0.shape[0], Ny - 1, Nx - 1)) 
+P  = np.zeros((Nt // samples + 1, Ny - 1, Nx - 1))
 yy[0] = y_0
 P[0]  = p_0
 F_e = F(Xm, Ym)
 tmp = [0, 0]
-tmp[0] = F_e[0][:, :-1]
-tmp[1] = F_e[1][:, :-1]
+tmp[0] = F_e[0][:-1, :-1]
+tmp[1] = F_e[1][:-1, :-1]
 F_e = list(tmp)
 
 args = {
     'x': x,
-    'y': y,
-    'Y': Ym[:, :-1],
+    'y': y,#Ym[:-1, :-1],
     'dx': dx,
     'dy': dy,
     'dt': dt,
@@ -414,10 +429,10 @@ args = {
     'H_R': H_R,
     'R': R,
     'h': h,
-    'C_D': C_D,
-    'a_v': a_v,
     'turb': turb,
     'conservative': conser,
+    'cut_nodes': cut_nodes,
+    'dead_nodes': dead_nodes,
 }
 
 y_tmp = yy[0].copy()
@@ -438,8 +453,13 @@ if method == 'Euler': # Solve Euler
         # p_tmp = solve_pressure(Ut, Vt, **args).copy()
         grad_p = grad_pressure(p_tmp, **args)
         y_tmp[:2] = y_tmp[:2] - dt / rho * grad_p
-        Ut, Vt, Tt, Yt = y_tmp.copy()
-        y_tmp = boundary_conditions(Ut, Vt, Tt, Yt, args)
+        #Ut, Vt = y_tmp[:2].copy()
+        # IBM
+        y_tmp[0, cut_nodes[0], cut_nodes[1]] = 0
+        y_tmp[1, cut_nodes[0], cut_nodes[1]] = 0
+        y_tmp[0, dead_nodes[0], dead_nodes[1]] = 0
+        y_tmp[1, dead_nodes[0], dead_nodes[1]] = 0
+        # y_tmp = boundary_conditions(Ut, Vt, Tt, Yt, args)
         # Save samples
         if n % samples == 0:
             print("Step:", n)
@@ -458,15 +478,21 @@ elif method == 'RK4': # Solve RK4
         y_tmp = y_tmp + (1/6) * dt * (k1 + 2 * k2 + 2 * k3 + k4)
         Ut, Vt, Tt, Yt = y_tmp.copy()
         #p_tmp = solve_pressure_iterative(Ut, Vt, p_tmp, **args).copy()
-        p_tmp = solve_fftfd(Ut, Vt, **args).copy()
+        p_tmp = solve_fft(Ut, Vt, **args)
         grad_p = grad_pressure(p_tmp, **args)
         y_tmp[:2] = y_tmp[:2] - dt / rho * grad_p
         Ut, Vt = y_tmp[:2].copy()
-        U_, V_, T_, Y_ = boundary_conditions(Ut, Vt, Tt, Yt, args)
-        y_tmp[0] = U_
-        y_tmp[1] = V_
-        y_tmp[2] = T_
-        y_tmp[3] = Y_
+        # IBM
+        y_tmp[:2] = boundary(Ut, Vt, cut_nodes, dead_nodes)
+        # y_tmp[0, cut_nodes[0], cut_nodes[1]] = 0
+        # y_tmp[1, cut_nodes[0], cut_nodes[1]] = 0
+        # y_tmp[0, dead_nodes[0], dead_nodes[1]] = 0
+        # y_tmp[1, dead_nodes[0], dead_nodes[1]] = 0
+        # U_, V_, T_, Y_ = boundary_conditions(Ut, Vt, Tt, Yt, args)
+        # y_tmp[0] = U_
+        # y_tmp[1] = V_
+        # y_tmp[2] = T_
+        # y_tmp[3] = Y_
         if n % samples == 0:
             print("Step:", n)
             P[n // samples + 1] = p_tmp
@@ -489,16 +515,21 @@ V_ = np.zeros((Nt // samples + 1, Ny, Nx))
 T_ = np.zeros((Nt // samples + 1, Ny, Nx))
 Y_ = np.zeros((Nt // samples + 1, Ny, Nx))
 P_ = np.zeros((Nt // samples + 1, Ny, Nx))
-U_[:, :, :-1] = U
-U_[:, :, -1] = U[:, :, 0]
-V_[:, :, :-1] = V
-V_[:, :, -1] = V[:, :, 0]
-T_[:, :, :-1] = T
-T_[:, :, -1] = T[:, :, 0]
-Y_[:, :, :-1] = Y
-Y_[:, :, -1] = Y[:, :, 0]
-P_[:, :, :-1] = P
-P_[:, :, -1] = P[:, :, 0]
+U_[:, :-1,:-1] = U
+U_[:, :-1, -1] = U[:, :, 0]
+U_[:, -1,:] = U_[:, 0, :]
+V_[:, :-1,:-1] = V
+V_[:, :-1, -1] = V[:, :, 0]
+V_[:, -1,:] = V_[:, 0, :]
+T_[:, :-1,:-1] = T
+T_[:, :-1, -1] = T[:, :, 0]
+T_[:, -1,:] = T_[:, 0, :]
+Y_[:, :-1,:-1] = Y
+Y_[:, :-1, -1] = Y[:, :, 0]
+Y_[:, -1,:] = Y_[:, 0, :]
+P_[:, :-1,:-1] = P
+P_[:, :-1, -1] = P[:, :, 0]
+P_[:, -1,:] = P_[:, 0, :]
 U = U_.copy()
 V = V_.copy()
 T = T_.copy()
@@ -506,4 +537,8 @@ Y = Y_.copy()
 P = P_.copy()
 
 # Save approximation
-np.savez('../output/2d_uw_test.npz', U=U, V=V, T=T, Y=Y, P=P, x=x, y=y, t=t[::samples])
+turb_str = "turbulence"
+if not turb:
+    turb_str = "no_turbulence"
+
+np.savez('../output/2d_cylinder_test_{}.npz'.format(turb_str), U=U, V=V, T=T, Y=Y, P=P, x=x, y=y, t=t[::samples])

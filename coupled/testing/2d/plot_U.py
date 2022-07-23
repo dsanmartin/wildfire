@@ -38,6 +38,8 @@ vy = (np.roll(V, -1, axis=1) - np.roll(V, 1, axis=1)) / (2 * dy)
 divU =  ux + vy
 curlU = vx - uy
 
+streamplot = True
+
 # Plot
 for n in range(0, t.shape[0], 2):
     fig, axes = plt.subplots(1, 3, sharey=True, figsize=(9, 3))
@@ -48,11 +50,16 @@ for n in range(0, t.shape[0], 2):
         axes[i].set_xlim(x_min, x_max)
     # First plot u and ||u||
     levels = np.linspace(np.min(modU), np.max(modU), 11)
-    p1 = axes[0].contourf(x, y, modU[n], levels=levels, cmap=plt.cm.viridis, alpha=.75, vmin=np.min(modU), vmax=np.max(modU))
+    p1 = axes[0].contourf(x, y, modU[n], levels=levels, cmap=plt.cm.viridis, alpha=.65, vmin=np.min(modU), vmax=np.max(modU))
     #plt.plot([500, 200], [0, 200], 'k-')
     # plt.plot([(x_max + x_min) / 2, (x_max + x_min) / 2], [0, y_max], 'k-')
     fig.colorbar(p1, ax=axes[0])
-    axes[0].quiver(x[::2,::2], y[::2,::2], U[n,::2,::2], V[n,::2,::2])
+
+    if streamplot:
+        axes[0].streamplot(x, y, U[n], V[n], density=1.2, linewidth=.5, arrowsize=.3, color='k')
+    else:
+        axes[0].quiver(x[::2,::2], y[::2,::2], U[n,::2,::2], V[n,::2,::2])
+    
     # plt.streamplot(x, y, U[n], V[n])
     axes[0].title.set_text(r'$\mathbf{u}, ||\mathbf{u}||_2$')
     
