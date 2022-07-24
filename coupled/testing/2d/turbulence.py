@@ -126,3 +126,35 @@ def turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, args)
     )
 
     return np.array([sgs_x, sgs_y, sgs_T])
+
+def periodic_turbulence_2d(u, v, ux, uy, vx, vy, uxx, uyy, vxx, vyy, args):
+    dx = args['dx']
+    dy = args['dy']
+    C_s = args['C_s'] 
+    Delta = (dx * dy) ** (1/2)
+
+    # Turbulence
+    S_ij_mod = (2 * (ux ** 2 + vy ** 2) + (uy + vx) ** 2) ** (1 / 2) + 1e-16
+
+    # Mixed derivatives
+    vxy = (np.roll(vx, -1, axis=0) - np.roll(vx, 1, axis=0)) / (2 * dy)
+    uyx = (np.roll(uy, -1, axis=1) - np.roll(uy, 1, axis=1)) / (2 * dx)
+    vyx = (np.roll(vy, -1, axis=1) - np.roll(vy, 1, axis=1)) / (2 * dx)
+    uxy = (np.roll(ux, -1, axis=0) - np.roll(ux, 1, axis=0)) / (2 * dy)
+
+    # 'psi_x' and 'psi_y'
+    psi_x = 4 * (ux * uxx + vy * vyx) + 2 * (uy + vx) * (uyx + vxx) 
+    psi_y = 4 * (ux * uxy + vy * vyy) + 2 * (uy + vx) * (uyy + vxy)
+
+    l = C_s * Delta #* f_sgs(z_plus, 25)
+
+    sgs_x = -2 * l ** 2 * ( 
+        1 / (2 * S_ij_mod) * psi_x * ux + 0.5 * psi_y * (uy + vx) +
+        S_ij_mod * (uxx + 0.5 * (vxy + uyy))
+    )
+    sgs_y = -2 * l ** 2 * (
+        1 / (2 * S_ij_mod) * psi_y * vy + 0.5 * psi_x * (vx + uy) +
+        S_ij_mod * (vyy + 0.5 * (uyx + vxx))
+    )
+
+    return np.array([sgs_x, sgs_y])

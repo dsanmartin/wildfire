@@ -10,8 +10,6 @@ data = np.load(filename)
 
 U = data['U']
 V = data['V']
-T = data['T']
-Y = data['Y']
 P = data['P']
 x = data['x']
 y = data['y']
