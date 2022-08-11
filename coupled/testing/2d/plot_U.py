@@ -38,17 +38,19 @@ curlU = vx - uy
 
 streamplot = True
 
+axis = [r'$x$', r'$y$']
+
 # Plot
-for n in range(0, t.shape[0], 2):
-    fig, axes = plt.subplots(1, 3, sharey=True, figsize=(9, 3))
-    axes[0].set_ylabel(r'$z$')
+for n in range(0, t.shape[0], 1):
+    fig, axes = plt.subplots(1, 3, sharey=True, figsize=(9, 2))
+    axes[0].set_ylabel(axis[1])
     axes[0].set_ylim(y_min, y_max)
     for i in range(len(axes)):
-        axes[i].set_xlabel(r'$x$')
+        axes[i].set_xlabel(axis[0])
         axes[i].set_xlim(x_min, x_max)
     # First plot u and ||u||
     levels = np.linspace(np.min(modU), np.max(modU), 11)
-    p1 = axes[0].contourf(x, y, modU[n], levels=levels, cmap=plt.cm.viridis, alpha=.65, vmin=np.min(modU), vmax=np.max(modU))
+    p1 = axes[0].contourf(x, y, modU[n], cmap=plt.cm.viridis, alpha=.65, levels=levels, vmin=np.min(modU), vmax=np.max(modU))
     #plt.plot([500, 200], [0, 200], 'k-')
     # plt.plot([(x_max + x_min) / 2, (x_max + x_min) / 2], [0, y_max], 'k-')
     fig.colorbar(p1, ax=axes[0])
@@ -71,7 +73,7 @@ for n in range(0, t.shape[0], 2):
     # p3 = axes[2].contourf(x, y, divU[n], cmap=plt.cm.viridis)#, vmin=np.min(P), vmax=np.max(P))
     # axes[2].title.set_text(r'$\nabla\cdot\mathbf{u}$')
     levels = np.linspace(np.min(curlU), np.max(curlU), 21)
-    p3 = axes[2].contourf(x, y, curlU[n], levels=levels, cmap=plt.cm.viridis, vmin=np.min(curlU), vmax=np.max(curlU))
+    p3 = axes[2].contourf(x, y, curlU[n], cmap=plt.cm.viridis, levels=levels, vmin=np.min(curlU), vmax=np.max(curlU))
     axes[2].title.set_text(r'$\nabla\times\mathbf{u}$')
 
     fig.colorbar(p3, ax=axes[2])

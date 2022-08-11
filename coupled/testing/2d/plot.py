@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 
-temperature = True
+temperature = False
 filename = sys.argv[1]
 # data = np.load('output/3.npz')
 
@@ -74,14 +74,16 @@ for n in range(0, t.shape[0], 2):
         # plt.plot([(x_max + x_min) / 2, (x_max + x_min) / 2], [0, y_max], 'k-')
         axes[1].title.set_text(r'$T$')
     else:
-        p2 = axes[1].contourf(x, y, P[n], cmap=plt.cm.viridis)#, vmin=np.min(P), vmax=np.max(P))
+        # p2 = axes[1].contourf(x, y, P[n], cmap=plt.cm.viridis)#, vmin=np.min(P), vmax=np.max(P))
+        p2 = plt.imshow(P[n], cmap=plt.cm.viridis, origin="lower", extent=[x_min, x_max, y_min, y_max])
         axes[1].title.set_text(r'$p$')
     fig.colorbar(p2, ax=axes[1])
 
     # Third plot Y - div(u)
     # p3 = axes[2].contourf(x, y, divU[n], cmap=plt.cm.viridis)#, vmin=np.min(P), vmax=np.max(P))
     # axes[2].title.set_text(r'$\nabla\cdot\mathbf{u}$')
-    levels = np.linspace(np.min(Y), np.max(Y), 21)
+    # levels = np.linspace(np.min(Y), np.max(Y), 21)
+    levels = None
     p3 = axes[2].contourf(x, y, Y[n], levels=levels, cmap=plt.cm.Oranges, vmin=np.min(Y), vmax=np.max(Y))
     plt.title(r'$Y$')
     fig.colorbar(p3, ax=axes[2])

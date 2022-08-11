@@ -20,16 +20,16 @@ def boundary(u, v, cut_nodes, dead_nodes):
         Return velocity field with IBM 
     """
     # Get node's tags
-    cut_nodes_x, cut_nodes_y = cut_nodes
-    dead_nodes_x, dead_nodes_y = dead_nodes
+    cut_nodes_y, cut_nodes_x = cut_nodes
+    dead_nodes_y, dead_nodes_x = dead_nodes
     # Get vector field
     U = u.copy()
     V = v.copy()
     # Apply restrictions 
-    U[cut_nodes_x, cut_nodes_y] = 0
-    V[cut_nodes_x, cut_nodes_y] = 0
-    U[dead_nodes_x, dead_nodes_y] = 0
-    V[dead_nodes_x, dead_nodes_y] = 0
+    U[cut_nodes_y, cut_nodes_x] = 0
+    V[cut_nodes_y, cut_nodes_x] = 0
+    U[dead_nodes_y, dead_nodes_x] = 0
+    V[dead_nodes_y, dead_nodes_x] = 0
     # Return new vector field
     return np.array([U, V])
 
@@ -48,16 +48,102 @@ def cylinder(x, y, x_0, y_0, R, dx, dy):
     return cut_nodes, dead_nodes
 
 def cylinders(x, y, centers, radiuses, dx, dy):
-    cut_nodes = [[], []] 
-    dead_nodes = [[], []] 
+    cut_nodes = [np.array([]), np.array([])] 
+    dead_nodes = [np.array([]), np.array([])]  #[[], []] 
     for center, radius in zip(centers, radiuses):
         cut_nodes_, dead_nodes_ = cylinder(x, y, center[0], center[1], radius, dx, dy)
-        cut_nodes_x, cut_nodes_y = cut_nodes_[0], cut_nodes_[1]
-        dead_nodes_x, dead_nodes_y = dead_nodes_[0], dead_nodes_[1]
-        cut_nodes[0] = np.append(cut_nodes[0], cut_nodes_x)
-        cut_nodes[1] = np.append(cut_nodes[1], cut_nodes_y)
-        dead_nodes[0] = np.append(dead_nodes[0], dead_nodes_x,)
-        dead_nodes[1] = np.append(dead_nodes_y, dead_nodes[1])
+        cut_nodes_y, cut_nodes_x = cut_nodes_[0], cut_nodes_[1]
+        dead_nodes_y, dead_nodes_x = dead_nodes_[0], dead_nodes_[1]
+        cut_nodes[0] = np.append(cut_nodes[0], cut_nodes_y)
+        cut_nodes[1] = np.append(cut_nodes[1], cut_nodes_x)
+        dead_nodes[0] = np.append(dead_nodes[0], dead_nodes_y)
+        dead_nodes[1] = np.append(dead_nodes[1], dead_nodes_x)
     cut_nodes = np.array(cut_nodes, dtype=int)
     dead_nodes = np.array(dead_nodes, dtype=int)
     return cut_nodes, dead_nodes
+
+def topography(x, y, f, dx, dy):
+    """Topography for IBM
+
+    Parameters
+    ----------
+    x : array (Nx)
+        x-coordinates of the mesh
+    y : array (Ny)
+        y-coordinates of the mesh
+    f : array (Ny, Nx)
+        Topography
+    dx : float
+        x-spacing of the mesh
+    dy : float
+        y-spacing of the mesh
+
+    Returns
+    -------
+    array (Ny, Nx)
+        Topography with IBM
+    """
+    # Get topography
+    topo = y <= f(x)#, y)
+    # import matplotlib.pyplot as plt
+    # plt.imshow(topo.astype(int), origin='lower')
+    # plt.show()
+    # Get nodes next to topography
+    next_f = y <= f(x) + dy #(dx ** 2 + dy ** 2) ** 0.5
+    topo = topo.astype(int)
+    next_f = next_f.astype(int)
+    # Get dead and cut nodes
+    cut_nodes = np.where((next_f - topo) == 1)
+    dead_nodes = np.where(topo == 1)
+    # Return nodes
+    return cut_nodes, dead_nodes
+
+
+def building(x, y, x_lims, y_lims, dx, dy):
+    Nx, Ny = x.shape[0], y.shape[0]
+    x_min, x_max = x_lims
+    y_min, y_max = y_lims
+    # Rectangle
+    cut_nodes = np.zeros_like(x)
+    dead_nodes = np.zeros_like(x)
+    # idx_x = np.where((x >= x_min) & (x <= x_max))[0]
+    # idx_y = np.where((y >= y_min) & (y <= y_max))[0]
+    # print(idx_x, idx_y)
+    # cut_nodes[idx_y[0]:idx_y[1]+1, idx_x[0]:idx_x[1]+1] = 1
+    # cut_nodes[(y >= y_min) & (y <= y_max) & (x >= x_min) & (x <= x_max)] = 1
+    # dead_nodes[(y >= y_min) & (y <= y_max - dy) & (x >= x_min + dx) & (x <= x_max - dx)] = 1
+    # cut_nodes = np.where((cut_nodes - dead_nodes) == 1)
+    # dead_nodes = np.where(dead_nodes == 1)
+    rectangle = np.zeros_like(x)
+    rectangle[(y >= y_min) & (y <= y_max) & (x >= x_min) & (x <= x_max)] = 1
+    inside_rectangle = np.zeros_like(x)
+    inside_rectangle[(y >= y_min + dy) & (y <= y_max - dy) & (x >= x_min + dx) & (x <= x_max - dx)] = 1
+    # Circle
+    # Gen nodes next to circle
+    x_med = (x_min + x_max) / 2
+    R = x_max - x_med
+    circle = (x - x_med) ** 2 + (y - y_max) ** 2 <= R ** 2 
+    inside_circle = (x - x_med) ** 2 + (y - y_max) ** 2 <= (R - (dx ** 2 + dy ** 2) ** 0.5) ** 2
+    building = rectangle + circle
+    inside_building = inside_rectangle + inside_circle
+    building[building >= 1] = 1
+    building[building < 1] = 0
+    border = building - inside_building
+    border[border >= 1] = 1
+    border[border < 1] = 0
+    cut_nodes = np.where(border == 1)
+    dead_nodes = np.where(inside_building == 1)
+    # building[building < 1] = 2
+    # cut_nodes = np.where(building == 1)
+    #building[building < 1] = 0
+    # Get dead and cut nodes
+    # circle = circle.astype(int)
+    # building = circle + cut_nodes
+    # next_circle = next_circle.astype(int)
+    # cut_nodes = np.where((next_circle - circle) == 1)
+    # dead_nodes = np.where((circle == 1) & (circle ))
+    return cut_nodes, dead_nodes
+
+
+
+

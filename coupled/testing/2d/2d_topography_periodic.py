@@ -1,7 +1,7 @@
 import numpy as np
-from poisson import solve_fft, solve_iterative_periodic
+from poisson import solve_fft, solve_iterative
 from turbulence import periodic_turbulence_2d
-from ibm import cylinder, cylinders, boundary
+from ibm import topography, boundary
 
 def grad_pressure(p, **kwargs):
     dx = kwargs['dx']
@@ -108,7 +108,7 @@ x_min, x_max = 0, 2 * np.pi
 y_min, y_max = 0, 2 * np.pi #100
 t_min, t_max = 0, 20
 Nx, Ny, Nt = 128, 128, 1001 # Number of grid points
-samples = 10 # Samples to store data
+samples = 100 # Samples to store data
 # Arrays
 x = np.linspace(x_min, x_max, Nx)
 y = np.linspace(y_min, y_max, Ny)
@@ -126,21 +126,19 @@ C_s = 0.173
 turb = True
 conser = False
 
-# Cylinder
-x_0_C, y_0_C = (x_max - x_min) / 3, (y_max - y_min) / 2 # Base center
-R = .1 # radius
-centers = np.array([
-    [x_0_C, y_0_C + 1], 
-    [x_0_C, y_0_C], 
-    [x_0_C, y_0_C - 1],
-    [x_0_C + 1, y_0_C + .8], 
-    [x_0_C + 1, y_0_C + .01], 
-    [x_0_C + 1, y_0_C - .8],
-    [x_0_C + 2, y_0_C + 1.2], 
-    [x_0_C + 2, y_0_C - .01], 
-    [x_0_C + 2, y_0_C - 1.2]
-]) # All centers
-radiuses = np.ones(len(centers)) * R # All radiuses
+# Gaussian hill
+A = 1
+sx = 1 / 2
+sy = 1 / 2
+x_c= (x_max + x_min) / 2
+y_c = (y_max + y_min) / 2
+top = lambda x, y: A * np.exp(-((x - x_c) **2 / sx + (y - y_c) ** 2 / sy))
+topo = lambda x: top(x, y_c)
+
+# import matplotlib.pyplot as plt
+# plt.plot(x, topo(x))
+# plt.ylim([y_min, y_max])
+# plt.show()
 
 # Force term
 fx = lambda x, y: x * 0
@@ -152,9 +150,12 @@ u0 = lambda x, y: (x + y) * 0 + 1
 v0 = lambda x, y: x * 0 
 p0 = lambda x, y: x * 0 
 
-# IBM for cylinders
-# cut_nodes, dead_nodes = cylinders(Xm, Ym, centers, radiuses, dx, dy)
-cut_nodes, dead_nodes = cylinder(Xm, Ym, x_0_C, y_0_C, R, dx, dy)
+# IBM for topography
+cut_nodes, dead_nodes = topography(Xm, Ym, topo, dx, dy)
+
+# print(cut_nodes)
+# print(dead_nodes)
+
 
 # import matplotlib.pyplot as plt
 # A = np.zeros_like(Xm)
@@ -194,7 +195,6 @@ args = {
     'v0': V_0,
     'Nx': Nx,
     'Ny': Ny,
-    'R': R,
     'C_s': C_s,
     'turb': turb,
     'conservative': conser,
@@ -216,7 +216,7 @@ if method == 'Euler': # Solve Euler
         y_tmp = y_tmp + dt * Phi(t[n], y_tmp, **args)
         Ut, Vt = y_tmp.copy()
         # print(np.min(Tt), np.max(Tt))
-        p_tmp = solve_iterative_periodic(Ut, Vt, p_tmp, **args).copy()
+        p_tmp = solve_iterative(Ut, Vt, p_tmp, **args).copy()
         # p_tmp = solve_pressure(Ut, Vt, **args).copy()
         grad_p = grad_pressure(p_tmp, **args)
         y_tmp = y_tmp - dt / rho * grad_p
@@ -295,4 +295,4 @@ turb_str = "turbulence"
 if not turb:
     turb_str = "no_turbulence"
 
-np.savez('../output/2d_cylinder_trees_{}.npz'.format(turb_str), U=U, V=V, P=P, x=x, y=y, t=t[::samples])
+np.savez('../output/2d_topo_{}.npz'.format(turb_str), U=U, V=V, P=P, x=x, y=y, t=t[::samples])

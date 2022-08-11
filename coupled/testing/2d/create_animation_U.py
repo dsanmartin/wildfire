@@ -40,13 +40,15 @@ curlU = vx - uy
 
 filenames = []
 
+axis = [r'$x$', r'$y$']
+
 # Plot
 for n in range(t.shape[0]):
     fig, axes = plt.subplots(1, 3, sharey=True, figsize=(9, 3))
-    axes[0].set_ylabel(r'$z$')
+    axes[0].set_ylabel(axis[1])
     axes[0].set_ylim(y_min, y_max)
     for i in range(len(axes)):
-        axes[i].set_xlabel(r'$x$')
+        axes[i].set_xlabel(axis[0])
         axes[i].set_xlim(x_min, x_max)
     # First plot u and ||u||
     levels = np.linspace(np.min(modU), np.max(modU), 11)

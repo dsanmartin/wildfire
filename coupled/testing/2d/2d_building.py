@@ -1,10 +1,13 @@
 import numpy as np
-from poisson import solve_fftfd, solve_iterative
+from poisson import solve_fftfd, solve_iterative, solve_iterative_ibm, solve_gmres
 from turbulence import turbulence
+from ibm import building, cylinder
 
 def grad_pressure(p, **kwargs):
     dx = kwargs['dx']
     dy = kwargs['dy']
+    cut_nodes_y, cut_nodes_x = kwargs['cut_nodes']
+    dead_nodes = kwargs['dead_nodes']
     px, py = np.zeros_like(p), np.zeros_like(p)
     # Get nodes
     p_ip1j = np.roll(p, -1, axis=1) # p_{i+1, j}
@@ -20,7 +23,11 @@ def grad_pressure(p, **kwargs):
     # Periodic on x, included before
     # Forward/backward difference O(h^2)
     py[0, 1:-1] = (-3 * p[0, 1:-1] + 4 * p[1, 1:-1] - p[2, 1:-1]) / (2 * dy) # Forward at y=y_min
+    # py[cut_nodes_y, 1:-1] = (-3 * p[cut_nodes_y, 1:-1] + 4 * p[cut_nodes_y + 1, 1:-1] - p[cut_nodes_y + 2, 1:-1]) / (2 * dy) # Forward at y=y_min
     py[-1, 1:-1] = (3 * p[-1, 1:-1] - 4 * p[-2, 1:-1] + p[-3, 1:-1]) / (2 * dy) # Backward at y=y_max
+    # Dead nodes
+    # px[dead_nodes] = 0
+    # py[dead_nodes] = 0
 
     return np.array([px, py])
 
@@ -50,16 +57,16 @@ def Phi(t, C, **kwargs):
     
     # Forces
     F_x, F_y = F
-    g_x, g_y = g
-    # Drag force
-    mod_U = np.sqrt(u ** 2 + v ** 2)
-    mask = Y > 0.5 # Valid only for solid fuel
-    F_d_x = rho * C_D * a_v * mod_U * u * mask
-    F_d_y = rho * C_D * a_v * mod_U * v * mask
+    # g_x, g_y = g
+    # # Drag force
+    # mod_U = np.sqrt(u ** 2 + v ** 2)
+    # mask = Y > 0.5 # Valid only for solid fuel
+    # F_d_x = rho * C_D * a_v * mod_U * u * mask
+    # F_d_y = rho * C_D * a_v * mod_U * v * mask
     
-    # All forces
-    F_x = F_x - g_x * (T - T_inf) / T - F_d_x 
-    F_y = F_y - g_y * (T - T_inf) / T - F_d_y
+    # # All forces
+    # F_x = F_x - g_x * (T - T_inf) / T - F_d_x 
+    # F_y = F_y - g_y * (T - T_inf) / T - F_d_y
 
     # New values (to do)
     Y_ = np.zeros_like(Y)
@@ -110,12 +117,6 @@ def Phi(t, C, **kwargs):
     Tx = (T_ip1j - T_im1j) / (2 * dx)
     Ty = (T_ijp1 - T_ijm1) / (2 * dy)
 
-    # Conservative form for convection
-    uux = (u_ip1j ** 2 - u_im1j ** 2) / (2 * dx) # (u_{i+1, j}^2 - u_{i-1, j}^2) / (2 * dx)
-    uvy = (u_ijp1 * v_ijp1 - u_ijm1 * v_ijm1) / (2 * dx)
-    vux = (v_ip1j * u_ip1j - v_im1j * u_im1j) / (2 * dx)
-    vvy = (v_ijp1 ** 2 - v_im1j ** 2) / (2 * dy)
-
     # Second derivatives
     uxx = (u_ip1j - 2 * u_ij + u_im1j) / dx ** 2
     uyy = (u_ijp1 - 2 * u_ij + u_ijm1) / dy ** 2
@@ -130,11 +131,12 @@ def Phi(t, C, **kwargs):
         sgs_x, sgs_y, sgs_T = turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, kwargs)
     
     # Reaction Rate
-    K = A * np.exp(-E_A / (R * T))
-    K[T < T_pc] = 0 # Only for T > T_pc
+    # K = A * np.exp(-E_A / (R * T))
+    # K[T < T_pc] = 0 # Only for T > T_pc
 
-    # Temperature source term
-    S = rho * H_R * Y * K - h * (T - T_inf)
+    # # Temperature source term
+    # S = rho * H_R * Y * K - h * (T - T_inf)
+    S = 0
 
     # # RHS Inside domain (non-conservative form - using upwind!)
     # U_ = nu * (uxx + uyy) - (u_plu * uxm + u_min * uxp + v_plu * uym + v_min * uyp) + F_x - sgs_x
@@ -147,6 +149,12 @@ def Phi(t, C, **kwargs):
     # # T_ = k * (Txx + Tyy) - (u * Tx + v * Ty) - sgs_T #+ S
 
     if conservative: # RHS Inside domain (conservative form - using central difference)
+        # Conservative form for convection
+        uux = (u_ip1j ** 2 - u_im1j ** 2) / (2 * dx) # (u_{i+1, j}^2 - u_{i-1, j}^2) / (2 * dx)
+        uvy = (u_ijp1 * v_ijp1 - u_ijm1 * v_ijm1) / (2 * dx)
+        vux = (v_ip1j * u_ip1j - v_im1j * u_im1j) / (2 * dx)
+        vvy = (v_ijp1 ** 2 - v_im1j ** 2) / (2 * dy)
+        # PDE
         U_ = nu * (uxx + uyy) - (uux + uvy) + F_x - sgs_x
         V_ = nu * (vxx + vyy) - (vux + vvy) + F_y - sgs_y
         T_ = k * (Txx + Tyy) - (u * Tx + v * Ty) + S - sgs_T
@@ -156,7 +164,7 @@ def Phi(t, C, **kwargs):
         T_ = k * (Txx + Tyy) - (u * Tx  + v * Ty) + S - sgs_T 
 
     # Fuel
-    Y_ = -Y * K
+    Y_ = -Y #* K
 
     U_, V_, T_, Y_ = boundary_conditions(U_, V_, T_, Y_, kwargs)
 
@@ -168,6 +176,8 @@ def boundary_conditions(u, v, T, Y, args):
     v0 = args['v0']
     u_y_min = args['u_y_min']
     u_y_max = args['u_y_max']
+    cut_nodes = args['cut_nodes']
+    dead_nodes = args['dead_nodes']
 
     # Boundary conditions on x
     # Nothing to do because Phi includes them
@@ -175,40 +185,50 @@ def boundary_conditions(u, v, T, Y, args):
     # u = u_y_min, v = 0, dT/dy = 0 at y = y_min
     # u = u_y_max, v = 0, T=T_inf at y = y_max
     u_s, v_s, T_s, Y_s, u_n, v_n, T_n, Y_n = u_y_min, 0, T_inf, 0, u_y_max, 0, T_inf, 0
-    T_s = (4 * T[1, :] - T[2, :]) / 3 # Derivative using O(h^2)	
-    Y_s = (4 * Y[1, :] - Y[2, :]) / 3 # Derivative using O(h^2)
+
+    # 0 at dead nodes
+    u[dead_nodes] = 0
+    v[dead_nodes] = 0
+    T[dead_nodes] = 0
+    Y[dead_nodes] = 0
+
+    # BC at edge nodes
+    cut_nodes_y, cut_nodes_x = cut_nodes
+    T_s = (4 * T[cut_nodes_y + 1, :] - T[cut_nodes_y + 2, :]) / 3 # Derivative using O(h^2)	
+    Y_s = (4 * Y[cut_nodes_y + 1, :] - Y[cut_nodes_y + 2, :]) / 3 # Derivative using O(h^2)
 
     # Boundary on y
-    u[0] = u_s
+    u[cut_nodes] = u_s
+    v[cut_nodes] = v_s
+    # T[cut_nodes] = T_s
+    # Y[cut_nodes] = Y_s
+
     u[-1] = u_n
-    v[0] = v_s
     v[-1] = v_n
-    T[0] = T_s
     T[-1] = T_n
-    Y[0] = Y_s
     Y[-1] = Y_n
 
     return np.array([u, v, T, Y])
 
 ### MAIN ###
 # Domain
-x_min, x_max = 0, 1000
+x_min, x_max = 0, 3000
 y_min, y_max = 0, 100
-t_min, t_max = 0, 10
-Nx, Ny, Nt = 32, 32, 1001 # Number of grid points
-samples = 100 # Samples to store data
+t_min, t_max = 0, 50
+Nx, Ny, Nt = 128, 128, 3001 # Number of grid points
+samples = 10 # Samples to store data
 # Arrays
 x = np.linspace(x_min, x_max, Nx)
 y = np.linspace(y_min, y_max, Ny)
 t = np.linspace(t_min, t_max, Nt)
-# Meshgrid 
+# Meshgrid
 Xm, Ym = np.meshgrid(x[:-1], y)
 
 dx, dy, dt = x[1] - x[0], y[1] - y[0], t[1] - t[0]
 print(dx, dy, dt)
 
 # Parameters
-nu = 1e-1 #6 [m^2/s]  Viscosity
+nu = 1e-6 #6 [m^2/s]  Viscosity
 rho = 1 # [kg/m^3] Density
 k = 1e-1 # 5 [m^2/s] Thermal diffusivity
 T_inf = 273 # [K] Temperature of the environment
@@ -232,27 +252,34 @@ Pr = nu / k # Prandtl number
 C_D = 1 # [1] Drag coefficient "1 or near to unity according to works of Mell and Linn"
 a_v = 1 # [m] contact area per unit volume between the gas and the solid
 # Options
-turb = True
-conser = True
+turb = False
+conser = False
 
 # Force term
 fx = lambda x, y: x * 0
 fy = lambda x, y: x * 0 
 F = lambda x, y: (fx(x, y), fy(x, y))
 
+# Topography
+A = 50
+sx = 10000
+sy = 10000
+x_c = (x_max + x_min) / 2
+y_c = (y_max + y_min) / 2
+top = lambda x, y: A * np.exp(-((x - x_c) ** 2 / sx + (y - y_c) ** 2 / sy))
+topo = lambda x: top(x, y_c)
+
 # Initial conditions
 u_r = 5
-y_r = 1
+y_r = 1 
 alpha = 1 / 7
+# u0 = lambda x, y: u_r * ((y - topo(x)) / y_r) ** alpha #+ np.random.rand(Xm.shape[0], Xm.shape[1]) * 2 # Power-law
+# u0 = lambda x, y: u_r * ((y_max - topo(x)) / y_r) ** alpha #+ np.random.rand(Xm.shape[0], Xm.shape[1]) * 2 # Power-law
 u0 = lambda x, y: u_r * (y / y_r) ** alpha #+ np.random.rand(Xm.shape[0], Xm.shape[1]) * 2 # Power-law
-# u0 = lambda x, y: - 1 / y_max / 5 *(y - y_min) * (y - y_max)#u_r * (1 - ((y - (y_max + y_min) / 2) / (y_max - y_min)) ** 2) # Parabolic
-# u0 = lambda x, y: x * 0 + u_r
-# u0 = lambda x, y: 3 * np.sin(np.pi * x) * np.cos(np.pi * y) 
-# u0 = lambda x, y: 2 + np.exp(-((x - 475) ** 2 / 100 + (y -100) ** 2 / 100)) - np.exp(-((x - 525) ** 2 / 100 + (y - 100) ** 2 / 100))
 v0 = lambda x, y: x * 0 #+ np.random.rand(Xm.shape[0], Xm.shape[1]) * 2
 # v0 = lambda x, y: 2 * np.cos(np.pi * x) * np.sin(np.pi * y) 
 Y0 = lambda x, y: x * 0 
-TA = 400 # 700 # 500
+TA = 0 #400 # 700 # 500
 
 # Gaussian Temperature
 x_0_T, y_0_T = (x_max - x_min) / 4, 0#(y_max - y_min) / 4
@@ -264,10 +291,51 @@ x_0_Y, y_0_Y = (x_max - x_min) / 2, 0
 sx_Y, sy_Y = 100000, 50
 Y0 = lambda x, y: np.exp(-((x - x_0_Y) ** 2 / sx_Y + (y - y_0_Y) ** 2 / sy_Y))
 
+# Building
+x_lims = [x[Nx // 2 - 5], x[Nx // 2 + 5]] #[(x_max + x_min) / 2 - dx * 10, (x_max + x_min) / 2 + dx * 10]
+y_lims = [0, y[Ny // 4]]
+cut_nodes, dead_nodes = building(Xm, Ym, x_lims, y_lims, dx, dy)
+
+import matplotlib.pyplot as plt
+A = np.zeros_like(Xm)
+B = np.zeros_like(Xm)
+A[cut_nodes] = 200
+B[dead_nodes] = 1
+plt.contourf(Xm, Ym, A)
+# plt.contourf(Xm, Ym, B)
+
+# plt.imshow(A, origin='lower', extent=[x_min, x_max-dx, y_min, y_max])
+plt.colorbar()
+# plt.contourf(Xm, Ym, cut_nodes, origin='lower')
+plt.show()
+print(asd)
+
+
+# Domo
+# x_0 = (x_max + x_min) / 2
+# y_0 = 0
+# R = 20
+# cut_nodes, dead_nodes = cylinder(Xm, Ym, x_0, y_0, R, dx, dy)
+
+# print(cut_nodes)
+
 # import matplotlib.pyplot as plt
-# # plt.contourf(Xm, Ym, u0(Xm, Ym), cmap=plt.cm.jet)
-# # plt.colorbar()
-# # plt.show()
+# A = np.zeros_like(Xm)
+# A[cut_nodes] = 1
+# A[dead_nodes] = 1
+# plt.contourf(Xm, Ym, A)
+# # plt.imshow(A, origin='lower', extent=[x_min, x_max-dx, y_min, y_max])
+# plt.colorbar()
+# # plt.contourf(Xm, Ym, cut_nodes, origin='lower')
+# plt.show()
+# # print(asd)
+
+# import matplotlib.pyplot as plt
+# plt.scatter(cut_nodes[1], cut_nodes[0], c='r')
+# plt.show()
+# plt.contourf(Xm, Ym, u0(Xm, Ym), cmap=plt.cm.jet)
+# plt.colorbar()
+# plt.show()
 # plt.contourf(Xm, Ym, Y0(Xm, Ym), cmap=plt.cm.Oranges)
 # plt.colorbar()
 # plt.show()
@@ -277,23 +345,28 @@ p0 = lambda x, y: x * 0 #+ 1e-12
 
 U_0 = u0(Xm, Ym)
 V_0 = v0(Xm, Ym)
-T_0 = T0(Xm, Ym)
-Y_0 = Y0(Xm, Ym)
+T_0 = T0(Xm, Ym) * 0
+Y_0 = Y0(Xm, Ym) * 0
 
-# Removing last column
-# U_0 = U_0[:, :-1]
-# V_0 = V_0[:, :-1]
-# Y_0 = Y_0[:, :-1]
-# T_0 = T_0[:, :-1]
+# Dead nodes
+U_0[dead_nodes] = 0
+V_0[dead_nodes] = 0
+T_0[dead_nodes] = 0
+Y_0[dead_nodes] = 0
+
+# import matplotlib.pyplot as plt
+# plt.contourf(Xm, Ym, U_0, cmap=plt.cm.jet)
+# plt.colorbar()
+# plt.show()
+# print(asd)
 
 # Boundary conditions
-u_y_min = U_0[0]
+u_y_min = U_0[cut_nodes]
 u_y_max = U_0[-1]
-p_y_max = 0
+p_y_max = 1
 
 y_0 = np.array([U_0, V_0, T_0, Y_0])
 p_0 = p0(Xm, Ym)
-# p_0 = p_0[:, :-1]
 
 # Array for approximations
 yy = np.zeros((Nt // samples + 1, y_0.shape[0], Ny, Nx - 1)) 
@@ -301,15 +374,11 @@ P  = np.zeros((Nt // samples + 1, Ny, Nx - 1))
 yy[0] = y_0
 P[0]  = p_0
 F_e = F(Xm, Ym)
-# tmp = [0, 0]
-# tmp[0] = F_e[0][:, :-1]
-# tmp[1] = F_e[1][:, :-1]
-# F_e = list(tmp)
 
 args = {
     'x': x,
     'y': y,
-    'Y': Ym,#[:, :-1],
+    'Y': Ym,
     'dx': dx,
     'dy': dy,
     'dt': dt,
@@ -338,6 +407,8 @@ args = {
     'a_v': a_v,
     'turb': turb,
     'conservative': conser,
+    'cut_nodes': cut_nodes,
+    'dead_nodes': dead_nodes,
 }
 
 y_tmp = yy[0].copy()
@@ -379,10 +450,13 @@ elif method == 'RK4': # Solve RK4
         Ut, Vt, Tt, Yt = y_tmp.copy()
         #p_tmp = solve_pressure_iterative(Ut, Vt, p_tmp, **args).copy()
         p_tmp = solve_fftfd(Ut, Vt, **args).copy()
+        # p_tmp = solve_iterative_ibm(Ut, Vt, p_tmp, **args).copy()
+        # p_tmp = solve_gmres(Ut, Vt, p_tmp, **args)
         grad_p = grad_pressure(p_tmp, **args)
         y_tmp[:2] = y_tmp[:2] - dt / rho * grad_p
         Ut, Vt = y_tmp[:2].copy()
         U_, V_, T_, Y_ = boundary_conditions(Ut, Vt, Tt, Yt, args)
+        # U_, V_, T_, Y_ = y_tmp.copy()
         y_tmp[0] = U_
         y_tmp[1] = V_
         y_tmp[2] = T_
@@ -391,7 +465,7 @@ elif method == 'RK4': # Solve RK4
             print("Step:", n)
             P[n // samples + 1] = p_tmp
             yy[n // samples + 1] = y_tmp
-            Ut, Vt, Wt = y_tmp[:3]
+            Ut, Vt = y_tmp[:2]
             print("CFL", dt * (np.max(np.abs(Ut)) / dx + np.max(np.abs(Vt)) / dy))
 
 # Last approximation
@@ -431,4 +505,4 @@ if not turb:
     turb_str = "no_turbulence"
 
 # Save approximation
-np.savez('../output/2d_uw_{}.npz'.format(turb_str), U=U, V=V, T=T, Y=Y, P=P, x=x, y=y, t=t[::samples])
+np.savez('../output/2d_building_{}.npz'.format(turb_str), U=U, V=V, T=T, Y=Y, P=P, x=x, y=y, t=t[::samples])
