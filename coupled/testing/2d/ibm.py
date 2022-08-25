@@ -99,21 +99,11 @@ def topography(x, y, f, dx, dy):
     return cut_nodes, dead_nodes
 
 
-def building(x, y, x_lims, y_lims, dx, dy):
+def building_circle(x, y, x_lims, y_lims, dx, dy):
     Nx, Ny = x.shape[0], y.shape[0]
     x_min, x_max = x_lims
     y_min, y_max = y_lims
     # Rectangle
-    cut_nodes = np.zeros_like(x)
-    dead_nodes = np.zeros_like(x)
-    # idx_x = np.where((x >= x_min) & (x <= x_max))[0]
-    # idx_y = np.where((y >= y_min) & (y <= y_max))[0]
-    # print(idx_x, idx_y)
-    # cut_nodes[idx_y[0]:idx_y[1]+1, idx_x[0]:idx_x[1]+1] = 1
-    # cut_nodes[(y >= y_min) & (y <= y_max) & (x >= x_min) & (x <= x_max)] = 1
-    # dead_nodes[(y >= y_min) & (y <= y_max - dy) & (x >= x_min + dx) & (x <= x_max - dx)] = 1
-    # cut_nodes = np.where((cut_nodes - dead_nodes) == 1)
-    # dead_nodes = np.where(dead_nodes == 1)
     rectangle = np.zeros_like(x)
     rectangle[(y >= y_min) & (y <= y_max) & (x >= x_min) & (x <= x_max)] = 1
     inside_rectangle = np.zeros_like(x)
@@ -133,17 +123,32 @@ def building(x, y, x_lims, y_lims, dx, dy):
     border[border < 1] = 0
     cut_nodes = np.where(border == 1)
     dead_nodes = np.where(inside_building == 1)
-    # building[building < 1] = 2
-    # cut_nodes = np.where(building == 1)
-    #building[building < 1] = 0
-    # Get dead and cut nodes
-    # circle = circle.astype(int)
-    # building = circle + cut_nodes
-    # next_circle = next_circle.astype(int)
-    # cut_nodes = np.where((next_circle - circle) == 1)
-    # dead_nodes = np.where((circle == 1) & (circle ))
     return cut_nodes, dead_nodes
 
-
+def building(x, y, x_lims, y_lims, dx, dy):
+    Nx, Ny = x.shape[0], y.shape[0]
+    x_min, x_max = x_lims
+    y_min, y_max = y_lims
+    # Rectangle
+    rectangle = np.zeros_like(x)
+    rectangle[(y >= y_min) & (y <= y_max) & (x >= x_min) & (x <= x_max)] = 1
+    inside_rectangle = np.zeros_like(x)
+    inside_rectangle[(y >= y_min ) & (y <= (y_max - dy)) & (x >= (x_min + dx)) & (x <= (x_max - dx))] = 1
+    # Circle
+    # Gen nodes next to circle
+    x_med = (x_min + x_max) / 2
+    R = x_max - x_med
+    ellipse = ((x - x_med) / R) ** 2 + ((y - y_max) / (3 * dy)) ** 2 <= 1
+    inside_ellipse = ((x - x_med) / (R - dx)) ** 2 + ((y - y_max) / (3 * dy - dy)) ** 2 <= 1
+    building = rectangle + ellipse * 0
+    inside_building = inside_rectangle + inside_ellipse * 0
+    building[building >= 1] = 1
+    building[building < 1] = 0
+    border = building - inside_building
+    border[border >= 1] = 1
+    border[border < 1] = 0
+    cut_nodes = np.where(border == 1)
+    dead_nodes = np.where(inside_building == 1)
+    return cut_nodes, dead_nodes
 
 

@@ -48,14 +48,23 @@ def solve_fftfd(u, v, **kwargs):
 
     # div(u) 
     # Get nodes for u and v
+    u_ij = u.copy()
     u_ip1j = np.roll(u, -1, axis=1) # u_{i+1, j}
     u_im1j = np.roll(u, 1, axis=1) # u_{i-1, j}
+    v_ij = v.copy()
     v_ijp1 = np.roll(v, -1, axis=0) # v_{i, j+1}
     v_ijm1 = np.roll(v, 1, axis=0) # v_{i, j-1}
 
     # First derivative using central difference O(h^2)
     ux = (u_ip1j - u_im1j) / (2 * dx)
-    vy = (v_ijp1 - v_ijm1) / (2 * dy)
+    # vy = (v_ijp1 - v_ijm1) / (2 * dy) # Central difference
+    # vy = (v_ijp1 - v_ij) / dy # Forward difference
+    vy = (v_ij - v_ijm1) / dy # Backward difference
+    # Fixed boundary conditions on y
+    # vy[0, 1:-1] = (-3 * v[0, 1:-1] + 4 * v[1, 1:-1] - v[2, 1:-1]) / (2 * dy) # Forward at y=y_min
+    # vy[-1, 1:-1] = (3 * v[-1, 1:-1] - 4 * v[-2, 1:-1] + v[-3, 1:-1]) / (2 * dy) # Backward at y=y_max
+    vy[0] = (-3 * v[0] + 4 * v[1] - v[2]) / (2 * dy) # Forward at y=y_min
+    vy[-1] = (3 * v[-1] - 4 * v[-2] + v[-3]) / (2 * dy) # Backward at y=y_max
     f = rho / dt * (ux + vy)
     f = np.hstack([f, f[:,0].reshape(-1, 1)])
     p = fftfd(x, y, f, p_y_max)

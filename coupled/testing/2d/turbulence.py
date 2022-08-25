@@ -80,7 +80,7 @@ def turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, args)
     C_s = args['C_s'] 
     Pr = args['Pr']
     rho = args['rho']
-    Y = args['Y']
+    Ym = args['Ym']
     nu = args['nu']
     Delta = (dx * dy) ** (1/2)
 
@@ -108,21 +108,21 @@ def turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, args)
     #u_tau = (tau_w / rho) ** 0.5
     tau_p = ((0.5 * nu * (uy + vx)[0]) ** 2) ** 0.5 
     u_tau = (tau_p) ** 0.5
-    fw = f_w1(Y, u_tau, nu)
-    l = C_s * Delta * fw
+    fw = f_w1(Ym, u_tau, nu)
+    l = C_s * Delta #* fw
 
     sgs_x = -2 * l ** 2 * ( 
-        1 / (2 * S_ij_mod) * psi_x * ux + 0.5 * psi_y * (uy + vx) +
+        1 / (2 * S_ij_mod) * (psi_x * ux + 0.5 * psi_y * (uy + vx)) +
         S_ij_mod * (uxx + 0.5 * (vxy + uyy))
     )
     sgs_y = -2 * l ** 2 * (
-        1 / (2 * S_ij_mod) * psi_y * vy + 0.5 * psi_x * (vx + uy) +
+        1 / (2 * S_ij_mod) * (psi_y * vy + 0.5 * psi_x * (vx + uy)) +
         S_ij_mod * (vyy + 0.5 * (uyx + vxx))
     )
 
     # SGS thermal energy
     sgs_T = -l ** 2 / Pr * (
-        1 / (2 * S_ij_mod) * (psi_x * Tx + psi_y * Ty) + S_ij_mod * (Txx + Tyy)
+        1 / (2 * S_ij_mod) * (psi_x * Tx  + psi_y * Ty) + S_ij_mod * (Txx + Tyy)
     )
 
     return np.array([sgs_x, sgs_y, sgs_T])
