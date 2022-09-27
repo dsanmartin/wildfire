@@ -109,7 +109,7 @@ def turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, args)
     tau_p = ((0.5 * nu * (uy + vx)[0]) ** 2) ** 0.5 
     u_tau = (tau_p) ** 0.5
     fw = f_w1(Ym, u_tau, nu)
-    l = C_s * Delta #* fw
+    l = C_s * Delta * fw
 
     sgs_x = -2 * l ** 2 * ( 
         1 / (2 * S_ij_mod) * (psi_x * ux + 0.5 * psi_y * (uy + vx)) +

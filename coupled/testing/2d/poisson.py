@@ -1,4 +1,3 @@
-from tkinter import W
 import numpy as np
 import scipy.linalg as spla
 import scipy.sparse.linalg as spspla

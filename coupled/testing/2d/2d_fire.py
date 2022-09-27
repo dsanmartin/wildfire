@@ -1,13 +1,16 @@
+from ast import arg
 import numpy as np
-from poisson import solve_fftfd, solve_iterative, solve_iterative_ibm, solve_gmres
+from poisson import solve_fftfd#, solve_iterative, solve_iterative_ibm, solve_gmres
 from turbulence import turbulence
 from ibm import building, cylinder
+from utils import create_2d_gaussian#multivariate_normal
+import time
 
 def grad_pressure(p, **kwargs):
     dx = kwargs['dx']
     dy = kwargs['dy']
-    cut_nodes_y, cut_nodes_x = kwargs['cut_nodes']
-    dead_nodes = kwargs['dead_nodes']
+    # cut_nodes_y, cut_nodes_x = kwargs['cut_nodes']
+    # dead_nodes = kwargs['dead_nodes']
     px, py = np.zeros_like(p), np.zeros_like(p)
     # Get nodes
     p_ij = np.copy(p)
@@ -68,14 +71,15 @@ def Phi(t, C, **kwargs):
     F_x, F_y = F
     g_x, g_y = g
     # # Drag force
-    # mod_U = np.sqrt(u ** 2 + v ** 2)
+    mod_U = np.sqrt(u ** 2 + v ** 2)
     # mask = Y > 0.5 # Valid only for solid fuel
-    # F_d_x = rho * C_D * a_v * mod_U * u * mask
-    # F_d_y = rho * C_D * a_v * mod_U * v * mask
+    mask = Ym <= dx
+    F_d_x = rho * C_D * a_v * mod_U * u * mask
+    F_d_y = rho * C_D * a_v * mod_U * v * mask
     
     # All forces
-    F_x = F_x - g_x * (T - T_inf) / T #- F_d_x 
-    F_y = F_y - g_y * (T - T_inf) / T #- F_d_y
+    F_x = F_x - g_x * (T - T_inf) / T#_inf - F_d_x 
+    F_y = F_y - g_y * (T - T_inf) / T#_inf - F_d_y
 
     # New values (to do)
     Y_ = np.zeros_like(Y)
@@ -98,7 +102,7 @@ def Phi(t, C, **kwargs):
     T_ip1j = np.roll(T, -1, axis=1) # T_{i+1, j}
     T_im1j = np.roll(T, 1, axis=1) # T_{i-1, j}
     T_ijp1 = np.roll(T, -1, axis=0) # T_{i, j+1}
-    T_ijm1 = np.roll(T, 1, axis=1) # T_{i, j-1}
+    T_ijm1 = np.roll(T, 1, axis=0) # T_{i, j-1}
     
     # Mask for upwind
     u_plu = np.maximum(u_ij, 0)
@@ -140,10 +144,10 @@ def Phi(t, C, **kwargs):
     uy = (u_ijp1 - u_ijm1) / (2 * dy)
     vx = (v_ip1j - v_im1j) / (2 * dx)
     vy = (v_ijp1 - v_ijm1) / (2 * dy)
-    # Tx = (T_ip1j - T_im1j) / (2 * dx)
-    # Ty = (T_ijp1 - T_ijm1) / (2 * dy)
-    Tx = (T_ij - T_im1j) / dx
-    Ty = (T_ij - T_ijm1) / dy
+    Tx = (T_ip1j - T_im1j) / (2 * dx)
+    Ty = (T_ijp1 - T_ijm1) / (2 * dy)
+    # Tx = (T_ij - T_im1j) / dx
+    # Ty = (T_ij - T_ijm1) / dy
     # Tx = (T_ip1j - T_ij) / dx
     # Ty = (T_ijp1 - T_ij) / dy 
     # Fixed boundary nodes
@@ -174,6 +178,8 @@ def Phi(t, C, **kwargs):
     uyy[-1, :] = (2 * u_ij[-1, :] - 5 * u_ij[-2, :] + 4 * u_ij[-3, :] - u_ij[-4, :]) / dy ** 2 # Backward at y=y_max
     vyy[0, :] = (2 * v_ij[0, :] - 5 * v_ij[1, :] + 4 * v_ij[2, :] - v_ij[3, :]) / dy ** 2 # Forward at y=y_min
     vyy[-1, :] = (2 * v_ij[-1, :] - 5 * v_ij[-2, :] + 4 * v_ij[-3, :] - v_ij[-4, :]) / dy ** 2 # Backward at y=y_max
+    Tyy[0, :] = (2 * T_ij[0, :] - 5 * T_ij[1, :] + 4 * T_ij[2, :] - T_ij[3, :]) / dy ** 2 # Forward at y=y_min
+    Tyy[-1, :] = (2 * T_ij[-1, :] - 5 * T_ij[-2, :] + 4 * T_ij[-3, :] - T_ij[-4, :]) / dy ** 2 # Backward at y=y_max
 
     # Turbulence
     sgs_x = sgs_y = sgs_T = 0
@@ -211,7 +217,7 @@ def Phi(t, C, **kwargs):
     else: # RHS Inside domain (non-conservative form - using upwind!)
         U_ = nu * (uxx + uyy) - (u_plu * uxm + u_min * uxp + v_plu * uym + v_min * uyp) + F_x - sgs_x
         V_ = nu * (vxx + vyy) - (u_plu * vxm + u_min * vxp + v_plu * vym + v_min * vyp) + F_y - sgs_y
-        T_ = k * (Txx + Tyy) - (u * Tx  + v * Ty) + S - sgs_T * 0
+        T_ = k * (Txx + Tyy) - (u * Tx  + v * Ty) + S - sgs_T 
 
     # Fuel
     Y_ = -Y #* K
@@ -228,26 +234,32 @@ def boundary_conditions(u, v, T, Y, args):
     u_y_max = args['u_y_max']
     v_y_min = args['v_y_min']
     v_y_max = args['v_y_max']
-    cut_nodes = args['cut_nodes']
-    dead_nodes = args['dead_nodes']
+    T_y_min = args['T_y_min']
+    # cut_nodes = args['cut_nodes']
+    # dead_nodes = args['dead_nodes']
 
     # Boundary conditions on x
     # Nothing to do because Phi includes them
     # Boundary conditions on y (Dirichlet)
     # u = u_y_min, v = 0, dT/dy = 0 at y = y_min
     # u = u_y_max, v = 0, T=T_inf at y = y_max
-    u_s, v_s, T_s, Y_s, u_n, v_n, T_n, Y_n = u_y_min, v_y_min, T_inf, 0, u_y_max, v_y_max, T_inf, 0
+    u_s, v_s, T_s, Y_s, u_n, v_n, T_n, Y_n = u_y_min, v_y_min, T_y_min, 0, u_y_max, v_y_max, T_inf, 0
 
     # Boundary conditions on y=y_min
     u[0] = u_s
     v[0] = v_s
-    T[0] = (4 * T[1, :] - T[2, :]) / 3 # Derivative using O(h^2)	
+    # T[0] = (4 * T[1, :] - T[2, :]) / 3 # Derivative using O(h^2)	
+    T[0] = T_s
 
     # Boundary conditions on y=y_max
     u[-1] = u_n#[-2]
     v[-1] = v_n#[-2]
-    T[-1] = T_n#[-2]#T_n
+    # T[-1] = T_n#[-2]#T_n
+    T[-1] = (4 * T[-2, :] - T[-3, :]) / 3
     Y[-1] = Y_n
+
+    # T[(Ym <= 1) & (Xm >= 200) & (Xm <= 300)] = TA + T_inf
+    T[(Ym <= y_shift) & (Xm <= x_med + x_shift) & (Xm >= x_med - x_shift)] = TA + T_inf
 
     # 0 at dead nodes
     # u[dead_nodes] = 0
@@ -270,10 +282,14 @@ def boundary_conditions(u, v, T, Y, args):
 
 ### MAIN ###
 # Domain
-x_min, x_max = 0, 1000
-y_min, y_max = 0, 200
-t_min, t_max = 0, 5
-Nx, Ny, Nt = 128, 64, 1001 # Number of grid points
+# x_min, x_max = 0, 1000
+# y_min, y_max = 0, 200
+x_min, x_max = 0, 200
+y_min, y_max = 0, 400
+t_min, t_max = 0, 60
+Nx, Ny, Nt = 256, 256, 10001 # Number of grid points
+# Nx, Ny, Nt = 64, 128, 10001 # Number of grid points
+# Nx, Ny, Nt = 64, 128, 2001
 samples = 100 # Samples to store data
 # Arrays
 x = np.linspace(x_min, x_max, Nx)
@@ -286,11 +302,11 @@ dx, dy, dt = x[1] - x[0], y[1] - y[0], t[1] - t[0]
 print(dx, dy, dt)
 
 # Parameters
-nu = 1e-6 # [m^2/s]  Viscosity
+nu = 1e-2# [m^2/s]  Viscosity
 rho = 1 # [kg/m^3] Density
-k = 1e-5 # 5 [m^2/s] Thermal diffusivity
-T_inf = 273 # [K] Temperature of the environment
-g = (0, 9.81 * 1) # [m/s^2] Gravity
+k = 1e-1#1e-2 # 5 [m^2/s] Thermal diffusivity
+T_inf = 293 # [K] Temperature of the environment
+g = (0, -9.81 * 1) # [m/s^2] Gravity
 A = 1e9 # [s^{-1}] Pre-exponential factor (Asensio 2002)
 #A = 2.5e3 # [s^{-1}] Pre-exponential factor
 #A = 1e9
@@ -304,8 +320,9 @@ R = 1.9872 # [cal mol^{-1} K^{-1}] Universal gas constant (Asensio 2002)
 h = 5e-2 # [W m^{-2}] Convection coefficient
 # Turbulence
 C_s = 0.173 # Smagorinsky constant
-Pr = 1e1 # Prandtl number
+# Pr = 1e1 # Prandtl number
 Pr = nu / k # Prandtl number
+# Pr = 1#000
 # Drag force by solid fuel
 C_D = 1 # [1] Drag coefficient "1 or near to unity according to works of Mell and Linn"
 a_v = 1 # [m] contact area per unit volume between the gas and the solid
@@ -328,38 +345,83 @@ top = lambda x, y: A * np.exp(-((x - x_c) ** 2 / sx + (y - y_c) ** 2 / sy))
 topo = lambda x: top(x, y_c)
 
 # Initial conditions
-u_r = 2
-y_r = 1 
-alpha = 1 / 7
-# u0 = lambda x, y: u_r * ((y - topo(x)) / y_r) ** alpha #+ np.random.rand(Xm.shape[0], Xm.shape[1]) * 2 # Power-law
-# u0 = lambda x, y: u_r * ((y_max - topo(x)) / y_r) ** alpha #+ np.random.rand(Xm.shape[0], Xm.shape[1]) * 2 # Power-law
-u0 = lambda x, y: u_r * (y / y_r) ** alpha #+ np.random.rand(Xm.shape[0], Xm.shape[1]) * 2 # Power-law
-#u0 = lambda x, y: u_r + x * y * 0
-v0 = lambda x, y: x * 0 #+ np.random.rand(Xm.shape[0], Xm.shape[1]) * 2
-# v0 = lambda x, y: 2 * np.cos(np.pi * x) * np.sin(np.pi * y) 
+# # Power-law
+# u_r = 5
+# y_r = 1 
+# alpha = 1 / 7
+# # u0 = lambda x, y: u_r * ((y - topo(x)) / y_r) ** alpha #+ np.random.rand(Xm.shape[0], Xm.shape[1]) * 2 # Power-law
+# # u0 = lambda x, y: u_r * ((y_max - topo(x)) / y_r) ** alpha #+ np.random.rand(Xm.shape[0], Xm.shape[1]) * 2 # Power-law
+# u0 = lambda x, y: u_r * (y / y_r) ** alpha #+ np.random.rand(Xm.shape[0], Xm.shape[1]) * .5 # Power-law
+
+# Log wind profile
+z0 = 0.05
+d = 0.1
+ua = .1
+kk = 0.41
+u0 = lambda x, y: np.piecewise(y, [y > 0, y == 0], [lambda y: ua / kk * np.log((y - d) / z0), lambda y: y * 0])
+
+u0 = lambda x, y: x * y * 0
+v0 = lambda x, y: x * y * 0 
+# y_0_v = (y_max + y_min) / 2
+# sy_v = 10000
+# VV = -1e0
+# v0 = lambda x, y: VV * y * (y_max - y) * np.exp(- (y - y_0_v) ** 2 / sy_v)
+# # v0 = lambda x, y: x * 0 - 1
+
 Y0 = lambda x, y: x * 0 
 TA = 100 # 700 # 500
+# TA = 800
 
 # Gaussian Temperature
-x_0_T, y_0_T = (x_max - x_min) / 4, 0#(y_max - y_min) / 4
-sx_T, sy_T = 400, 6000
-T0 = lambda x, y: TA * np.exp(-((x - x_0_T) ** 2 / sx_T + (y - y_0_T) ** 2 / sy_T)) + T_inf
+x_0_T, y_0_T = (x_max + x_min) / 2, 0#(y_max - y_min) / 2
+sx_T, sy_T = 30, 10
+# sx_T, sy_T = 100, 20#17, 45
+# Sigma = np.array([[sx_T, 1], [1, sy_T]])
+T0 = lambda x, y: 0 * TA * np.exp(-((x - x_0_T) ** 2 / (2 * sx_T ** 2) + (y - y_0_T) ** 2 / (2 * sy_T ** 2))) / (2 * np.pi * sx_T * sy_T) + T_inf
+# # T0 = lambda x, y: multivariate_normal(np.array([x, y]), np.array([x_0_T, y_0_T]), Sigma)
+# # T0 = lambda x, y: (((x - x_0_T) ** 2 / sx_T ** 2 + (y - y_0_T) / sy_T ** 2) <= 1) #* TA + T_inf
+# #AA = np.pi / 20
+# #T0 = lambda x, y: T_inf + TA * ((((x - x_0_T) * np.cos(AA) + (y - y_0_T) * np.sin(AA)) ** 2 / sx_T ** 2 + ((x - x_0_T) * np.sin(AA) - (y - y_0_T) * np.cos(AA)) ** 2 / sy_T ** 2 ) <= 1)
+# Sigma = np.array([
+#     [sx_T, 400],
+#     [400, sy_T]
+#     # [1, .8],
+#     # [.8, 1]
+# ]) 
+# mu = np.array([x_0_T, y_0_T])
+# G2D = create_2d_gaussian(mu, Sigma)
+# T0 = lambda x, y: 2e3 * TA * G2D(x, y) + T_inf
+# x_0_T, y_0_T = (x_max - x_min) / 4, (y_max - y_min) / 2 * 0
+# A = 400
+# B = 273
+# theta = np.pi / 180 * 25 # * 0
+# sx, sy = 50, 30
+# Ta = np.cos(theta) ** 2 / (2 * sx ** 2) + np.sin(theta) ** 2 / (2 * sy ** 2)
+# Tb = np.sin(2 * theta) / (4 * sx ** 2) - np.sin(2 * theta) / (4 * sy ** 2)
+# Tc = np.sin(theta) ** 2 / (2 * sx ** 2) + np.cos(theta) ** 2 / (2 * sy ** 2)
+# theta *= 0
+# Tb *= 0
+# Ta, Tc = 1/2000, 1/10
+# T1 = lambda x, y: TA * np.exp(-(Ta * (x - x_0_T) ** 2 + 2 * Tb * (x - x_0_T) * (y - y_0_T) + Tc * (y - y_0_T) ** 2))
+# T0 = lambda x, y: T1(x, y) + T1(x-50, y)*0 + T_inf  #+ np.random.rand(Xm.shape[0], Xm.shape[1]) * 20
+
+
+# Temperature square
+# T_0 = np.zeros_like(Xm) + T_inf
+# T_0[(Ym <= 10) & (Xm >= 200) & (Xm <= 300)] = TA + T_inf
+
+# print(np.max(G2D(Xm, Ym)))
+
 
 # Gaussian fuel
 x_0_Y, y_0_Y = (x_max - x_min) / 2, 0 
 sx_Y, sy_Y = 100000, 50
 Y0 = lambda x, y: np.exp(-((x - x_0_Y) ** 2 / sx_Y + (y - y_0_Y) ** 2 / sy_Y))
 
-# Building
-x_lims = [x[Nx // 2 - 6], x[Nx // 2 + 6]] #[(x_max + x_min) / 2 - dx * 10, (x_max + x_min) / 2 + dx * 10]
-y_lims = [0, y[Ny // 4]]
-cut_nodes, dead_nodes = building(Xm, Ym, x_lims, y_lims, dx, dy)
-
-# import matplotlib.pyplot as plt
-# plt.contourf(Xm, Ym, T0(Xm, Ym), cmap=plt.cm.jet)
-# plt.colorbar()
-# plt.show()
-# print(asdasd)
+# # Building
+# x_lims = [x[Nx // 2 - 6], x[Nx // 2 + 6]] #[(x_max + x_min) / 2 - dx * 10, (x_max + x_min) / 2 + dx * 10]
+# y_lims = [0, y[Ny // 4]]
+# cut_nodes, dead_nodes = building(Xm, Ym, x_lims, y_lims, dx, dy)
 
 p0 = lambda x, y: x * 0 #+ 1e-12
 
@@ -368,10 +430,18 @@ V_0 = v0(Xm, Ym)
 T_0 = T0(Xm, Ym) 
 Y_0 = Y0(Xm, Ym) 
 
+
+# T_0[0, (x [:-1]<= 300) & (x[:-1] >= 200)] = TA + T_inf
+x_med = (x_max + x_min) / 2
+x_shift = 10
+y_shift = 5
+# T_0[(y <= 5), (x[:-1] <= x_med + shift) & (x[:-1] >= x_med - shift)] = TA + T_inf
+T_0[(Ym <= y_shift) & (Xm <= x_med + x_shift) & (Xm >= x_med - x_shift)] = TA + T_inf
+
 # Dead nodes
 # U_0[dead_nodes] = 0
 # V_0[dead_nodes] = 0
-# T_0[dead_nodes] = 0
+# T_0[dead_nodes] = 0import matplotlib.pyplot as plt
 # Y_0[dead_nodes] = 0
 
 # import matplotlib.pyplot as plt
@@ -380,12 +450,18 @@ Y_0 = Y0(Xm, Ym)
 # plt.show()
 # print(asd)
 
+L = ((x_max - x_min) * (y_max - y_min)) ** 0.5
+Re = np.mean(U_0[:,0] * L / nu)
+print("Reynolds: %.2f" %  Re)
+print("Prandtl: %.2f" % Pr)
+
 # Boundary conditions
 u_y_min = U_0[0]#U_0[cut_nodes]
 u_y_max = U_0[-1]
 v_y_min = V_0[0]
 v_y_max = 0
 p_y_max = 0
+T_y_min = T_0[0]
 
 y_0 = np.array([U_0, V_0, T_0, Y_0])
 p_0 = p0(Xm, Ym)
@@ -432,17 +508,19 @@ args = {
     'a_v': a_v,
     'turb': turb,
     'conservative': conser,
-    'cut_nodes': cut_nodes,
-    'dead_nodes': dead_nodes,
+    # 'cut_nodes': cut_nodes,
+    # 'dead_nodes': dead_nodes,
     'Ym': Ym,
+    'T_y_min': T_y_min,
 }
 
 y_tmp = yy[0].copy()
 p_tmp = P[0].copy()
-
 met = 1
 time_method = ['Euler', 'RK4']
 method = time_method[met]
+
+start = time.time()
 
 if method == 'Euler': # Solve Euler
     for n in range(Nt - 1):
@@ -497,6 +575,12 @@ elif method == 'RK4': # Solve RK4
 
 # Last approximation
 yy[-1] = y_tmp
+
+end = time.time()
+hours, rem = divmod(end-start, 3600)
+minutes, seconds = divmod(rem, 60)
+
+print("Elapsed time: {:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes), seconds))
 
 # Get velocities
 U = yy[:, 0]

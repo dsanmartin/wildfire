@@ -39,6 +39,9 @@ filenames = []
 # Plot
 for n in range(t.shape[0]):
     fig, axes = plt.subplots(1, 3, sharey=True, figsize=(12, 4), dpi=200)
+    fig.suptitle('Simulation at ' + r'$t=%.1f$' % (t[n]))
+    fig.subplots_adjust(top=0.88)
+
     axes[0].set_ylabel(r'$z$')
     axes[0].set_ylim(y_min, y_max)
     for i in range(len(axes)):
@@ -82,9 +85,9 @@ for n in range(t.shape[0]):
     filenames.append(name)
     plt.savefig(name)
     plt.close()
+    # plt.show()
 
 # build gif
-# with imageio.get_writer(gif_name, mode='I') as writer:
 if video:
     io_writer = imageio.get_writer(video_name)
 else:
