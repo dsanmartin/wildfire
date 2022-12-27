@@ -43,7 +43,7 @@ def solve_fftfd(u, v, **kwargs):
     dy = kwargs['dy']
     dt = kwargs['dt']
     rho = kwargs['rho']
-    p_y_max = kwargs['p_y_max']
+    p_y_min, p_y_max = kwargs['bc_on_y'][4]
 
     # div(u) 
     # Get nodes for u and v

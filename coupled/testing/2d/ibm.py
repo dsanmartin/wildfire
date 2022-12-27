@@ -62,7 +62,7 @@ def cylinders(x, y, centers, radiuses, dx, dy):
     dead_nodes = np.array(dead_nodes, dtype=int)
     return cut_nodes, dead_nodes
 
-def topography(x, y, f, dx, dy):
+def topography_nodes(x, y, f, dx, dy):
     """Topography for IBM
 
     Parameters
@@ -83,18 +83,28 @@ def topography(x, y, f, dx, dy):
     array (Ny, Nx)
         Topography with IBM
     """
+    # Old
+    # # Get topography
+    # topo = y <= f(x)#, y)
+    # # import matplotlib.pyplot as plt
+    # # plt.imshow(topo.astype(int), origin='lower')
+    # # plt.show()
+    # # Get nodes next to topography
+    # next_f = y <= f(x) + dy #(dx ** 2 + dy ** 2) ** 0.5
+    # topo = topo.astype(int)
+    # next_f = next_f.astype(int)
+    # # Get dead and cut nodes
+    # cut_nodes = np.where((next_f - topo) == 1)
+    # dead_nodes = np.where(topo == 1)
+    # New
     # Get topography
-    topo = y <= f(x)#, y)
-    # import matplotlib.pyplot as plt
-    # plt.imshow(topo.astype(int), origin='lower')
-    # plt.show()
-    # Get nodes next to topography
-    next_f = y <= f(x) + dy #(dx ** 2 + dy ** 2) ** 0.5
-    topo = topo.astype(int)
-    next_f = next_f.astype(int)
+    topo = (y >= f(x) - dy) & (y <= f(x))    
+    dead = y < f(x) - dy
+    #topo = topo.astype(int)
+    #dead = dead.ast
     # Get dead and cut nodes
-    cut_nodes = np.where((next_f - topo) == 1)
-    dead_nodes = np.where(topo == 1)
+    cut_nodes = np.where(topo == True)
+    dead_nodes = np.where(dead == True)
     # Return nodes
     return cut_nodes, dead_nodes
 
