@@ -7,18 +7,18 @@ This file address the parameters of the model
 # Domain [x_min, x_max] \times [y_min, y_max] \times [t_min, t_max] 
 x_min, x_max = 0, 1000 # Distance interval [x_min, x_max] in m 
 y_min, y_max = 0, 200 # Distance interval [y_min, y_max] in m
-t_min, t_max = 0, 30 # Time interval [t_min, t_max] in s
+t_min, t_max = 0, 120 # Time interval [t_min, t_max] in s
 
 # Numerical grid
-#Nx, Ny, Nt = 256, 256, 5001 # Number of nodes per axis
-Nx, Ny, Nt = 128, 128, 501 # Number of nodes per axis
+# Nx, Ny, Nt = 256, 256, 10001 # Number of nodes per axis
+Nx, Ny, Nt = 128, 128, 2001 # Number of nodes per axis
 NT = 100 # Number of samples to store. The simulation stores each NT timesteps
 
 # Time numerical method
 method = 'RK4'
 
 # Temperaure equation parameters
-k = 1e1 # Thermal diffusivity in m^2 s^{-1}
+k = 1e1 # Thermal diffusivity in m^2 s^{-1} # 1e1
 
 # Fluid equations parameters
 nu = 1e1 # Viscosity in m^2 s^{-1} 
@@ -41,7 +41,7 @@ B = 100 # Activation energy and universal gas constant. E_A = 20e3 cal mol^{-1} 
 h = 5e-2 # Convection coefficient in W m^{-2}
 Y_thr = .85 # Threshold to add solid fuel force
 Y_f = 0.1 # Extra parameter to control the fuel consumption
-TA = T_inf + 500 # Temperature of fire in K
+TA = T_inf + 300 # Temperature of fire in K 500
 
 ### Initial conditions parameters ###
 # Log wind profile

@@ -2,7 +2,7 @@ import sys
 import numpy as np
 from parameters import *
 from utils import domain
-from initial_conditions import u0, v0, T0, Y0, p0, F, ST
+from initial_conditions import u0, v0, T0, Y0, p0, F, plate
 from topography import topo
 from ibm import topography_nodes
 from pde import solve_pde
@@ -13,10 +13,6 @@ def main():
     sim_name = None
     if len(sys.argv) > 1:
         sim_name = sys.argv[1]
-        
-    # Create simulation folder
-    save_path = create_simulation_folder(sim_name)
-
     # Create arrays
     x, y, t, Xm, Ym, dx, dy, dt = domain(x_min, x_max, y_min, y_max, t_min, t_max, Nx, Ny, Nt)
     # Evaluate initial conditions 
@@ -75,7 +71,9 @@ def main():
         # 'mask': mask,
         'method': method, # IVP solver 
         'TA': TA,
-        'ST': ST,
+        # 'T_mask': None, 
+        'T_mask': plate(Xm, Ym),
+        # 'ST': ST,
         # 'u_y_min': u_y_min,
         # 'u_y_max': u_y_max,
         # 'v_y_min': v_y_min,
@@ -89,8 +87,12 @@ def main():
     # Solve PDE
     z_0 = np.array([U_0, V_0, T_0, Y_0])
     u, v, T, Y, p  = solve_pde(z_0, params)
+    # Create simulation folder
+    save_path = create_simulation_folder(sim_name)
     # Save outputs
     save_approximation(save_path, x, y, t[::NT], u, v, T, Y, p)
+    # Remove Soruce temperature!
+    # del args['ST']
     save_parameters(save_path, params)
 
 if __name__ == "__main__":

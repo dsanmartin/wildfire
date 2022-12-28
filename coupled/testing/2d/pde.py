@@ -61,9 +61,6 @@ def Phi(t, C, params):
     a_v = params['a_v']
     Y_thr = params['Y_thr']
     Y_f = params['Y_f']
-    Xm = params['Xm']
-    Ym = params['Ym']
-    ST = params['ST']
     turb = params['turb']
     conservative = params['conservative']
 
@@ -218,7 +215,6 @@ def Phi(t, C, params):
         U_ = nu * (uxx + uyy) - (u_plu * uxm + u_min * uxp + v_plu * uym + v_min * uyp) + F_x - sgs_x
         V_ = nu * (vxx + vyy) - (u_plu * vxm + u_min * vxp + v_plu * vym + v_min * vyp) + F_y - sgs_y
         T_ = k * (Txx + Tyy) - (u * Tx  + v * Ty) + S - sgs_T 
-        T_ += ST(Xm, Ym, T)
     
     Y_ = -Y * Ke * Y_f
 
@@ -228,14 +224,18 @@ def Phi(t, C, params):
 
 def boundary_conditions(u, v, T, Y, params):
     T_inf = params['T_inf']
-    bc_on_y = params['bc_on_y']
+    TA = params['TA']
+    T_mask = params['T_mask'] # Temperature fixed source
+    bc_on_y = params['bc_on_y'] # Boundary conditions (for Dirichlet)
     u_y_min, u_y_max = bc_on_y[0]
     v_y_min, v_y_max = bc_on_y[1]
     T_y_min, T_y_max = bc_on_y[2]
     Y_y_min, Y_y_max = bc_on_y[3]
     cut_nodes = params['cut_nodes']
+    cut_nodes_y, cut_nodes_x = cut_nodes # For FD in BC
     dead_nodes = params['dead_nodes']
     u_dn, v_dn, T_dn, Y_dn = params['values_dead_nodes']
+    
 
     # Boundary conditions on x
     # Nothing to do because Phi includes them
@@ -245,12 +245,14 @@ def boundary_conditions(u, v, T, Y, params):
     u_s, v_s, T_s, Y_s, u_n, v_n, T_n, Y_n = u_y_min, v_y_min, T_y_min, Y_y_min, u_y_max, v_y_max, T_inf, Y_y_max
 
     # Boundary at south. Derivative using O(h^2)	
-    T_s = (4 * T[1, :] - T[2, :]) / 3
-    Y_s = (4 * Y[1, :] - Y[2, :]) / 3
+    T_s = (4 * T[1, :] - T[2, :]) / 3 # dT/dy = 0
+    Y_s = (4 * Y[1, :] - Y[2, :]) / 3 # dY/dy = 0
 
-    # Boundary at north
-    T_n = (4 * T[-2, :] - T[-3, :]) / 3
-    Y_n = (4 * Y[-2, :] - Y[-3, :]) / 3 
+    # Boundary at north. Derivative using O(h^2)
+    u_n = (4 * u[-2, :] - u[-3, :]) / 3 # du/dy = 0
+    v_n = (4 * v[-2, :] - v[-3, :]) / 3 # dv/dy = 0
+    T_n = (4 * T[-2, :] - T[-3, :]) / 3 # dT/dy = 0
+    Y_n = (4 * Y[-2, :] - Y[-3, :]) / 3 # dY/dy = 0
 
     # Boundary conditions on y=y_min
     u[0] = u_s
@@ -259,27 +261,17 @@ def boundary_conditions(u, v, T, Y, params):
     Y[0] = Y_s
 
     # Boundary conditions on y=y_max
-    u[-1] = u_n#[-2]
-    v[-1] = v_n#[-2]
-    # T[-1] = T_n#[-2]#T_n
+    u[-1] = u_n
+    v[-1] = v_n
     T[-1] = T_n
     Y[-1] = Y_n
 
-    # if mask is not None:
-    #    T[mask] = TA 
-    # 0 at dead nodes
-    # u[dead_nodes] = 0
-    # v[dead_nodes] = 0
-    # T[dead_nodes] = T_inf
-    # Y[dead_nodes] = 0
+    if T_mask is not None:
+       T[T_mask] = TA 
 
     # BC at edge nodes
-    cut_nodes_y, cut_nodes_x = cut_nodes
     T_s = (4 * T[cut_nodes_y + 1, cut_nodes_x] - T[cut_nodes_y + 2, cut_nodes_x]) / 3 # Derivative using O(h^2)	
     Y_s = (4 * Y[cut_nodes_y + 1, cut_nodes_x] - Y[cut_nodes_y + 2, cut_nodes_x]) / 3 # Derivative using O(h^2)
-
-    # T_s = (4 * T[cut_nodes_y + 1, :] - T[cut_nodes_y + 2, :]) / 3 # Derivative using O(h^2)	
-    # Y_s = (4 * Y[cut_nodes_y + 1, :] - Y[cut_nodes_y + 2, :]) / 3 # Derivative using O(h^2)
 
     # Boundary on cut nodes
     u[cut_nodes] = u_s

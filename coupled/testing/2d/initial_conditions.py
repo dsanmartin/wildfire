@@ -27,4 +27,4 @@ fx = lambda x, y: x * 0
 fy = lambda x, y: x * 0 
 F = lambda x, y: np.array([fx(x, y), fy(x, y)])
 # Extra source term
-ST = lambda x, y, T: (TA - T) * plate(x, y)
+# ST = lambda x, y, T: (TA - T) * plate(x, y)

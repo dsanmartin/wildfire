@@ -21,11 +21,9 @@ def save_approximation(save_path, x, y, t, u, v, T, Y, p):
     np.savez(filename, u=u, v=v, T=T, Y=Y, p=p, x=x, y=y, t=t)
     return None
 
-def save_parameters(save_path, args):
-    filename = save_path + 'arguments.pkl'
+def save_parameters(save_path, params):
+    filename = save_path + 'parameters.pkl'
     # Save parameters
-    # Remove Soruce temperature!
-    del args['ST']
     with open(filename, 'wb') as f:
-        pickle.dump(args, f)
+        pickle.dump(params, f)
     return None

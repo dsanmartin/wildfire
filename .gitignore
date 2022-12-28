@@ -138,3 +138,10 @@ coupled/higrad_firetec/backups/
 coupled/test/output/
 coupled/testing/output/
 coupled/testing/backups/
+coupled/testing/2d/input/
+coupled/testing/2d/output/
+coupled/testing/2d_v1/
+coupled/testing/3d/
+
+# Script
+coupled/testing/2d/*.sh
