@@ -7,13 +7,18 @@ from topography import topo
 from ibm import topography_nodes
 from pde import solve_pde
 from inout import create_simulation_folder, save_approximation, save_parameters
-from plots import plot_2d
+#from plots import plot_2d
+from arguments import args
+from logs import show_info
 
 def main():
-    sim_name = None
-    if len(sys.argv) > 1:
-        sim_name = sys.argv[1]
+    # sim_name = None
+    # if len(sys.argv) > 1:
+    #     sim_name = sys.argv[1]
+    # print(args.name)
+    # print(args)
     # Create arrays
+    print(Nx, Ny, Nt)
     x, y, t, Xm, Ym, dx, dy, dt = domain(x_min, x_max, y_min, y_max, t_min, t_max, Nx, Ny, Nt)
     # Evaluate initial conditions 
     U_0 = u0(Xm, Ym)
@@ -58,12 +63,12 @@ def main():
         'nu': nu, 'rho': rho, 'g': g, 'T_inf': T_inf, 'F': F_e,
         'Pr': Pr, 'C_s': C_s, # Turbulence
         'C_D': C_D, 'a_v': a_v, # Drag force
-        'turb': turb,
+        'turbulence': turb,
         'conservative': conser,
         # Temperature
         'k': k,
         # Fuel 
-        'A': A, 'B': B, 'T_pc': T_pc, 'H_R': H_R, 'h': h, 'Y_thr': Y_thr, 'Y_f': Y_f,
+        'A': A, 'B': B, 'T_pc': T_pc, 'H_R': H_R, 'h': h, 'Y_thr': Y_thr, 'Y_f': args.fuel_consumption,
         # Boundary conditions just in y (because it's periodic on x)
         'bc_on_y': dirichlet_y_bc,    
         # IBM
@@ -71,8 +76,8 @@ def main():
         # 'mask': mask,
         'method': method, # IVP solver 
         'TA': TA,
-        # 'T_mask': None, 
-        'T_mask': plate(Xm, Ym),
+        'T_mask': None, 
+        # 'T_mask': plate(Xm, Ym),
         # 'ST': ST,
         # 'u_y_min': u_y_min,
         # 'u_y_max': u_y_max,
@@ -81,14 +86,18 @@ def main():
         # 'p_y_max': p_y_max,
         # 'Y_y_min': Y_y_min,
         # 'Y_y_max': Y_y_max,
-        # 'u0': U_0,
-        # 'v0': V_0,
+        'u0': U_0,
+        'v0': V_0,
+        'T0': T_0,
+        'sim_name': args.name,
     }
+    # Show parameters
+    show_info(params)
     # Solve PDE
     z_0 = np.array([U_0, V_0, T_0, Y_0])
     u, v, T, Y, p  = solve_pde(z_0, params)
     # Create simulation folder
-    save_path = create_simulation_folder(sim_name)
+    save_path = create_simulation_folder(args.name)
     # Save outputs
     save_approximation(save_path, x, y, t[::NT], u, v, T, Y, p)
     # Remove Soruce temperature!

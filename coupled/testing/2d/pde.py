@@ -61,7 +61,7 @@ def Phi(t, C, params):
     a_v = params['a_v']
     Y_thr = params['Y_thr']
     Y_f = params['Y_f']
-    turb = params['turb']
+    turb = params['turbulence']
     conservative = params['conservative']
 
     # Get variables

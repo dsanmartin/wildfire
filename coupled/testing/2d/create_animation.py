@@ -12,6 +12,7 @@ parser.add_argument('-p', '--plots', type=str,
     help='Plots to show. Options: u, v, modU, divU, curlU, T, Y, p. Default: modU T p.', default="modU T p")
 parser.add_argument('-s', '--show', type=str, 
     help='Show, video or GIF. Options: "plot", "video" or "GIF". Default: "plot".', default="plot")
+parser.add_argument('-t', '--ts', type=int, help='Time sample. Default 1', default=1)
 parser.add_argument('-i', '--input', type=str, help='Simulation directory.', required=True)
 args = parser.parse_args()
 
@@ -22,7 +23,7 @@ filename = args.input
 show = args.show # plot, video or gif
 streamplot = True
 qs = 2 # Quiver samples
-ts = 1 # Time samples
+ts = args.ts # Time samples
 
 # Get base directory
 if show != "plot":
@@ -106,6 +107,7 @@ hvariable = r'$x$ (m)'
 
 # Plot
 for n in range(0, t.shape[0], ts):
+# for n in [10]:
 
     if visualization == "horizontal":
         fig, axes = plt.subplots(1, n_plots, sharey=True, **args)

@@ -7,9 +7,6 @@ INPUT_DIR = './input/'
 OUTPUT_DIR = './output/'
 
 def create_simulation_folder(sim_name):
-    # Simulation name
-    if sim_name is None:
-        sim_name = datetime.now().strftime("%Y%m%d%H%M%S")
     # Create output save path
     save_path = OUTPUT_DIR + sim_name + '/'
     if not os.path.exists(save_path): # Create folder if it doesn't exist
