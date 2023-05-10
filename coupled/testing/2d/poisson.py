@@ -2,6 +2,25 @@ import numpy as np
 import scipy.linalg as spla
 import scipy.sparse.linalg as spspla
 import time
+from numba import jit  
+
+def TDMA(a, b, c, d):
+    N = d.shape[0]
+    w = np.zeros(N-1, dtype=np.complex128)
+    g = np.zeros(N, dtype=np.complex128)
+    p = np.zeros(N, dtype=np.complex128)
+    
+    w[0] = c[0]/b[0]
+    g[0] = d[0]/b[0]
+
+    for i in range(1, N-1):
+        w[i] = c[i]/(b[i] - a[i-1]*w[i-1])
+    for i in range(1, N):
+        g[i] = (d[i] - a[i-1]*g[i-1])/(b[i] - a[i-1]*w[i-1])
+    p[N-1] = g[N-1]
+    for i in range(N-1, 0, -1):
+        p[i-1] = g[i-1] - w[i-1]*p[i]
+    return p
 
 ### Solver for non-all-axis periodic boundary ###
 
@@ -21,16 +40,55 @@ def fftfd(x, y, f, p_top):
     P_kNy = np.fft.fft(np.ones(Nx - 1) * p_top)
     for i in range(Nx-1):
         Dyv[0] = -2 - (kx[i] * dy) ** 2
-        Dy = spla.circulant(Dyv) / dy ** 2  
+        Dy = spla.circulant(Dyv) 
         # Fix boundary conditions
         Dy[0, 0] = - 1.5 * dy 
         Dy[0, 1] = 2 * dy
         Dy[0, 2] = - 0.5 * dy
         Dy[0, -1] = 0
         Dy[-1, 0] = 0
+        Dy /= dy ** 2  
         F_k[0, i] = 0
         F_k[-1, i] -=  P_kNy[i] / dy ** 2
         P_k[:, i] = np.linalg.solve(Dy, F_k[:, i])
+    P_FFTFD = np.real(np.fft.ifft(P_k, axis=1))
+    P_FFTFD = np.vstack([P_FFTFD, np.ones(Nx - 1) * p_top])
+    P_FFTFD = np.hstack([P_FFTFD, P_FFTFD[:, 0].reshape(-1, 1)])
+    return P_FFTFD
+
+def fftfd_v2(x, y, f, p_top):
+    Nx, Ny = x.shape[0], y.shape[0]
+    dx, dy = x[1] - x[0], y[1] - y[0]
+    F = f[:-1, :-1] # Remove boundary
+    r = np.fft.fftfreq(Nx - 1) * (Nx - 1)
+    # For any domain
+    kx = 2 * np.pi * r * dy / x[-1]
+    F_k = np.fft.fft(F, axis=1)
+    P_k = np.zeros_like(F_k)
+    # Dyv = np.zeros(Ny - 1)
+    # Dyv[1] = 1
+    # Dyv[-1] = 1
+    P_kNy = np.fft.fft(np.ones(Nx - 1) * p_top)
+    for i in range(Nx-1):
+        # Dyv[0] = -2 - (kx[i] * dy) ** 2
+        # Dy = spla.circulant(Dyv) / dy ** 2  
+        # # Fix boundary conditions
+        # Dy[0, 0] = - 1.5 * dy 
+        # Dy[0, 1] = 2 * dy
+        # Dy[0, 2] = - 0.5 * dy
+        # Dy[0, -1] = 0
+        # Dy[-1, 0] = 0
+        gamma_r = - 2 - kx[i] ** 2
+        F_k[0, i] = 0 + 0.5 * dy * F_k[1, i] # dp/dy = 0
+        F_k[-1, i] -=  P_kNy[i] / dy ** 2
+        a = np.ones(Ny-2) / dy ** 2
+        c = np.ones(Ny-2) / dy ** 2
+        c[0] = (2 + 0.5 * gamma_r) / dy
+        c[-1] = 0
+        b = np.ones(Ny - 1) * gamma_r
+        b[0] = -1 / dy
+        P_k[:, i] = TDMA(a, b, c, F_k[:, i])
+        #np.linalg.solve(Dy, F_k[:, i])
     P_FFTFD = np.real(np.fft.ifft(P_k, axis=1))
     P_FFTFD = np.vstack([P_FFTFD, np.ones(Nx - 1) * p_top])
     P_FFTFD = np.hstack([P_FFTFD, P_FFTFD[:, 0].reshape(-1, 1)])
@@ -67,7 +125,8 @@ def solve_fftfd(u, v, **kwargs):
     f = rho / dt * (ux + vy)
     f = np.hstack([f, f[:,0].reshape(-1, 1)])
     p = fftfd(x, y, f, p_y_max)
-
+    # p = fftfd_v2(x, y, f, p_y_max)
+    # print(p)
     return p[:, :-1]
 
 def solve_iterative(u, v, p, tol=1e-10, n_iter=1000, **kwargs):

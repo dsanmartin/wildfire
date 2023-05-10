@@ -169,7 +169,7 @@ for n in range(0, t.shape[0], ts):
     
     if "Y" in plots:
         pi = axes[i].contourf(x, y, Y[n], cmap=plt.cm.Oranges, vmin=np.min(Y), vmax=np.max(Y))
-        axes[i].set_title(r'$Y$')
+        axes[i].set_title("Fuel " + r'$Y$')
         fig.colorbar(pi, ax=axes[i], label="%")
 
     if "p" in plots:

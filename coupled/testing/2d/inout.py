@@ -1,7 +1,6 @@
 import os
 import pickle
 import numpy as np
-from datetime import datetime
 
 INPUT_DIR = './input/'
 OUTPUT_DIR = './output/'

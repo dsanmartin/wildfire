@@ -162,3 +162,6 @@ def building(x, y, x_lims, y_lims, dx, dy):
     return cut_nodes, dead_nodes
 
 
+def topography_distance(x, y, f):
+    return y - f(x)
+

@@ -12,7 +12,7 @@ def show_info(params):
     method = params['method']
     TA, T_inf, T_pc = params['TA'], params['T_inf'], params['T_pc']
     nu, k, Pr, g = params['nu'], params['k'], params['Pr'], params['g']
-    A, B, H_R = params['A'], params['B'], params['H_R']
+    A, B, H_R, h = params['A'], params['B'], params['H_R'], params['h']
     Y_f, Y_thr = params['Y_f'], params['Y_thr']
     turb, conser = params['turbulence'], params['conservative']
 
@@ -32,7 +32,7 @@ def show_info(params):
     print("nu: %.2e, g: (%.4f, %.4f)" % (nu, g[0], g[1]))
     print("k: %.2e, T_inf: %.4f, T_hot: %.4f" % (k, T_inf, TA))
     print("T_pc: %.4f, A: %.4f, B: %.4f" % (T_pc, A, B))
-    print("H_R: %.4f, Y_thr: %.4f, Y_f: %.4f" % (H_R, Y_thr, Y_f))
+    print("H_R: %.4f, h: %.4f, Y_thr: %.4f, Y_f: %.4f" % (H_R, h, Y_thr, Y_f))
     print("Turbulence: %r" % turb)
     print("Conservative: %r" % conser)
     print("Reynolds: %.4f" %  Re)

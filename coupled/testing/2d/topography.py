@@ -11,4 +11,7 @@ y_c = (y_max + y_min) / 2
 #top = lambda x, y: A_topo * np.exp(-((x - x_c) ** 2 / sx + (y - y_c) ** 2 / sy)) 
 hill = lambda x, y: G(x, y, x_c, y_c, sx, sy, topo_height)
 # top = lambda x, y: x * y * 0 #+ dy
-topo = lambda x: hill(x, y_c)
+# Hill
+# topo = lambda x: hill(x, y_c)
+# Flat terrain
+topo = lambda x: x * 0 

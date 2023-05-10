@@ -1,7 +1,10 @@
 import numpy as np
 from poisson import solve_fftfd
 from turbulence import turbulence
-from utils import K, S2
+from utils import K, S2, S3
+import time
+
+OUTPUT_LOG = "Time step: {:=6d}, Simulation time: {:.2f} s"
 
 def grad_pressure(p, **params):
     dx = params['dx']
@@ -19,11 +22,11 @@ def grad_pressure(p, **params):
     # Computing derivatives
     # Using central difference O(h^2).
     px = (p_ip1j - p_im1j) / (2 * dx) 
-    # py = (p_ijp1 - p_ijm1) / (2 * dy)
+    py = (p_ijp1 - p_ijm1) / (2 * dy)
     # Using backward difference
     #py = (p_ij - p_ijm1) / dy
     # Using forward difference
-    py = (p_ijp1 - p_ij) / dy
+    # py = (p_ijp1 - p_ij) / dy
 
     # Derivatives at boundary, dp/dy at y = y_min and y = y_max
     # Periodic on x, included before
@@ -83,21 +86,29 @@ def Phi(t, C, params):
     # Nodes for finite difference. I will assume periodic boundary for both axis, but then the values will be fixed
     # u 
     u_ij   = u.copy() # u_{i,j}
-    u_ip1j = np.roll(u, -1, axis=1) # u_{i+1, j}
+    u_ip1j = np.roll(u,-1, axis=1) # u_{i+1, j}
+    u_ip2j = np.roll(u,-2, axis=1) # u_{i+2, j}
     u_im1j = np.roll(u, 1, axis=1) # u_{i-1, j}
-    u_ijp1 = np.roll(u, -1, axis=0) # u_{i, j+1} 
+    u_im2j = np.roll(u, 2, axis=1) # u_{i-2, j}
+    u_ijp1 = np.roll(u,-1, axis=0) # u_{i, j+1}
+    u_ijp2 = np.roll(u,-2, axis=0) # u_{i, j+2}
     u_ijm1 = np.roll(u, 1, axis=0) # u_{i, j-1}
+    u_ijm2 = np.roll(u, 2, axis=0) # u_{i, j-2}
     # v
     v_ij   = v.copy() # v_{i, j}
-    v_ip1j = np.roll(v, -1, axis=1) # v_{i+1, j}
+    v_ip1j = np.roll(v,-1, axis=1) # v_{i+1, j}
+    v_ip2j = np.roll(v,-2, axis=1) # v_{i+2, j}
     v_im1j = np.roll(v, 1, axis=1) # v_{i-1, j}
-    v_ijp1 = np.roll(v, -1, axis=0) # v_{i, j+1}
+    v_im2j = np.roll(v, 2, axis=1) # v_{i-2, j}
+    v_ijp1 = np.roll(v,-1, axis=0) # v_{i, j+1}
+    v_ijp2 = np.roll(v,-2, axis=0) # v_{i, j+2}
     v_ijm1 = np.roll(v, 1, axis=0) # v_{i, j-1}
+    v_ijm2 = np.roll(v, 2, axis=0) # v_{i, j-2}
     # T
     T_ij   = T.copy() # T_{i,j}
-    T_ip1j = np.roll(T, -1, axis=1) # T_{i+1, j}
+    T_ip1j = np.roll(T,-1, axis=1) # T_{i+1, j}
     T_im1j = np.roll(T, 1, axis=1) # T_{i-1, j}
-    T_ijp1 = np.roll(T, -1, axis=0) # T_{i, j+1}
+    T_ijp1 = np.roll(T,-1, axis=0) # T_{i, j+1}
     T_ijm1 = np.roll(T, 1, axis=0) # T_{i, j-1}
     
     # Mask for upwind
@@ -109,15 +120,26 @@ def Phi(t, C, params):
     # Derivatives #
     # First derivatives 
     # Forward/backward difference O(h) (for upwind scheme)
-    uxm = (u_ij - u_im1j) / dx
-    uxp = (u_ip1j - u_ij) / dx
-    uym = (u_ij - u_ijm1) / dy
-    uyp = (u_ijp1 - u_ij) / dy
-    vxm = (v_ij - v_im1j) / dx
-    vxp = (v_ip1j - v_ij) / dx
-    vym = (v_ij - v_ijm1) / dy
-    vyp = (v_ijp1 - v_ij) / dy
+    # uxm = (u_ij - u_im1j) / dx
+    # uxp = (u_ip1j - u_ij) / dx
+    # uym = (u_ij - u_ijm1) / dy
+    # uyp = (u_ijp1 - u_ij) / dy
+    # vxm = (v_ij - v_im1j) / dx
+    # vxp = (v_ip1j - v_ij) / dx
+    # vym = (v_ij - v_ijm1) / dy
+    # vyp = (v_ijp1 - v_ij) / dy
+    # Forward/backward difference O(h^2) (for upwind scheme)
+    uxm = (3 * u_ij - 4 * u_im1j + u_im2j) / (2 * dx)
+    uxp = (-u_ip2j + 4 * u_ip1j - 3 * u_ij) / (2 * dx)
+    uym = (3 * u_ij - 4 * u_ijm1 + u_ijm2) / (2 * dy)
+    uyp = (-u_ijp2 + 4 * u_ijp1 - 3 * u_ij) / (2 * dy)
+    vxm = (3 * v_ij - 4 * v_im1j + v_im2j) / (2 * dx)
+    vxp = (-v_ip2j + 4 * v_ip1j - 3 * v_ij) / (2 * dx)
+    vym = (3 * v_ij - 4 * v_ijm1 + v_ijm2) / (2 * dy)
+    vyp = (-v_ijp2 + 4 * v_ijp1 - 3 * v_ij) / (2 * dy)
+
     # Fixed boundary nodes
+    # O(h)
     # uym[0, 1:-1] = (-u_ij[0, 1:-1] + u_ij[1, 1:-1])  / dy # Forward at y=y_min
     # uym[-1, 1:-1] = (u_ij[-1, 1:-1] - u_ij[-2, 1:-1]) / dy # Backward at y=y_max
     # uyp[0, 1:-1] = (-u_ij[0, 1:-1] + u_ij[1, 1:-1])  / dy # Forward at y=y_min
@@ -126,26 +148,42 @@ def Phi(t, C, params):
     # vym[-1, 1:-1] = (v_ij[-1, 1:-1] - v_ij[-2, 1:-1]) / dy # Backward at y=y_max
     # vyp[0, 1:-1] = (-v_ij[0, 1:-1] + v_ij[1, 1:-1])  / dy # Forward at y=y_min
     # vyp[-1, 1:-1] = (v_ij[-1, 1:-1] - v_ij[-2, 1:-1]) / dy # Backward at y=y_max
-    uym[0, :] = (-u_ij[0, :] + u_ij[1, :])  / dy # Forward at y=y_min
-    uym[-1, :] = (u_ij[-1, :] - u_ij[-2, :]) / dy # Backward at y=y_max
-    uyp[0, :] = (-u_ij[0, :] + u_ij[1, :])  / dy # Forward at y=y_min
-    uyp[-1, :] = (u_ij[-1, :] - u_ij[-2, :]) / dy # Backward at y=y_max
-    vym[0, :] = (-v_ij[0, :] + v_ij[1, :])  / dy # Forward at y=y_min
-    vym[-1, :] = (v_ij[-1, :] - v_ij[-2, :]) / dy # Backward at y=y_max
-    vyp[0, :] = (-v_ij[0, :] + v_ij[1, :])  / dy # Forward at y=y_min
-    vyp[-1, :] = (v_ij[-1, :] - v_ij[-2, :]) / dy # Backward at y=y_max
-    
-    # Central difference O(h^2) (for turbulence)
+    #
+    # uym[0, :] = (-u_ij[0, :] + u_ij[1, :])  / dy # Forward at y=y_min
+    # uym[-1, :] = (u_ij[-1, :] - u_ij[-2, :]) / dy # Backward at y=y_max
+    # uyp[0, :] = (-u_ij[0, :] + u_ij[1, :])  / dy # Forward at y=y_min
+    # uyp[-1, :] = (u_ij[-1, :] - u_ij[-2, :]) / dy # Backward at y=y_max
+    # vym[0, :] = (-v_ij[0, :] + v_ij[1, :])  / dy # Forward at y=y_min
+    # vym[-1, :] = (v_ij[-1, :] - v_ij[-2, :]) / dy # Backward at y=y_max
+    # vyp[0, :] = (-v_ij[0, :] + v_ij[1, :])  / dy # Forward at y=y_min
+    # vyp[-1, :] = (v_ij[-1, :] - v_ij[-2, :]) / dy # Backward at y=y_max
+    # O(h^2)
+    # uym[0, :] = (-3 * uym[0, :] + 4 * uym[1, :] - uym[2, :]) / (2 * dy) # Forward at y=y_min
+    # uym[1, :] = (-3 * uym[1, :] + 4 * uym[2, :] - uym[3, :]) / (2 * dy) # Forward at y=y_min+dy
+    # uyp[-1,:] = (uyp[-1, :] - 4 * uyp[-2, :] + 3 * uyp[-3, :]) / (2 * dy) # Backward at y=y_max
+    # uyp[-2,:] = (uyp[-2, :] - 4 * uyp[-3, :] + 3 * uyp[-4, :]) / (2 * dy) # Backward at y=y_max-dy
+    uym[0, :] = (-3 * u_ij[0, :] + 4 * u_ij[1, :] - u_ij[2, :]) / (2 * dy) # Forward at y=y_min
+    uym[1, :] = (-3 * u_ij[1, :] + 4 * u_ij[2, :] - u_ij[3, :]) / (2 * dy) # Forward at y=y_min+dy
+    uyp[-1,:] = (u_ij[-1, :] - 4 * u_ij[-2, :] + 3 * u_ij[-3, :]) / (2 * dy) # Backward at y=y_max
+    uyp[-2,:] = (u_ij[-2, :] - 4 * u_ij[-3, :] + 3 * u_ij[-4, :]) / (2 * dy) # Backward at y=y_max-dy
+
+
+    # Finite difference for turbulence
+    # O(h)
+    # Backward
+    # Tx = (T_ij - T_im1j) / dx
+    # Ty = (T_ij - T_ijm1) / dy
+    # Forward
+    # Tx = (T_ip1j - T_ij) / dx
+    # Ty = (T_ijp1 - T_ij) / dy 
+    # O(h^2)
+    # Central difference O(h^2) 
     ux = (u_ip1j - u_im1j) / (2 * dx)
     uy = (u_ijp1 - u_ijm1) / (2 * dy)
     vx = (v_ip1j - v_im1j) / (2 * dx)
     vy = (v_ijp1 - v_ijm1) / (2 * dy)
     Tx = (T_ip1j - T_im1j) / (2 * dx)
     Ty = (T_ijp1 - T_ijm1) / (2 * dy)
-    # Tx = (T_ij - T_im1j) / dx
-    # Ty = (T_ij - T_ijm1) / dy
-    # Tx = (T_ip1j - T_ij) / dx
-    # Ty = (T_ijp1 - T_ij) / dy 
     # Fixed boundary nodes
     # uy[0, 1:-1] = (-3 * u_ij[0, 1:-1] + 4 * u_ij[1, 1:-1] - u_ij[2, 1:-1]) / (2 * dy) # Forward at y=y_min
     # uy[-1, 1:-1] = (3 * u_ij[-1, 1:-1] - 4 * u_ij[-2, 1:-1] + u_ij[-3, 1:-1]) / (2 * dy) # Backward at y=y_max
@@ -183,7 +221,7 @@ def Phi(t, C, params):
         sgs_x, sgs_y, sgs_T = turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, params)
     
     # Reaction Rate
-    Ke = K(T, A, B) * S2(T, 1, 10, T_pc) 
+    Ke = K(T, A, B) * S3(T, T_pc) # S2(T, 1, 10, T_pc) # 
     
     # # Temperature source term
     S = rho * H_R * Y * Ke #- h * (T - T_inf)
@@ -210,7 +248,7 @@ def Phi(t, C, params):
         # PDE
         U_ = nu * (uxx + uyy) - (uux + uvy) + F_x - sgs_x
         V_ = nu * (vxx + vyy) - (vux + vvy) + F_y - sgs_y
-        T_ = k * (Txx + Tyy) - (u * Tx + v * Ty) + S - sgs_T * 0
+        T_ = k * (Txx + Tyy) - (u * Tx + v * Ty) + S - sgs_T
     else: # RHS Inside domain (non-conservative form - using upwind!)
         U_ = nu * (uxx + uyy) - (u_plu * uxm + u_min * uxp + v_plu * uym + v_min * uyp) + F_x - sgs_x
         V_ = nu * (vxx + vyy) - (u_plu * vxm + u_min * vxp + v_plu * vym + v_min * vyp) + F_y - sgs_y
@@ -290,7 +328,7 @@ def boundary_conditions(u, v, T, Y, params):
 # Time integration
 def euler(t_n, y_n, dt, params):
     rho = params['rho']
-    y_np1 = y_n + dt * Phi(t_n, y_n, **params)
+    y_np1 = y_n + dt * Phi(t_n, y_n, params)
     Ut, Vt = y_np1[:2].copy()
     p = solve_fftfd(Ut, Vt, **params).copy()
     grad_p = grad_pressure(p, **params)
@@ -364,10 +402,16 @@ def solve_pde(z_0, params):
         z[0] = z_0
         for n in range(Nt - 1):
             # Simulation 
-            print("Step:", n)
+            #print("Time step:", n)
+            #print("Simulation time:", t[n], " s")
+            print(OUTPUT_LOG.format(n, t[n]))
+            time_start = time.time()
             z[n+1], p[n+1] = methods[method](t[n], z[n], dt, params)
             Ut, Vt = z[n+1, :2].copy()
-            print("CFL", dt * (np.max(np.abs(Ut)) / dx + np.max(np.abs(Vt)) / dy))
+            time_end = time.time()
+            elapsed_time = (time_end - time_start)
+            print("CFL: {:.6f}".format(dt * (np.max(np.abs(Ut)) / dx + np.max(np.abs(Vt)) / dy)))
+            print("Step time: {:.6f} s".format(elapsed_time))
         
     else:
         # Approximation
@@ -378,12 +422,18 @@ def solve_pde(z_0, params):
         p_tmp = p[0].copy()
         for n in range(Nt - 1):
             # Simulation 
+            time_start = time.time()
             z_tmp, p_tmp = methods[method](t[n], z_tmp, dt, params)
             if n % NT == 0:
-                print("Step:", n)
+                # print("Time step:", n)
+                # print("Simulation time:", t[n], " s")
+                print(OUTPUT_LOG.format(n, t[n]))
                 z[n // NT + 1], p[n // NT + 1] = z_tmp, p_tmp
+                time_end = time.time()
                 Ut, Vt = z_tmp[:2].copy()
-                print("CFL", dt * (np.max(np.abs(Ut)) / dx + np.max(np.abs(Vt)) / dy))
+                elapsed_time = (time_end - time_start)
+                print("CFL: {:.6f}".format(dt * (np.max(np.abs(Ut)) / dx + np.max(np.abs(Vt)) / dy)))
+                print("Step time: {:f} s".format(elapsed_time))
         # Last approximation
         z[-1] = z_tmp
         p[-1] = p_tmp

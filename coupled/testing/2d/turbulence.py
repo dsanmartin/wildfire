@@ -95,9 +95,9 @@ def turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, args)
     # Periodic on x (nothing to do)
     # On y
     vxy[0, :] = (-3 * vx[0, :] + 4 * vx[1, :] - vx[2, :]) / (2 * dy) # Forward at y=y_min
-    vxy[-1, :] = (3 * vx[-1, :] - 4 * vx[-2, :] + vx[-3, :]) / (2 * dy) # Backward at y=y_max
+    vxy[-1,:] = (3 * vx[-1, :] - 4 * vx[-2, :] + vx[-3, :]) / (2 * dy) # Backward at y=y_max
     uxy[0, :] = (-3 * ux[0, :] + 4 * ux[1, :] - ux[2, :]) / (2 * dy) # Forward at y=y_min
-    uxy[-1, :] = (3 * ux[-1, :] - 4 * ux[-2, :] + ux[-3, :]) / (2 * dy) # Backward at y=y_max
+    uxy[-1,:] = (3 * ux[-1, :] - 4 * ux[-2, :] + ux[-3, :]) / (2 * dy) # Backward at y=y_max
 
     # 'psi_x' and 'psi_y'
     psi_x = 4 * (ux * uxx + vy * vyx) + 2 * (uy + vx) * (uyx + vxx) 
@@ -108,22 +108,28 @@ def turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, args)
     #u_tau = (tau_w / rho) ** 0.5
     tau_p = ((0.5 * nu * (uy + vx)[0]) ** 2) ** 0.5 
     u_tau = (tau_p) ** 0.5
-    fw = f_w1(Ym, u_tau, nu)
-    l = C_s * Delta * fw
+    l = C_s * Delta 
 
-    sgs_x = -2 * l ** 2 * ( 
-        1 / (2 * S_ij_mod) * (psi_x * ux + 0.5 * psi_y * (uy + vx)) +
-        S_ij_mod * (uxx + 0.5 * (vxy + uyy))
-    )
-    sgs_y = -2 * l ** 2 * (
-        1 / (2 * S_ij_mod) * (psi_y * vy + 0.5 * psi_x * (vx + uy)) +
-        S_ij_mod * (vyy + 0.5 * (uyx + vxx))
-    )
+    # Damping stuff
+    fw = f_w1(Ym, u_tau, nu)
+    fwx = (np.roll(fw, -1, axis=1) - np.roll(fw, 1, axis=1)) / (2 * dx)
+    fwy = (np.roll(fw, -1, axis=0) - np.roll(fw, 1, axis=0)) / (2 * dy)
+    # Boundary conditions 
+    fwy[0, :] = (-3 * fw[0, :] + 4 * fw[1, :] - fw[2, :]) / (2 * dy) # Forward at y=y_min
+    fwy[-1,:] = (3 * fw[-1, :] - 4 * fw[-2, :] + fw[-3, :]) / (2 * dy) # Backward at y=y_max
+    sgs_x_damp = 2 * S_ij_mod * fw * (fwx * ux + 0.5 * fwy * (vx + uy))
+    sgs_y_damp = 2 * S_ij_mod * fw * (0.5 * fwx * (uy + vx) + fwy * vy)
+
+    sgs_x_no_damp = 1 / (2 * S_ij_mod) * (psi_x * ux + 0.5 * psi_y * (uy + vx)) + S_ij_mod * (uxx + 0.5 * (vxy + uyy)) 
+    sgs_y_no_damp = 1 / (2 * S_ij_mod) * (psi_y * vy + 0.5 * psi_x * (vx + uy)) + S_ij_mod * (vyy + 0.5 * (uyx + vxx))
+
+    sgs_x = -2 * l ** 2 * (sgs_x_no_damp * fw ** 2 + sgs_x_damp)
+    sgs_y = -2 * l ** 2 * (sgs_y_no_damp * fw ** 2 + sgs_y_damp)
 
     # SGS thermal energy
-    sgs_T = -l ** 2 / Pr * (
-        1 / (2 * S_ij_mod) * (psi_x * Tx  + psi_y * Ty) + S_ij_mod * (Txx + Tyy)
-    )
+    sgs_T_no_damp = 1 / (2 * S_ij_mod) * (psi_x * Tx  + psi_y * Ty) + S_ij_mod * (Txx + Tyy)
+    sgs_T_damp = 2 * fw * S_ij_mod * (fwx * Tx + fwy * Ty)
+    sgs_T = -l ** 2 / Pr * (sgs_T_no_damp * fw ** 2 + sgs_T_damp)
 
     return np.array([sgs_x, sgs_y, sgs_T])
 
