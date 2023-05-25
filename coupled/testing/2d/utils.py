@@ -27,6 +27,9 @@ def create_plate(x_start, x_end, y_start, y_end):
     plate = lambda x, y: (y >= y_start) & (y <= y_end) & (x <= x_end) & (x >= x_start)
     return plate
 
+def create_half_gaussian(x_center, width, height):
+    half_gaussian = lambda x, y: G(x, y, x_center, 0, width, height, 1)
+    return half_gaussian
 
 def multivariate_normal(x, nu, Sigma):
     return np.exp(-0.5 * (x - nu) @ np.linalg.inv(Sigma) @ (x - nu)) / ((2 * np.pi) ** x.shape[0] * np.linalg.det(Sigma)) ** 0.5

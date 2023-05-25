@@ -1,8 +1,11 @@
 import numpy as np
 import scipy.linalg as spla
 import scipy.sparse.linalg as spspla
+from scipy.sparse.linalg import LinearOperator, gmres, spsolve
+from scipy import sparse
 import time
 from numba import jit  
+import matplotlib.pyplot as plt
 
 def TDMA(a, b, c, d):
     N = d.shape[0]
@@ -22,6 +25,43 @@ def TDMA(a, b, c, d):
         p[i-1] = g[i-1] - w[i-1]*p[i]
     return p
 
+@jit
+def tridiag_solver(A, f):
+    a, b, c = A # Get diagonals
+    N = b.shape[0]
+    v = np.zeros(N, dtype=np.complex128)
+    l = np.zeros(N-1, dtype=np.complex128)
+    y = np.zeros(N, dtype=np.complex128)
+    u = np.zeros(N, dtype=np.complex128)
+    # Determine L, U
+    v[0] = b[0]
+    for k in range(1, N):
+        l[k-1] = a[k-1] / v[k-1]
+        v[k] = b[k] - l[k-1] * c[k-1]
+    # Solve Ly = f
+    y[0] = f[0]
+    for k in range(1, N):
+        y[k] = f[k] - l[k-1] * y[k-1]
+    # Solve Uu = y
+    u[-1] = y[-1] / v[-1]
+    #for k in range(N-1, -1, -1):
+    for k in range(-1, -N, -1):
+        u[k-1] = (y[k-1] - c[k] * u[k]) / v[k-1]
+    return u
+
+@jit
+def mv(a, b, c, v):
+    N = b.shape[0]
+    out = np.zeros(N, dtype=np.complex128)
+    # First element and last element
+    out[0] = b[0] * v[0] + c[0] * v[0]
+    out[-1] = a[-1] * v[-2] + b[-1] * v[-1]
+    # Interior elements
+    for i in range(1, N - 1):
+        out[i] = a[i] * v[i-1] + b[i] * v[i] + c[i] * v[i+1]
+    return out
+
+
 ### Solver for non-all-axis periodic boundary ###
 
 # Poisson solver using FFT in x direction and FD in y direction.
@@ -40,23 +80,23 @@ def fftfd(x, y, f, p_top):
     P_kNy = np.fft.fft(np.ones(Nx - 1) * p_top)
     for i in range(Nx-1):
         Dyv[0] = -2 - (kx[i] * dy) ** 2
-        Dy = spla.circulant(Dyv) 
+        D2y = spla.circulant(Dyv) 
         # Fix boundary conditions
-        Dy[0, 0] = - 1.5 * dy 
-        Dy[0, 1] = 2 * dy
-        Dy[0, 2] = - 0.5 * dy
-        Dy[0, -1] = 0
-        Dy[-1, 0] = 0
-        Dy /= dy ** 2  
+        D2y[0, 0] = - 1.5 * dy 
+        D2y[0, 1] = 2 * dy
+        D2y[0, 2] = - 0.5 * dy
+        D2y[0, -1] = 0
+        D2y[-1, 0] = 0
+        D2y /= dy ** 2  
         F_k[0, i] = 0
         F_k[-1, i] -=  P_kNy[i] / dy ** 2
-        P_k[:, i] = np.linalg.solve(Dy, F_k[:, i])
+        P_k[:, i] = np.linalg.solve(D2y, F_k[:, i])
     P_FFTFD = np.real(np.fft.ifft(P_k, axis=1))
     P_FFTFD = np.vstack([P_FFTFD, np.ones(Nx - 1) * p_top])
     P_FFTFD = np.hstack([P_FFTFD, P_FFTFD[:, 0].reshape(-1, 1)])
     return P_FFTFD
 
-def fftfd_v2(x, y, f, p_top):
+def fftfd_tridiag(x, y, f, p_top):
     Nx, Ny = x.shape[0], y.shape[0]
     dx, dy = x[1] - x[0], y[1] - y[0]
     F = f[:-1, :-1] # Remove boundary
@@ -65,30 +105,118 @@ def fftfd_v2(x, y, f, p_top):
     kx = 2 * np.pi * r * dy / x[-1]
     F_k = np.fft.fft(F, axis=1)
     P_k = np.zeros_like(F_k)
-    # Dyv = np.zeros(Ny - 1)
-    # Dyv[1] = 1
-    # Dyv[-1] = 1
     P_kNy = np.fft.fft(np.ones(Nx - 1) * p_top)
     for i in range(Nx-1):
-        # Dyv[0] = -2 - (kx[i] * dy) ** 2
-        # Dy = spla.circulant(Dyv) / dy ** 2  
-        # # Fix boundary conditions
-        # Dy[0, 0] = - 1.5 * dy 
-        # Dy[0, 1] = 2 * dy
-        # Dy[0, 2] = - 0.5 * dy
-        # Dy[0, -1] = 0
-        # Dy[-1, 0] = 0
         gamma_r = - 2 - kx[i] ** 2
         F_k[0, i] = 0 + 0.5 * dy * F_k[1, i] # dp/dy = 0
         F_k[-1, i] -=  P_kNy[i] / dy ** 2
         a = np.ones(Ny-2) / dy ** 2
         c = np.ones(Ny-2) / dy ** 2
         c[0] = (2 + 0.5 * gamma_r) / dy
-        c[-1] = 0
+        #c[-1] = 0
+        b = np.ones(Ny - 1) * gamma_r / dy ** 2
+        b[0] = -1 / dy
+        # Ax = LinearOperator((Ny-1, Nx-1), matvec=lambda x: mv(a, b, c, x))
+        # P_k[:, i], exitCode = gmres(Ax, F_k[:, i], tol=1e-10)
+        # print(exitCode)
+        P_k[:, i] = tridiag_solver((a, b, c), F_k[:, i])
+    P_FFTFD = np.real(np.fft.ifft(P_k, axis=1))
+    P_FFTFD = np.vstack([P_FFTFD, np.ones(Nx - 1) * p_top])
+    P_FFTFD = np.hstack([P_FFTFD, P_FFTFD[:, 0].reshape(-1, 1)])
+    return P_FFTFD
+
+def fftfd_sparse(x, y, f, p_top):
+    Nx, Ny = x.shape[0], y.shape[0]
+    dx, dy = x[1] - x[0], y[1] - y[0]
+    F = f[:-1, :-1] # Remove boundary
+    kx = np.fft.fftfreq(Nx - 1) * (Nx - 1)
+    # For any domain
+    kx = 2 * np.pi * kx / x[-1]
+    F_k = np.fft.fft(F, axis=1)
+    P_k = np.zeros_like(F_k)
+    Dyv = np.zeros(Ny - 1)
+    Dyv[1] = 1
+    Dyv[-1] = 1
+    P_kNy = np.fft.fft(np.ones(Nx - 1) * p_top)
+    for i in range(Nx-1):
+        Dyv[0] = -2 - (kx[i] * dy) ** 2
+        D2y = spla.circulant(Dyv) 
+        # Fix boundary conditions
+        # D2y[0, 0] = - 1.5 * dy 
+        # D2y[0, 1] = 2 * dy
+        # D2y[0, 2] = - 0.5 * dy
+        # D2y[0, -1] = 0
+        # D2y[-1, 0] = 0
+        # D2y /= dy ** 2
+        # F_k[0, i] = 0
+        # F_k[-1, i] -=  P_kNy[i] / dy ** 2  
+        gamma_r = - 2 - kx[i] ** 2
+        F_k[0, i] = 0 #+ 0.5 * dy * F_k[1, i] # dp/dy = 0
+        F_k[-1, i] -=  P_kNy[i] / dy ** 2
+        a = np.ones(Ny - 2) / dy ** 2
+        c = np.ones(Ny - 2) / dy ** 2
+        c[0] = (2 + 0.5 * gamma_r) / dy
+        #c[-1] = 0
         b = np.ones(Ny - 1) * gamma_r
         b[0] = -1 / dy
-        P_k[:, i] = TDMA(a, b, c, F_k[:, i])
-        #np.linalg.solve(Dy, F_k[:, i])
+        D2y = sparse.csc_matrix(D2y)
+        P_k[:, i] = spsolve(D2y, F_k[:, i])
+    P_FFTFD = np.real(np.fft.ifft(P_k, axis=1))
+    P_FFTFD = np.vstack([P_FFTFD, np.ones(Nx - 1) * p_top])
+    P_FFTFD = np.hstack([P_FFTFD, P_FFTFD[:, 0].reshape(-1, 1)])
+    return P_FFTFD
+
+# Poisson solver using FFT in x direction and FD in y direction.
+def fftfd_debug(x, y, f, p_top):
+    Nx, Ny = x.shape[0], y.shape[0]
+    dx, dy = x[1] - x[0], y[1] - y[0]
+    F = f[:-1, :-1] # Remove boundary
+    kx = np.fft.fftfreq(Nx - 1) * (Nx - 1)
+    # For any domain
+    kx = 2 * np.pi * kx / x[-1]
+    F_k = np.fft.fft(F, axis=1)
+    P_k = np.zeros_like(F_k)
+    Dyv = np.zeros(Ny - 1)
+    Dyv[1] = 1
+    Dyv[-1] = 1
+    P_kNy = np.fft.fft(np.ones(Nx - 1) * p_top)
+    cond = []
+    eigv = []
+    for i in range(Nx-1):
+        Dyv[0] = -2 - (kx[i] * dy) ** 2
+        D2y = spla.circulant(Dyv) 
+        # Fix boundary conditions
+        D2y[0, 0] = - 1.5 #* dy 
+        D2y[0, 1] = 2 #* dy
+        D2y[0, 2] = - 0.5 #* dy
+        D2y[0, -1] = 0
+        D2y[-1, 0] = 0
+        #D2y /= dy ** 2  
+        F_k[0, i] = 0
+        F_k[-1, i] -=  P_kNy[i] / dy ** 2
+        F_k[1:, i] *= dy ** 2 
+        F_k[0, i] *= dy 
+        P_k[:, i] = np.linalg.solve(D2y, F_k[:, i])
+        asd = np.linalg.cond(D2y) 
+        qwe = np.min(np.absolute(np.linalg.eigvals(D2y)))
+        cond.append(asd)
+        eigv.append(qwe)
+    cond = np.array(cond)
+    eigv = np.array(eigv)
+    plt.figure(figsize=(12, 6))
+    plt.subplot(1, 2, 1)
+    plt.plot(np.arange(cond.shape[0]), cond, 'bo', label=r'$cond(D^{(2)}_y)$')
+    plt.title(r"Condition number of $D^{(2)}_y$ for each system")
+    plt.legend()
+    plt.xlabel("# System")
+    plt.grid(True)
+    plt.subplot(1, 2, 2)
+    plt.semilogy(np.arange(eigv.shape[0]), eigv, 'bo', label=r'$\min(\|\lambda\|)$')
+    plt.title(r"Min absolute eigenvalue of $D^{(2)}_y$ for each system")
+    plt.legend()
+    plt.xlabel("# System")
+    plt.grid(True)
+    plt.show()
     P_FFTFD = np.real(np.fft.ifft(P_k, axis=1))
     P_FFTFD = np.vstack([P_FFTFD, np.ones(Nx - 1) * p_top])
     P_FFTFD = np.hstack([P_FFTFD, P_FFTFD[:, 0].reshape(-1, 1)])
@@ -103,30 +231,42 @@ def solve_fftfd(u, v, **kwargs):
     rho = kwargs['rho']
     p_y_min, p_y_max = kwargs['bc_on_y'][4]
 
-    # div(u) 
+    # Compute div(u) = ux + uy 
     # Get nodes for u and v
-    u_ij = u.copy()
-    u_ip1j = np.roll(u, -1, axis=1) # u_{i+1, j}
+    # u
+    u_ij = u.copy() # u_{i, j} 
+    u_ip1j = np.roll(u,-1, axis=1) # u_{i+1, j}
     u_im1j = np.roll(u, 1, axis=1) # u_{i-1, j}
-    v_ij = v.copy()
-    v_ijp1 = np.roll(v, -1, axis=0) # v_{i, j+1}
-    v_ijm1 = np.roll(v, 1, axis=0) # v_{i, j-1}
+    # v
+    v_ij = v.copy() # v_{i, j}
+    v_ijp1 = np.roll(v,-1, axis=0) # v_{i, j+1}
+    v_ijp2 = np.roll(v,-2, axis=0) # v_{i, j+2}
+    v_ijm1 = np.roll(v, 1, axis=0) # v_{i, j-1}    
+    v_ijm2 = np.roll(v, 2, axis=0) # v_{i, j-2}
 
-    # First derivative using central difference O(h^2)
-    ux = (u_ip1j - u_im1j) / (2 * dx)
-    # vy = (v_ijp1 - v_ijm1) / (2 * dy) # Central difference
+    # First derivative 
+    # Forward/backward difference O(h)
     # vy = (v_ijp1 - v_ij) / dy # Forward difference
-    vy = (v_ij - v_ijm1) / dy # Backward difference
-    # Fixed boundary conditions on y
+    vy = (v_ij - v_ijm1) / dy # Backward difference. This work but is O(h)
+    # Using central difference O(h^2)
+    ux = (u_ip1j - u_im1j) / (2 * dx)
+    # vy = (v_ijp1 - v_ijm1) / (2 * dy) # This doesn't work
+    # Using forward/backward difference O(h^2)
+    # vy = (-3 * v_ij + 4 * v_ijp1 - v_ijp2) / (2 * dy) # Forward difference. This doesn't work
+    vy = (3 * v_ij - 4 * v_ijm1 + v_ijm2) / (2 * dy) # Backward difference. This doesn't work
+    # Boundary conditions correction on y
     # vy[0, 1:-1] = (-3 * v[0, 1:-1] + 4 * v[1, 1:-1] - v[2, 1:-1]) / (2 * dy) # Forward at y=y_min
     # vy[-1, 1:-1] = (3 * v[-1, 1:-1] - 4 * v[-2, 1:-1] + v[-3, 1:-1]) / (2 * dy) # Backward at y=y_max
-    vy[0] = (-3 * v[0] + 4 * v[1] - v[2]) / (2 * dy) # Forward at y=y_min
-    vy[-1] = (3 * v[-1] - 4 * v[-2] + v[-3]) / (2 * dy) # Backward at y=y_max
+    vy[0] = (-3 * v_ij[0] + 4 * v_ij[1] - v_ij[2]) / (2 * dy) # Forward at y=y_min
+    vy[-1] = (3 * v_ij[-1] - 4 * v_ij[-2] + v_ij[-3]) / (2 * dy) # Backward at y=y_max
+    # RHS of Poisson equation
     f = rho / dt * (ux + vy)
-    f = np.hstack([f, f[:,0].reshape(-1, 1)])
-    p = fftfd(x, y, f, p_y_max)
-    # p = fftfd_v2(x, y, f, p_y_max)
-    # print(p)
+    # Periodic boundary condition on x
+    f = np.hstack([f, f[:,0].reshape(-1, 1)]) 
+    # Solve Poisson equation
+    # p = fftfd(x, y, f, p_y_max)
+    p = fftfd_tridiag(x, y, f, p_y_max)
+    # Return without right boundary condition on x
     return p[:, :-1]
 
 def solve_iterative(u, v, p, tol=1e-10, n_iter=1000, **kwargs):

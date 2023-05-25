@@ -13,7 +13,7 @@ def grad_pressure(p, **params):
     # dead_nodes = kwparams['dead_nodes']
     px, py = np.zeros_like(p), np.zeros_like(p)
     # Get nodes
-    p_ij = np.copy(p)
+    p_ij = np.copy(p) # p_{i, j}
     p_ip1j = np.roll(p,-1, axis=1) # p_{i+1, j}
     p_im1j = np.roll(p, 1, axis=1) # p_{i-1, j}
     p_ijp1 = np.roll(p,-1, axis=0) # p_{i, j+1}
@@ -24,7 +24,7 @@ def grad_pressure(p, **params):
     px = (p_ip1j - p_im1j) / (2 * dx) 
     py = (p_ijp1 - p_ijm1) / (2 * dy)
     # Using backward difference
-    #py = (p_ij - p_ijm1) / dy
+    # py = (p_ij - p_ijm1) / dy
     # Using forward difference
     # py = (p_ijp1 - p_ij) / dy
 
@@ -140,15 +140,6 @@ def Phi(t, C, params):
 
     # Fixed boundary nodes
     # O(h)
-    # uym[0, 1:-1] = (-u_ij[0, 1:-1] + u_ij[1, 1:-1])  / dy # Forward at y=y_min
-    # uym[-1, 1:-1] = (u_ij[-1, 1:-1] - u_ij[-2, 1:-1]) / dy # Backward at y=y_max
-    # uyp[0, 1:-1] = (-u_ij[0, 1:-1] + u_ij[1, 1:-1])  / dy # Forward at y=y_min
-    # uyp[-1, 1:-1] = (u_ij[-1, 1:-1] - u_ij[-2, 1:-1]) / dy # Backward at y=y_max
-    # vym[0, 1:-1] = (-v_ij[0, 1:-1] + v_ij[1, 1:-1])  / dy # Forward at y=y_min
-    # vym[-1, 1:-1] = (v_ij[-1, 1:-1] - v_ij[-2, 1:-1]) / dy # Backward at y=y_max
-    # vyp[0, 1:-1] = (-v_ij[0, 1:-1] + v_ij[1, 1:-1])  / dy # Forward at y=y_min
-    # vyp[-1, 1:-1] = (v_ij[-1, 1:-1] - v_ij[-2, 1:-1]) / dy # Backward at y=y_max
-    #
     # uym[0, :] = (-u_ij[0, :] + u_ij[1, :])  / dy # Forward at y=y_min
     # uym[-1, :] = (u_ij[-1, :] - u_ij[-2, :]) / dy # Backward at y=y_max
     # uyp[0, :] = (-u_ij[0, :] + u_ij[1, :])  / dy # Forward at y=y_min
@@ -158,14 +149,14 @@ def Phi(t, C, params):
     # vyp[0, :] = (-v_ij[0, :] + v_ij[1, :])  / dy # Forward at y=y_min
     # vyp[-1, :] = (v_ij[-1, :] - v_ij[-2, :]) / dy # Backward at y=y_max
     # O(h^2)
-    # uym[0, :] = (-3 * uym[0, :] + 4 * uym[1, :] - uym[2, :]) / (2 * dy) # Forward at y=y_min
-    # uym[1, :] = (-3 * uym[1, :] + 4 * uym[2, :] - uym[3, :]) / (2 * dy) # Forward at y=y_min+dy
-    # uyp[-1,:] = (uyp[-1, :] - 4 * uyp[-2, :] + 3 * uyp[-3, :]) / (2 * dy) # Backward at y=y_max
-    # uyp[-2,:] = (uyp[-2, :] - 4 * uyp[-3, :] + 3 * uyp[-4, :]) / (2 * dy) # Backward at y=y_max-dy
     uym[0, :] = (-3 * u_ij[0, :] + 4 * u_ij[1, :] - u_ij[2, :]) / (2 * dy) # Forward at y=y_min
     uym[1, :] = (-3 * u_ij[1, :] + 4 * u_ij[2, :] - u_ij[3, :]) / (2 * dy) # Forward at y=y_min+dy
     uyp[-1,:] = (u_ij[-1, :] - 4 * u_ij[-2, :] + 3 * u_ij[-3, :]) / (2 * dy) # Backward at y=y_max
     uyp[-2,:] = (u_ij[-2, :] - 4 * u_ij[-3, :] + 3 * u_ij[-4, :]) / (2 * dy) # Backward at y=y_max-dy
+    vym[0, :] = (-3 * v_ij[0, :] + 4 * v_ij[1, :] - v_ij[2, :]) / (2 * dy) # Forward at y=y_min
+    vym[1, :] = (-3 * v_ij[1, :] + 4 * v_ij[2, :] - v_ij[3, :]) / (2 * dy) # Forward at y=y_min+dy
+    vyp[-1,:] = (v_ij[-1, :] - 4 * v_ij[-2, :] + 3 * v_ij[-3, :]) / (2 * dy) # Backward at y=y_max
+    vyp[-2,:] = (v_ij[-2, :] - 4 * v_ij[-3, :] + 3 * v_ij[-4, :]) / (2 * dy) # Backward at y=y_max-dy
 
 
     # Finite difference for turbulence
@@ -185,10 +176,6 @@ def Phi(t, C, params):
     Tx = (T_ip1j - T_im1j) / (2 * dx)
     Ty = (T_ijp1 - T_ijm1) / (2 * dy)
     # Fixed boundary nodes
-    # uy[0, 1:-1] = (-3 * u_ij[0, 1:-1] + 4 * u_ij[1, 1:-1] - u_ij[2, 1:-1]) / (2 * dy) # Forward at y=y_min
-    # uy[-1, 1:-1] = (3 * u_ij[-1, 1:-1] - 4 * u_ij[-2, 1:-1] + u_ij[-3, 1:-1]) / (2 * dy) # Backward at y=y_max
-    # vy[0, 1:-1] = (-3 * v_ij[0, 1:-1] + 4 * v_ij[1, 1:-1] - v_ij[2, 1:-1]) / (2 * dy) # Forward at y=y_min
-    # vy[-1, 1:-1] = (3 * v_ij[-1, 1:-1] - 4 * v_ij[-2, 1:-1] + v_ij[-3, 1:-1]) / (2 * dy) # Backward at y=y_max
     uy[0, :] = (-3 * u_ij[0, :] + 4 * u_ij[1, :] - u_ij[2, :]) / (2 * dy) # Forward at y=y_min
     uy[-1, :] = (3 * u_ij[-1, :] - 4 * u_ij[-2, :] + u_ij[-3, :]) / (2 * dy) # Backward at y=y_max
     vy[0, :] = (-3 * v_ij[0, :] + 4 * v_ij[1, :] - v_ij[2, :]) / (2 * dy) # Forward at y=y_min
@@ -204,10 +191,6 @@ def Phi(t, C, params):
     Txx = (T_ip1j - 2 * T_ij + T_im1j) / dx ** 2
     Tyy = (T_ijp1 - 2 * T_ij + T_ijm1) / dy ** 2
     # Fixed boundary nodes
-    # uyy[0, 1:-1] = (2 * u_ij[0, 1:-1] - 5 * u_ij[1, 1:-1] + 4 * u_ij[2, 1:-1] - u_ij[3, 1:-1]) / dy ** 2 # Forward at y=y_min
-    # uyy[-1, 1:-1] = (2 * u_ij[-1, 1:-1] - 5 * u_ij[-2, 1:-1] + 4 * u_ij[-3, 1:-1] - u_ij[-4, 1:-1]) / dy ** 2 # Backward at y=y_max
-    # vyy[0, 1:-1] = (2 * v_ij[0, 1:-1] - 5 * v_ij[1, 1:-1] + 4 * v_ij[2, 1:-1] - v_ij[3, 1:-1]) / dy ** 2 # Forward at y=y_min
-    # vyy[-1, 1:-1] = (2 * v_ij[-1, 1:-1] - 5 * v_ij[-2, 1:-1] + 4 * v_ij[-3, 1:-1] - v_ij[-4, 1:-1]) / dy ** 2 # Backward at y=y_max
     uyy[0, :] = (2 * u_ij[0, :] - 5 * u_ij[1, :] + 4 * u_ij[2, :] - u_ij[3, :]) / dy ** 2 # Forward at y=y_min
     uyy[-1, :] = (2 * u_ij[-1, :] - 5 * u_ij[-2, :] + 4 * u_ij[-3, :] - u_ij[-4, :]) / dy ** 2 # Backward at y=y_max
     vyy[0, :] = (2 * v_ij[0, :] - 5 * v_ij[1, :] + 4 * v_ij[2, :] - v_ij[3, :]) / dy ** 2 # Forward at y=y_min
@@ -224,20 +207,10 @@ def Phi(t, C, params):
     Ke = K(T, A, B) * S3(T, T_pc) # S2(T, 1, 10, T_pc) # 
     
     # # Temperature source term
-    S = rho * H_R * Y * Ke #- h * (T - T_inf)
+    S = rho * H_R * Y * Ke - h * (T - T_inf)
 
     # print("K:", np.min(Ke), np.max(Ke))
     # print("S:", np.min(S), np.max(S))
-
-    # # RHS Inside domain (non-conservative form - using upwind!)
-    # U_ = nu * (uxx + uyy) - (u_plu * uxm + u_min * uxp + v_plu * uym + v_min * uyp) + F_x - sgs_x
-    # V_ = nu * (vxx + vyy) - (u_plu * vxm + u_min * vxp + v_plu * vym + v_min * vyp) + F_y - sgs_y
-    # T_ = k * (Txx + Tyy) - (u * Tx  + v * Ty) + S - sgs_T
-
-    # # RHS Inside domain (conservative form - using central difference)
-    # # U_ = nu * (uxx + uyy) - (uux + uvy) + F_x - sgs_x
-    # # V_ = nu * (vxx + vyy) - (vux + vvy) + F_y - sgs_y
-    # # T_ = k * (Txx + Tyy) - (u * Tx + v * Ty) - sgs_T #+ S
 
     if conservative: # RHS Inside domain (conservative form - using central difference)
         # Conservative form for convection

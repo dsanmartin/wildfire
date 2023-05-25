@@ -1,19 +1,19 @@
 import numpy as np
-from parameters import u_ast, kappa, d, z_0, T_inf, TA, x_min, x_max
-from utils import create_plate
+from parameters import u_ast, kappa, d, z_0, u_r, y_r, alpha, T_inf, TA, x_min, x_max
+from utils import create_plate, create_half_gaussian
 
 # To load data 
-BASE_DIR = './output/'
-sim_name = '20230502144131' 
-path = BASE_DIR + sim_name + '/' 
 
-# Initial fluid flow vector field $\mathbf{u}=(u, v)$
-# $u(x,y,0)$
-# u0 = lambda x, y: u_r * (y / y_r) ** alpha # Power-law
-u0 = lambda x, y: np.piecewise(y, [y > 0, y == 0], [ # Piecewise is used for y=0
+# Initial fluid flow vector field $\mathbf{u}=(u, v)$ at t=0
+# Log wind profile
+log_wind = lambda x, y: np.piecewise(y, [y > 0, y == 0], [ # Piecewise is used for y=0
         lambda y: u_ast / kappa * np.log((y - d) / z_0), # Log wind profile if y > 0
         lambda y: y * 0 # 0 if y = 0
     ])
+# Power law wind profile (FDS experiment)
+power_law_wind = lambda x, y: u_r * (y / y_r) ** alpha 
+initial_u = power_law_wind
+u0 = lambda x, y: initial_u(x, y)
 # $v(x,y, 0) = 0$
 v0 = lambda x, y: x * 0 
 # Initial fuel
@@ -22,17 +22,19 @@ Y0 = lambda x, y: x * 0
 # x_start = 250
 # x_end = 550
 # Experiments
-x_end = (x_max + x_min) / 2
-x_start = x_end - 300
-y_start = 0
-y_end = 5
-# FDS
 x_start = 10
-x_end = x_start + 2 # 2
+x_end = x_start + 2
 y_start = 0
-y_end = .5
+y_end = .5 
+# FDS
+x_start = 0
+x_end = x_start + 3.3 
+y_start = 0
+y_end = .25
 plate = create_plate(x_start, x_end, y_start, y_end) # Return True if x_min <= x <= x_max & y_min <= y <= y_max
-T0 = lambda x, y: T_inf + (plate(x, y)) * (TA - T_inf)
+half_gaussian = create_half_gaussian(x_start, 4, 1)
+shape = plate
+T0 = lambda x, y: T_inf + (shape(x, y)) * (TA - T_inf)
 # Initial pressure
 p0 = lambda x, y: x * 0 #+ 1e-12
 # Force term
@@ -43,8 +45,11 @@ F = lambda x, y: np.array([fx(x, y), fy(x, y)])
 # ST = lambda x, y, T: (TA - T) * plate(x, y)
 
 # Initial conditions from data
+# BASE_DIR = './output/'
+# sim_name = '20230509091755' 
+# path = BASE_DIR + sim_name + '/' 
 # data = np.load(path + 'data.npz')
-# n = 331
+# n = 204
 # u0_data = data['u'][n]
 # v0_data = data['v'][n]
 # T0_data = data['T'][n]

@@ -1,6 +1,5 @@
-import sys
-import numpy as np
 import time
+import numpy as np
 from parameters import *
 from utils import domain
 from initial_conditions import u0, v0, T0, Y0, p0, F, plate
@@ -8,7 +7,7 @@ from topography import topo
 from ibm import topography_nodes, topography_distance
 from pde import solve_pde
 from inout import create_simulation_folder, save_approximation, save_parameters
-from plots import plot_2d, plot_ic
+from plots import plot_2D, plot_ic, plot_1D
 from arguments import args
 from logs import show_info
 
@@ -51,7 +50,8 @@ def main():
         Y_0 = Y_0 + (Ym) <= topo(Xm) + 2 * dy
     if show_ic:
         plot_ic(Xm, Ym, U_0, V_0, T_0, Y_0)
-        # plot_2d(Xm, Ym, U_0)
+        #plot_1D(Xm[0], T_0[0])
+        # plot_2D(Xm, Ym, U_0)
     if debug:
         return False
     # Dirichlet boundary conditions

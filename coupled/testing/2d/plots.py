@@ -1,6 +1,11 @@
 import matplotlib.pyplot as plt
 
-def plot_2d(x, y, z, cmap=plt.cm.jet):
+def plot_1D(x, y):
+    plt.plot(x, y)
+    plt.grid(True)
+    plt.show()
+
+def plot_2D(x, y, z, cmap=plt.cm.jet):
     plt.figure(figsize=(10, 6))
     plt.contourf(x, y, z, cmap=cmap)
     plt.colorbar()
