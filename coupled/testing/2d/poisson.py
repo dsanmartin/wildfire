@@ -236,7 +236,9 @@ def solve_fftfd(u, v, **kwargs):
     # u
     u_ij = u.copy() # u_{i, j} 
     u_ip1j = np.roll(u,-1, axis=1) # u_{i+1, j}
+    u_ip2j = np.roll(u,-2, axis=1) # u_{i+2, j}
     u_im1j = np.roll(u, 1, axis=1) # u_{i-1, j}
+    u_im2j = np.roll(u, 2, axis=1) # u_{i-2, j}
     # v
     v_ij = v.copy() # v_{i, j}
     v_ijp1 = np.roll(v,-1, axis=0) # v_{i, j+1}
@@ -246,19 +248,32 @@ def solve_fftfd(u, v, **kwargs):
 
     # First derivative 
     # Forward/backward difference O(h)
+    # ux = (u_ip1j - u_ij) / dx # Forward difference
     # vy = (v_ijp1 - v_ij) / dy # Forward difference
+    # ux = (u_ij - u_im1j) / dx # Backward difference. 
     vy = (v_ij - v_ijm1) / dy # Backward difference. This work but is O(h)
     # Using central difference O(h^2)
     ux = (u_ip1j - u_im1j) / (2 * dx)
-    # vy = (v_ijp1 - v_ijm1) / (2 * dy) # This doesn't work
-    # Using forward/backward difference O(h^2)
-    # vy = (-3 * v_ij + 4 * v_ijp1 - v_ijp2) / (2 * dy) # Forward difference. This doesn't work
-    vy = (3 * v_ij - 4 * v_ijm1 + v_ijm2) / (2 * dy) # Backward difference. This doesn't work
-    # Boundary conditions correction on y
-    # vy[0, 1:-1] = (-3 * v[0, 1:-1] + 4 * v[1, 1:-1] - v[2, 1:-1]) / (2 * dy) # Forward at y=y_min
-    # vy[-1, 1:-1] = (3 * v[-1, 1:-1] - 4 * v[-2, 1:-1] + v[-3, 1:-1]) / (2 * dy) # Backward at y=y_max
-    vy[0] = (-3 * v_ij[0] + 4 * v_ij[1] - v_ij[2]) / (2 * dy) # Forward at y=y_min
-    vy[-1] = (3 * v_ij[-1] - 4 * v_ij[-2] + v_ij[-3]) / (2 * dy) # Backward at y=y_max
+    # vy = (v_ijp1 - v_ijm1) / (2 * dy) 
+    # Forward/backward difference O(h^2)
+    # ux = (-u_ip2j + 4 * u_ip1j - 3 * u_ij) / (2 * dx) # Forward difference.
+    # vy = (-v_ijp2 + 4 * v_ijp1 - 3 * v_ij) / (2 * dy) # Forward difference. 
+    # ux = (3 * u_ij - 4 * u_im1j + u_im2j) / (2 * dx) # Backward difference. 
+    # vy = (3 * v_ij - 4 * v_ijm1 + v_ijm2) / (2 * dy) # Backward difference. This doesn't work
+    # Boundary conditions correction on y. x is periodic, so no correction needed.
+    # O(h) correction for O(h)-forward difference
+    # vy[-1] = (v_ij[-1] - v_ij[-2]) / dy # Backward at y=y_max
+    # O(h^2) correction for O(h)/O(h^2)-backward or central difference
+    vy[0] = (-v_ij[2] + 4 * v_ij[1] - 3 * v_ij[0]) / (2 * dy) # Forward at y=y_min
+    # vy[1] = (-v_ij[3] + 4 * v_ij[2] - 3 * v_ij[1]) / (2 * dy) # Forward at y=y_min+dy
+    # O(h^2) correction for O(h^2)-forward difference
+    # vy[-1] = (3 * v_ij[-1] - 4 * v_ij[-2] + v_ij[-3]) / (2 * dy) # Backward at y=y_max
+    # vy[-2] = (3 * v_ij[-2] - 4 * v_ij[-3] + v_ij[-4]) / (2 * dy) # Backward at y=y_max-dy
+    # Corrections for O(h^2)-backward difference at y=y_min+dy 
+    # vy[1] = (v_ij[2] - v_ij[0]) / (2 * dy) # O(h^2)
+    # vy[1] = (-v_ij[3] + 6 * v_ij[2] - 3 * v_ij[1] - 2 * v_ij[0]) / (6 * dy) # O(h^3)
+    # vy[1] = (v_ij[4] - 6 * v_ij[3] + 18 * v_ij[2] - 10 * v_ij[1] - 3 * v_ij[0]) / (12 * dy) # O(h^4)
+    # vy[1] = (-3 * v_ij[5] + 20 * v_ij[4] - 60 * v_ij[3] + 120 * v_ij[2] - 65 * v_ij[1] - 12 * v_ij[0]) / (60 * dy) # O(h^5)
     # RHS of Poisson equation
     f = rho / dt * (ux + vy)
     # Periodic boundary condition on x

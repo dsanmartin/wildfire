@@ -1,4 +1,5 @@
 import time
+import datetime
 import numpy as np
 from parameters import *
 from utils import domain
@@ -9,7 +10,7 @@ from pde import solve_pde
 from inout import create_simulation_folder, save_approximation, save_parameters
 from plots import plot_2D, plot_ic, plot_1D
 from arguments import args
-from logs import show_info
+from logs import show_info, save_info
 
 def main():
     # Others... To check
@@ -29,6 +30,7 @@ def main():
     Pr = args.prandtl
     Y_f = args.fuel_consumption
     H_R = args.heat_energy
+    h = args.heat_coefficient
     # Create arrays
     x, y, t, Xm, Ym, dx, dy, dt = domain(x_min, x_max, y_min, y_max, t_min, t_max, Nx, Ny, Nt)
     # Evaluate initial conditions 
@@ -50,8 +52,10 @@ def main():
         Y_0 = Y_0 + (Ym) <= topo(Xm) + 2 * dy
     if show_ic:
         plot_ic(Xm, Ym, U_0, V_0, T_0, Y_0)
+        # mask = (Ym >= 1.9) & (Ym <= 2.1)
+        # print(U_0[mask])
         #plot_1D(Xm[0], T_0[0])
-        # plot_2D(Xm, Ym, U_0)
+        # plot_2D(Xm, Ym, U_0[mask])
     if debug:
         return False
     # Dirichlet boundary conditions
@@ -85,7 +89,7 @@ def main():
         'turbulence': turb,
         'conservative': conser,
         # Temperature
-        'k': k,
+        'k': k, 'C_p': C_p, 
         # Fuel 
         'A': A, 'B': B, 'T_pc': T_pc, 'H_R': H_R, 'h': h, 'Y_thr': Y_thr, 'Y_f': Y_f,
         # Boundary conditions just in y (because it's periodic on x)
@@ -120,14 +124,17 @@ def main():
     u, v, T, Y, p  = solve_pde(z_0, params)
     time_end = time.time()
     solve_time = (time_end - time_start)
-    print("Solver time: ", solve_time, "s\n")
+    # print("Solver time: ", solve_time, "s\n")
+    print("Solver time: ", str(datetime.timedelta(seconds=round(solve_time))), "\n")
     # Create simulation folder
     save_path = create_simulation_folder(args.name)
+    save_info(params, save_path)
     # Save outputs
     save_approximation(save_path, x, y, t[::NT], u, v, T, Y, p)
     # Remove Soruce temperature!
     # del args['ST']
     save_parameters(save_path, params)
+    print("Simulation name:", sim_name) # To easily get the name of the simulation for visualization
 
 if __name__ == "__main__":
     main()

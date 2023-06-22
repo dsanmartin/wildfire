@@ -16,30 +16,32 @@ def grad_pressure(p, **params):
     p_ij = np.copy(p) # p_{i, j}
     p_ip1j = np.roll(p,-1, axis=1) # p_{i+1, j}
     p_im1j = np.roll(p, 1, axis=1) # p_{i-1, j}
+    p_im2j = np.roll(p, 2, axis=1) # p_{i-2, j}
     p_ijp1 = np.roll(p,-1, axis=0) # p_{i, j+1}
     p_ijm1 = np.roll(p, 1, axis=0) # p_{i, j-1}
+    p_ijm2 = np.roll(p, 2, axis=0) # p_{i, j-2}
     
     # Computing derivatives
     # Using central difference O(h^2).
     px = (p_ip1j - p_im1j) / (2 * dx) 
     py = (p_ijp1 - p_ijm1) / (2 * dy)
     # Using backward difference
+    # px = (p_ij - p_im1j) / dx
     # py = (p_ij - p_ijm1) / dy
     # Using forward difference
+    # px = (p_ip1j - p_ij) / dx
     # py = (p_ijp1 - p_ij) / dy
+    # px = (3 * p_ij - 4 * p_im1j + p_im2j) / (2 * dx) # Backward difference. 
+    # py = (3 * p_ij - 4 * p_ijm1 + p_ijm2) / (2 * dy) # Backward difference.
 
-    # Derivatives at boundary, dp/dy at y = y_min and y = y_max
-    # Periodic on x, included before
-    # Forward/backward difference O(h^2)
-    # py[0, 1:-1] = (-3 * p[0, 1:-1] + 4 * p[1, 1:-1] - p[2, 1:-1]) / (2 * dy) # Forward at y=y_min
-    # # py[cut_nodes_y, 1:-1] = (-3 * p[cut_nodes_y, 1:-1] + 4 * p[cut_nodes_y + 1, 1:-1] - p[cut_nodes_y + 2, 1:-1]) / (2 * dy) # Forward at y=y_min
-    # py[-1, 1:-1] = (3 * p[-1, 1:-1] - 4 * p[-2, 1:-1] + p[-3, 1:-1]) / (2 * dy) # Backward at y=y_max
-    py[0, :] = (-3 * p[0, :] + 4 * p[1, :] - p[2, :]) / (2 * dy) # Forward at y=y_min
-    # py[cut_nodes_y, 1:-1] = (-3 * p[cut_nodes_y, 1:-1] + 4 * p[cut_nodes_y + 1, 1:-1] - p[cut_nodes_y + 2, 1:-1]) / (2 * dy) # Forward at y=y_min
-    py[-1, :] = (3 * p[-1, :] - 4 * p[-2, :] + p[-3, :]) / (2 * dy) # Backward at y=y_max
-    # Dead nodes
-    # px[dead_nodes] = 0
-    # py[dead_nodes] = 0
+    # Boundary conditions correction on y. x is periodic, so no correction needed.
+    # O(h) correction for forward difference
+    # py[-1] = (p_ij[-1] - p_ij[-2]) / dy # Backward at y=y_max
+    # O(h) correction for backward difference
+    # py[0] = (p_ij[1] - p_ij[0]) / dy # Forward at y=y_min
+    # O(h^2) correction for central difference
+    py[0, :] = (-p_ij[2, :] + 4 * p_ij[1, :] - 3 * p_ij[0, :]) / (2 * dy) # Forward at y=y_min
+    py[-1,:] = (3 * p_ij[-1, :] - 4 * p_ij[-2, :] + p_ij[-3, :]) / (2 * dy) # Backward at y=y_max
 
     return np.array([px, py])
 
@@ -50,6 +52,7 @@ def Phi(t, C, params):
     rho = params['rho']
     k = params['k']
     #P = params['p']
+    C_p = params['C_p']
     F = params['F']
     g = params['g']
     T_inf = params['T_inf']
@@ -76,8 +79,8 @@ def Phi(t, C, params):
     # # Drag force
     mod_U = np.sqrt(u ** 2 + v ** 2)
     Y_mask = Y > Y_thr # Valid only for solid fuel mask = Ym <= dx
-    F_d_x = rho * C_D * a_v * mod_U * u * Y_mask
-    F_d_y = rho * C_D * a_v * mod_U * v * Y_mask
+    F_d_x = C_D * a_v * mod_U * u * Y_mask
+    F_d_y = C_D * a_v * mod_U * v * Y_mask
     
     # All forces
     F_x = F_x - g_x * (T - T_inf) / T - F_d_x 
@@ -207,7 +210,9 @@ def Phi(t, C, params):
     Ke = K(T, A, B) * S3(T, T_pc) # S2(T, 1, 10, T_pc) # 
     
     # # Temperature source term
-    S = rho * H_R * Y * Ke - h * (T - T_inf)
+    # S = rho * H_R * Y * Ke - h * (T - T_inf)
+    #h = 12.12 - 1.16 * mod_U + 11.6 * mod_U ** 2
+    S = H_R * Y * Ke / C_p - h * (T - T_inf) / (rho * C_p)
 
     # print("K:", np.min(Ke), np.max(Ke))
     # print("S:", np.min(S), np.max(S))

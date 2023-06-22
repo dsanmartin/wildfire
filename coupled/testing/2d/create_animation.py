@@ -81,8 +81,8 @@ if stop != 0:
     t = t[:stop]
     
 # Change domain
-x_min, x_max = 0, 200
-y_min, y_max = 0, 20
+# x_min, x_max = 0, 200
+# y_min, y_max = 0, 20
 
 
 # print(np.min(u), np.max(u))

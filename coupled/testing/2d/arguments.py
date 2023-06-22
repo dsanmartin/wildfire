@@ -16,6 +16,8 @@ parser.add_argument('-fc', '--fuel-consumption', type=float, default=Y_f,
     help="Fuel consumption parameter. Default: {}".format(Y_f))
 parser.add_argument('-HR', '--heat-energy', type=float, default=H_R,
     help="Heat energy per unit of mass parameter. Default: {}".format(H_R))
+parser.add_argument('-hc', '--heat-coefficient', type=float, default=h,
+    help="Heat coefficient. Default: {}".format(h))
 # Domain #
 parser.add_argument('-xmin', '--x-min', type=float, default=x_min,
     help="Left boundary of domain in x. Default: {}".format(x_min))
