@@ -62,7 +62,7 @@ def Phi(t, C, params):
     # R = params['R']
     H_R = params['H_R']
     h = params['h']
-    T_pc = params['T_pc']
+    T_ign = params['T_ign']
     C_D = params['C_D']
     a_v = params['a_v']
     Y_thr = params['Y_thr']
@@ -70,6 +70,7 @@ def Phi(t, C, params):
     turb = params['turbulence']
     conservative = params['conservative']
     S_top = params['S_top']
+    S_bot = params['S_bot']
     T_mask = params['T_mask'] # Temperature fixed source
     T_hot = params['T_hot'] # Temperature fixed source
     debug = params['debug']
@@ -224,12 +225,12 @@ def Phi(t, C, params):
     # else:
     #     A_T = 100
     #     Y_f = 1
-    # Ke = K(T, AT(T, A_T), B) * S3(T, T_pc) # S2(T, 1, 10, T_pc) # 
-    Ke = K(T, A, T_act) * S3(T, T_pc) # S2(T, 1, 10, T_pc) # 
+    # Ke = K(T, AT(T, A_T), B) * S3(T, T_ign) # S2(T, 1, 10, T_ign) # 
+    Ke = K(T, A, T_act) * S3(T, T_ign) # S2(T, 1, 10, T_ign) # 
     # Ke[Ke > 1] = 1
     # Testing
     #Ke[Ke >= 1000] = 1000
-    #T_mask = T >= T_pc
+    #T_mask = T >= T_ign
     
     # Dissipation function
     # phi = nu * rho * (2 * (uxx ** 2 + uyy ** 2) + (vx + uy) ** 2)
@@ -238,18 +239,22 @@ def Phi(t, C, params):
     # S = rho * H_R * Y * Ke - h * (T - T_inf)
     # h = hv(mod_U)
     S1 = H_R * Y * Ke / C_p 
-    S2 = - h * (T - T_inf) / (rho * C_p) 
-    S1[S1 > S_top] = S_top
+    S2 = -h * a_v * (T - T_inf) / (rho * C_p) 
+    S1[S1 >= S_top] = S_bot
     S = S1 + S2
     #S = S_T(S)
     
-    # S = Y * 200 * S3(T, T_pc) -  h * (T - T_inf) / (rho * C_p)
+    # S = Y * 200 * S3(T, T_ign) -  h * (T - T_inf) / (rho * C_p)
     # S = 0
     if debug:
         # dt = params['dt']
         # if t % (dt * 100) == 0:
         # print(t, dt * 100)
         print("-" * 30)
+        # print("A:", A)
+        # print("h:", h)
+        # print("S_top:", S_top)
+        # print("S_bot:", S_bot)
         # print("K:", np.min(Ke), np.max(Ke))
         print("S:", np.min(S), np.max(S))
         print("S1:", np.min(S1), np.max(S1))

@@ -6,11 +6,11 @@ G = lambda x, y, x0, y0, sx, sy, A: A * np.exp(-((x - x0) ** 2 / sx ** 2 + (y - 
 
 # Arrhenius-like equation 
 K = lambda T, A, B: A * np.exp(-B / T) 
-CV = lambda x, T_pc: 2 * x / T_pc - 1
+CV = lambda x, T_ign: 2 * x / T_ign - 1
 Sg = lambda x, x0, k: 1 / (1 + np.exp(-2 * k * (x - x0)))
 S1 = lambda x, x0, k: .5 * (1 + np.tanh(k * (x - x0)))#
-S2 = lambda x, x0, k, T_pc: Sg(CV(x, T_pc), x0, k)
-S3 = lambda x, T_pc: x > T_pc
+S2 = lambda x, x0, k, T_ign: Sg(CV(x, T_ign), x0, k)
+S3 = lambda x, T_ign: x > T_ign
 # # A parameter nodel, 
 # if A < 0:
 #     # AT = lambda T: np.exp(B_tilde) * T ** (A_alpha) # A(T) = B * T ** A_alpha

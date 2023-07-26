@@ -11,11 +11,11 @@ t_min, t_max = 0, 140 # Time interval [t_min, t_max] in s
 x_min, x_max = -500, 700 # Distance interval [x_min, x_max] in m 
 # x_min, x_max = 0, 1000 # Distance interval [x_min, x_max] in m 
 y_min, y_max = 0, 50 # Distance interval [y_min, y_max] in m
-t_min, t_max = 0, 30 # Time interval [t_min, t_max] in s
+t_min, t_max = 0, 10 # Time interval [t_min, t_max] in s
 
 # Numerical grid
 # Nx, Ny, Nt = 512, 512, 50001 # Number of nodes per axis
-Nx, Ny, Nt = 128, 128, 20001 # Number of nodes per axis
+Nx, Ny, Nt = 256, 128, 5001 # Number of nodes per axis
 NT = 100 # Number of samples to store. The simulation stores each NT timesteps
 
 # Time numerical method
@@ -40,7 +40,7 @@ C_p = 1005 # Specific heat capacity (constant pressure) in J kg^{-1} K^{-1} or m
 C_v =  717 # Specific heat capacity (constant volume) in J kg^{-1} K^{-1} or m^2 s^{-2} K^{-1} (Air: 717)
 
 # Fuel and reaction parameters
-T_pc = (573 + 473) / 2 #500 # Temperature of solid-gas phase change in K. (473 - 573 K)
+T_ign = (573 + 473) / 2 #500 # Temperature of solid-gas phase change in K. (473 - 573 K)
 # H = 21.20e6 #200 # Heat energy per unit of mass (wood) in J kg^{-1} or m^2 s^{-2}. About 21.20e6 for wood according to https://en.wikipedia.org/wiki/Heat_of_combustion
 # H_R = H #/ C_p 
 H_R = 21.2e6 #250000 #100000 
@@ -54,9 +54,10 @@ T_act = E_A / R
 #B = 300#100 # Activation energy and universal gas constant. 
 h = 18 #1000 #100#25#.5 # Convection coefficient in W m^{-2} K^{-1} or kg s^{-3} K^{-1}  (Air: 0.5-1000), (15.9 - 18.2 according to Maragkos)
 Y_thr = 0.5 # Threshold to add solid fuel force
-Y_f = .05 #0.05 / 2 #.0125 / .5 #.075 #.05 0.025 # Extra parameter to control the fuel consumption
-T_hot = T_inf + 800# 1500 # 300 Temperature of fire in K 300
-S_top = 250 #1000 / 2
+Y_f = 1  #0.05 / 2 #.0125 / .5 #.075 #.05 0.025 # Extra parameter to control the fuel consumption
+T_hot = T_inf + 1000# 1500 # 300 Temperature of fire in K 300
+S_top = 50000 #1000 / 2
+S_bot = 35000
 debug_pde = False
 
 ### Initial conditions parameters ###
@@ -72,7 +73,7 @@ y_r = 2 # Reference height in m
 alpha = 1 / 7 # Empirical constant in 1
 # Temperature location
 # 'Width' of initial fire source in m
-x_start = .5
+x_start = 0
 x_end = x_start + 4#2 # PLATE -> x_start + 3.3 (FDS)
 # x_start = 100
 # x_end = 105
@@ -100,39 +101,39 @@ Y_dead_nodes = 1
 # S_top, S_bot, Sx = 500, 100, 50 # Nice for t=
 # S_top, S_bot, Sx = 500, 100, 250 # Nice for t=
 # S_top, S_bot, Sx = 10000, 200, 200
-S_bot, Sx = -1, -1
+Sx = -1
 
 # A(T) fitted parameters #
-# # h=1000, E_A=85e3, filter=(Se >= 0) & (Se <= 500) & (T > T_pc)
+# # h=1000, E_A=85e3, filter=(Se >= 0) & (Se <= 500) & (T > T_ign)
 # A_alpha = -16.777128 #-16.579513 #-16.756939 #-16.656926 #-13.558528 #-13.431608 
 # B_tilde = 120.560762 #118.762667 #120.201488 #119.426307 #99.691432 #98.536655 
-# # h=1000, E_A=85e3, filter=(Se >= 0) & (Se <= 100) & (T > T_pc) -- NO -- 
+# # h=1000, E_A=85e3, filter=(Se >= 0) & (Se <= 100) & (T > T_ign) -- NO -- 
 # A_alpha = -16.579513
 # B_tilde = 118.762667
-# # h=40, E_A=85e3, filter=(Se >= 0) & (Se <= 500) & (T > T_pc), 
+# # h=40, E_A=85e3, filter=(Se >= 0) & (Se <= 500) & (T > T_ign), 
 # # With Y_f=10 - OK, but fire ends. Y_f=1 it explodes. Y_f=5 OK, Y_f=4 better. Y_f=4.5 pretty good (up to t=30s)
 # A_alpha = -14.345368
 # B_tilde = 104.674068
-# # h=1000, E_A=85e3, filter=(Se >= 0) & (Se <= 250) & (T > T_pc). 
+# # h=1000, E_A=85e3, filter=(Se >= 0) & (Se <= 250) & (T > T_ign). 
 # # Y_f=1 Ok,
 # A_alpha = -16.780480
 # B_tilde = 120.282809
-# # h=40, E_A=85e3, filter=(Se >= 0) & (Se <= 1000) & (T > T_pc)
+# # h=40, E_A=85e3, filter=(Se >= 0) & (Se <= 1000) & (T > T_ign)
 # # A_alpha = -15.177128
 # # B_tilde = 110.509900
-# # # h=17, E_A=85e3, filter=(Se >= 0) & (Se <= 1000) & (T > T_pc) - IT DOES NOT WORK
+# # # h=17, E_A=85e3, filter=(Se >= 0) & (Se <= 1000) & (T > T_ign) - IT DOES NOT WORK
 # # A_alpha = -15.184551
 # # B_tilde = 110.553633
-# # h=40, E_A=85e3, filter=(Se >= 0) & (Se <= 250) & (T > T_pc)
+# # h=40, E_A=85e3, filter=(Se >= 0) & (Se <= 250) & (T > T_ign)
 # # Y_f=2 works up to t=30s
 # # Y_f=2.5 it explodes
 # # Y_f=3 works up to t=60s (but fire ends)
 # # A_alpha = -13.161880
 # # B_tilde = 96.678002
 # # Y_f = 2
-# # h=17, E_A=100e3, filter=(Se >= 0) & (Se <= 250) & (T > T_pc). Fire ends
+# # h=17, E_A=100e3, filter=(Se >= 0) & (Se <= 250) & (T > T_ign). Fire ends
 # # A_alpha = -20.091293
 # # B_tilde = 143.318524
-# # h=17, E_A=85e3, filter=(Se >= -250) & (Se <= 250) & (T > T_pc) & (A > 1e4). It does not work
+# # h=17, E_A=85e3, filter=(Se >= -250) & (Se <= 250) & (T > T_ign) & (A > 1e4). It does not work
 # # A_alpha = -13.070216
 # # B_tilde = 96.084337

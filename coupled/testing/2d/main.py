@@ -34,6 +34,8 @@ def main():
     T_act = args.activation_temperature
     Y_thr = args.fuel_threshold
     T_hot = args.hot_temperature
+    S_top = args.source_top
+    S_bot = args.source_bottom
     # Create arrays
     x, y, t, Xm, Ym, dx, dy, dt = domain(x_min, x_max, y_min, y_max, t_min, t_max, Nx, Ny, Nt)
     # Evaluate initial conditions 
@@ -97,7 +99,7 @@ def main():
         # Temperature
         'k': k, 'C_p': C_p, 
         # Fuel 
-        'A': A, 'T_act': T_act, 'T_pc': T_pc, 'H_R': H_R, 'h': h, 'Y_thr': Y_thr, 'Y_f': Y_f,
+        'A': A, 'T_act': T_act, 'T_ign': T_ign, 'H_R': H_R, 'h': h, 'Y_thr': Y_thr, 'Y_f': Y_f,
         # Boundary conditions just in y (because it's periodic on x)
         'bc_on_y': dirichlet_y_bc,    
         # IBM

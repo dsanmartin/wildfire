@@ -19,11 +19,15 @@ parser.add_argument('-Yt', '--fuel-threshold', type=float, default=Y_thr,
 parser.add_argument('-HR', '--heat-energy', type=float, default=H_R,
     help="Heat energy per unit of mass parameter. Default: {}".format(H_R))
 parser.add_argument('-hc', '--heat-coefficient', type=float, default=h,
-    help="Heat coefficient. Default: {}".format(h))
-parser.add_argument('-TA', '--activation-temperature', type=float, default=T_act,
+    help="Convective heat coefficient. Default: {}".format(h))
+parser.add_argument('-Ta', '--activation-temperature', type=float, default=T_act,
     help="Activation energy. Default: {}".format(T_act))
-parser.add_argument('-TH', '--hot-temperature', type=float, default=T_hot,
+parser.add_argument('-Th', '--hot-temperature', type=float, default=T_hot,
     help="Hot temperature. Default: {}".format(T_hot))
+parser.add_argument('-St', '--source-top', type=float, default=S_top,
+    help="Source top bound. Default: {}".format(S_top))
+parser.add_argument('-Sb', '--source-bottom', type=float, default=S_bot,
+    help="Source bottom bound. Default: {}".format(S_bot))
 # Domain #
 parser.add_argument('-xmin', '--x-min', type=float, default=x_min,
     help="Left boundary of domain in x. Default: {}".format(x_min))
