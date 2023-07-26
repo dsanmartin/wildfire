@@ -10,18 +10,19 @@ def show_info(params):
     U_0, V_0, T_0 = params['u0'], params['v0'], params['T0']
     sim_name = params['sim_name']
     method = params['method']
-    rho, TA, T_inf, T_pc = params['rho'], params['TA'], params['T_inf'], params['T_pc']
+    rho, T_hot, T_inf, T_pc = params['rho'], params['T_hot'], params['T_inf'], params['T_pc']
     nu, k, Pr, g = params['nu'], params['k'], params['Pr'], params['g']
-    A, B, H_R, h = params['A'], params['B'], params['H_R'], params['h']
+    A, T_act, H_R, h = params['A'], params['T_act'], params['H_R'], params['h']
     Y_f, Y_thr, C_p = params['Y_f'], params['Y_thr'], params['C_p']
     turb, conser = params['turbulence'], params['conservative']
+    S_top, S_bot, Sx = params['S_top'], params['S_bot'], params['Sx']
 
     L = ((x_max - x_min) * (y_max - y_min)) ** 0.5
     Re = np.mean(U_0[:,0]) * L / nu
     T_avg = np.mean(T_0[:, Nx // 2])
     beta = 1 / T_avg
     L_v = (y_max - y_min)
-    Gr = abs(g[-1]) * beta * (TA - T_inf) * L_v ** 3 / nu ** 2 
+    Gr = abs(g[-1]) * beta * (T_hot - T_inf) * L_v ** 3 / nu ** 2 
     Ra = Gr * Pr
     print("Simulation name:", sim_name)
     print("Domain: [%.4f, %.4f] x [%.4f, %.4f] x [%.4f, %.4f]" % (x_min, x_max, y_min, y_max, t_min, t_max))
@@ -30,9 +31,10 @@ def show_info(params):
     print("Time integration: %s" % method)
     print("Samples: %d" % NT)
     print("nu: %.2e, g: (%.4f, %.4f)" % (nu, g[0], g[1]))
-    print("k: %.2e, C_p: %.4f, T_inf: %.4f, T_hot: %.4f" % (k, C_p, T_inf, TA))
-    print("rho: %.4f, T_pc: %.4f, A: %.4f, B: %.4f" % (rho, T_pc, A, B))
+    print("k: %.2e, C_p: %.4f, T_inf: %.4f, T_hot: %.4f" % (k, C_p, T_inf, T_hot))
+    print("rho: %.4f, T_pc: %.4f, A: %.4f, T_act: %.4f" % (rho, T_pc, A, T_act))
     print("H_R: %.4f, h: %.6f, Y_thr: %.4f, Y_f: %.4f" % (H_R, h, Y_thr, Y_f))
+    print("S_top: %.4f, S_bot: %.4f, Sx: %.4f" % (S_top, S_bot, Sx))
     print("Turbulence: %r" % turb)
     print("Conservative: %r" % conser)
     print("Reynolds: %.4f" %  Re)
@@ -50,18 +52,19 @@ def save_info(params, dir_path):
     U_0, V_0, T_0 = params['u0'], params['v0'], params['T0']
     sim_name = params['sim_name']
     method = params['method']
-    rho, TA, T_inf, T_pc = params['rho'], params['TA'], params['T_inf'], params['T_pc']
+    rho, T_hot, T_inf, T_pc = params['rho'], params['T_hot'], params['T_inf'], params['T_pc']
     nu, k, Pr, g = params['nu'], params['k'], params['Pr'], params['g']
-    A, B, H_R, h = params['A'], params['B'], params['H_R'], params['h']
+    A, T_act, H_R, h = params['A'], params['T_act'], params['H_R'], params['h']
     Y_f, Y_thr, C_p = params['Y_f'], params['Y_thr'], params['C_p']
     turb, conser = params['turbulence'], params['conservative']
+    S_top, S_bot, Sx = params['S_top'], params['S_bot'], params['Sx']
 
     L = ((x_max - x_min) * (y_max - y_min)) ** 0.5
     Re = np.mean(U_0[:,0]) * L / nu
     T_avg = np.mean(T_0[:, Nx // 2])
     beta = 1 / T_avg
     L_v = (y_max - y_min)
-    Gr = abs(g[-1]) * beta * (TA - T_inf) * L_v ** 3 / nu ** 2 
+    Gr = abs(g[-1]) * beta * (T_hot - T_inf) * L_v ** 3 / nu ** 2 
     Ra = Gr * Pr
     with open(dir_path + 'parameters.txt', 'w') as f:
         print("Simulation name:", sim_name, file=f)
@@ -71,9 +74,10 @@ def save_info(params, dir_path):
         print("Time integration: %s" % method, file=f)
         print("Samples: %d" % NT, file=f)
         print("nu: %.2e, g: (%.4f, %.4f)" % (nu, g[0], g[1]), file=f)
-        print("k: %.2e, C_p: %.4f, T_inf: %.4f, T_hot: %.4f" % (k, C_p, T_inf, TA), file=f)
-        print("rho: %.4f, T_pc: %.4f, A: %.4f, B: %.4f" % (rho, T_pc, A, B), file=f)
+        print("k: %.2e, C_p: %.4f, T_inf: %.4f, T_hot: %.4f" % (k, C_p, T_inf, T_hot), file=f)
+        print("rho: %.4f, T_pc: %.4f, A: %.4f, T_act: %.4f" % (rho, T_pc, A, T_act), file=f)
         print("H_R: %.4f, h: %.6f, Y_thr: %.4f, Y_f: %.4f" % (H_R, h, Y_thr, Y_f), file=f)
+        print("S_top: %.4f, S_bot: %.4f, Sx: %.4f" % (S_top, S_bot, Sx), file=f)
         print("Turbulence: %r" % turb, file=f)
         print("Conservative: %r" % conser, file=f)
         print("Reynolds: %.4f" %  Re, file=f)

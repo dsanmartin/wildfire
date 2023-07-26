@@ -251,10 +251,10 @@ def solve_fftfd(u, v, **kwargs):
     # ux = (u_ip1j - u_ij) / dx # Forward difference
     # vy = (v_ijp1 - v_ij) / dy # Forward difference
     # ux = (u_ij - u_im1j) / dx # Backward difference. 
-    vy = (v_ij - v_ijm1) / dy # Backward difference. This work but is O(h)
+    # vy = (v_ij - v_ijm1) / dy # Backward difference. This work but is O(h)
     # Using central difference O(h^2)
     ux = (u_ip1j - u_im1j) / (2 * dx)
-    # vy = (v_ijp1 - v_ijm1) / (2 * dy) 
+    vy = (v_ijp1 - v_ijm1) / (2 * dy) 
     # Forward/backward difference O(h^2)
     # ux = (-u_ip2j + 4 * u_ip1j - 3 * u_ij) / (2 * dx) # Forward difference.
     # vy = (-v_ijp2 + 4 * v_ijp1 - 3 * v_ij) / (2 * dy) # Forward difference. 
@@ -267,7 +267,7 @@ def solve_fftfd(u, v, **kwargs):
     vy[0] = (-v_ij[2] + 4 * v_ij[1] - 3 * v_ij[0]) / (2 * dy) # Forward at y=y_min
     # vy[1] = (-v_ij[3] + 4 * v_ij[2] - 3 * v_ij[1]) / (2 * dy) # Forward at y=y_min+dy
     # O(h^2) correction for O(h^2)-forward difference
-    # vy[-1] = (3 * v_ij[-1] - 4 * v_ij[-2] + v_ij[-3]) / (2 * dy) # Backward at y=y_max
+    vy[-1] = (3 * v_ij[-1] - 4 * v_ij[-2] + v_ij[-3]) / (2 * dy) # Backward at y=y_max
     # vy[-2] = (3 * v_ij[-2] - 4 * v_ij[-3] + v_ij[-4]) / (2 * dy) # Backward at y=y_max-dy
     # Corrections for O(h^2)-backward difference at y=y_min+dy 
     # vy[1] = (v_ij[2] - v_ij[0]) / (2 * dy) # O(h^2)

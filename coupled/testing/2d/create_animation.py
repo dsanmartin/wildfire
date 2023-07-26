@@ -15,6 +15,10 @@ parser.add_argument('-s', '--show', type=str,
 parser.add_argument('-t', '--time-sample', type=int, help='Time sample step. Default 1', default=1)
 parser.add_argument('-n', '--time-step', type=int, help='Up to time step n. Default 0 (all data)', default=0)
 parser.add_argument('-i', '--input', type=str, help='Simulation directory.', required=True)
+parser.add_argument('-xmin', '--x-min', type=float, default=666, help="Left boundary of domain in x.")
+parser.add_argument('-xmax', '--x-max', type=float, default=666, help="Right boundary of domain in x.")
+parser.add_argument('-ymin', '--y-min', type=float, default=666, help="Bottom boundary of domain in y.")
+parser.add_argument('-ymax', '--y-max', type=float, default=666, help="Top boundary of domain in y.")
 args = parser.parse_args()
 
 # Default values
@@ -81,6 +85,14 @@ if stop != 0:
     t = t[:stop]
     
 # Change domain
+if args.x_min != 666:
+    x_min = args.x_min
+if args.x_max != 666:
+    x_max = args.x_max
+if args.y_min != 666:
+    y_min = args.y_min
+if args.y_max != 666:
+    y_max = args.y_max
 # x_min, x_max = 0, 200
 # y_min, y_max = 0, 20
 

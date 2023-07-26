@@ -3,8 +3,8 @@ import datetime
 import numpy as np
 from parameters import *
 from utils import domain
-from initial_conditions import u0, v0, T0, Y0, p0, F, plate
-from topography import topo
+from initial_conditions import u0, v0, T0, Y0, p0, F, plate, topo, shape#, T_mask
+# from topography import topo
 from ibm import topography_nodes, topography_distance
 from pde import solve_pde
 from inout import create_simulation_folder, save_approximation, save_parameters
@@ -15,8 +15,8 @@ from logs import show_info, save_info
 def main():
     # Others... To check
     input_ic = False
-    show_ic = False
-    debug = False
+    show_ic = args.show_initial_condition
+    debug = args.debug
     # Get arguments
     sim_name = args.name
     Nx = args.x_nodes
@@ -31,6 +31,9 @@ def main():
     Y_f = args.fuel_consumption
     H_R = args.heat_energy
     h = args.heat_coefficient
+    T_act = args.activation_temperature
+    Y_thr = args.fuel_threshold
+    T_hot = args.hot_temperature
     # Create arrays
     x, y, t, Xm, Ym, dx, dy, dt = domain(x_min, x_max, y_min, y_max, t_min, t_max, Nx, Ny, Nt)
     # Evaluate initial conditions 
@@ -44,18 +47,21 @@ def main():
     cut_nodes, dead_nodes = topography_nodes(Xm, Ym, topo, dx, dy)
     values_dead_nodes = np.array([u_dead_nodes, v_dead_nodes, T_dead_nodes, Y_dead_nodes])
     topo_distance = topography_distance(Xm, Ym, topo)
+    # Temperature mask
+    T_mask = None#plate(Xm, Ym) #shape(Xm, Ym) > 0.01
     ### THIS CAN BE IMPROVED MAYBE CREATING INITIAL CONDITIONS INCLUDING TOPOGRAPHY :')
     if input_ic is not True:
         U_0[dead_nodes] = 0
         V_0[dead_nodes] = 0
         T_0[dead_nodes] = T_inf
-        Y_0 = Y_0 + (Ym) <= topo(Xm) + 2 * dy
+        Y_0[dead_nodes] = 1
+        # Y_0 = Y_0 + (Ym) <= topo(Xm) + 2 * dy
     if show_ic:
         plot_ic(Xm, Ym, U_0, V_0, T_0, Y_0)
         # mask = (Ym >= 1.9) & (Ym <= 2.1)
         # print(U_0[mask])
         #plot_1D(Xm[0], T_0[0])
-        # plot_2D(Xm, Ym, U_0[mask])
+        # plot_2D(Xm, Ym, T_mask)
     if debug:
         return False
     # Dirichlet boundary conditions
@@ -91,15 +97,15 @@ def main():
         # Temperature
         'k': k, 'C_p': C_p, 
         # Fuel 
-        'A': A, 'B': B, 'T_pc': T_pc, 'H_R': H_R, 'h': h, 'Y_thr': Y_thr, 'Y_f': Y_f,
+        'A': A, 'T_act': T_act, 'T_pc': T_pc, 'H_R': H_R, 'h': h, 'Y_thr': Y_thr, 'Y_f': Y_f,
         # Boundary conditions just in y (because it's periodic on x)
         'bc_on_y': dirichlet_y_bc,    
         # IBM
         'cut_nodes': cut_nodes, 'dead_nodes': dead_nodes, 'values_dead_nodes': values_dead_nodes, 'Y_top': topo_distance,
         # 'mask': mask,
         'method': method, # IVP solver 
-        'TA': TA,
-        'T_mask': None, 
+        'T_hot': T_hot,
+        'T_mask': T_mask, 
         # 'T_mask': plate(Xm, Ym),
         # 'ST': ST,
         # 'u_y_min': u_y_min,
@@ -114,6 +120,11 @@ def main():
         'T0': T_0,
         'Y0': Y_0,
         'sim_name': sim_name,
+        # Source/sink bounds
+        'S_top': S_top,
+        'S_bot': S_bot,
+        'Sx': Sx,
+        'debug': debug_pde
     }
     # Show parameters
     # print(params)

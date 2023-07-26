@@ -1,4 +1,5 @@
 import numpy as np
+from parameters import h, Y_f, A, C_p, H_R, T_act, A_T, rho, T_inf#, S_top, S_bot, Sx #  B_tilde, A_alpha
 
 # Gaussian
 G = lambda x, y, x0, y0, sx, sy, A: A * np.exp(-((x - x0) ** 2 / sx ** 2 + (y - y0) ** 2 / sy ** 2)) 
@@ -10,6 +11,39 @@ Sg = lambda x, x0, k: 1 / (1 + np.exp(-2 * k * (x - x0)))
 S1 = lambda x, x0, k: .5 * (1 + np.tanh(k * (x - x0)))#
 S2 = lambda x, x0, k, T_pc: Sg(CV(x, T_pc), x0, k)
 S3 = lambda x, T_pc: x > T_pc
+# # A parameter nodel, 
+# if A < 0:
+#     # AT = lambda T: np.exp(B_tilde) * T ** (A_alpha) # A(T) = B * T ** A_alpha
+#     # AT = lambda T: A_T * C_p / H_R / np.exp(-B / T)
+#     AT = lambda T, A_T: A_T * C_p / H_R / np.exp(-T_act / T)
+#     AT = lambda T, A_T: C_p / H_R * (A_T  + h / (rho * C_p) * (T - T_inf)) / np.exp(-T_act / T)
+# else:
+#     AT = lambda T: A # Constant
+# # Convective heat transfer coefficient
+# if h < 0:
+#     hv = lambda v: np.piecewise(v, [v < 2, v >= 2], [
+#             lambda v: 0 * v, # No information
+#             lambda v: 12.12 - 1.16 * v + 11.6 * v ** 0.5 # Wind chill factor
+#     ])
+# else:
+#     hv = lambda v: h # Constant 17-18 W/m^2/K?
+# # Fuel consumption coefficient
+# if Y_f < 0:
+#     Yft = lambda t: np.piecewise(t, [t <= 20, t > 20], [lambda t: 2, lambda t: 3])
+# else:
+#     Yft = lambda t: Y_f
+# Source/sink bounds
+S_tilde = lambda S, S_top, S_bot, Sx: np.piecewise(S, [S <= S_top, S > S_top, (S > S_top) & (S > Sx)], [
+    lambda S: S,
+    lambda S: (S_bot - S_top) / (Sx - S_top) * (S - S_top) + S_top,
+    lambda S: S_bot
+])
+# S_tilde = lambda S, S_top, S_bot, Sx: np.piecewise(S, [S <= S_top, S > S_top], [
+#     lambda S: S,
+#     lambda S: (S_bot - S_top) / (Sx - S_top) * (S - S_top) + S_top
+# ])
+# S_T = lambda S: S_tilde(S, S_top, S_bot, Sx)
+
 
 def domain(x_min, x_max, y_min, y_max, t_min, t_max, Nx, Ny, Nt):
     # 1d arrays

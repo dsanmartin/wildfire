@@ -14,10 +14,16 @@ parser.add_argument('-Pr', '--prandtl', type=float, default=Pr,
     help="Prandtl number parameter. Default: {}".format(Pr))
 parser.add_argument('-fc', '--fuel-consumption', type=float, default=Y_f,
     help="Fuel consumption parameter. Default: {}".format(Y_f))
+parser.add_argument('-Yt', '--fuel-threshold', type=float, default=Y_thr,
+    help="Solid fuel threshold force. Default: {}".format(Y_thr))
 parser.add_argument('-HR', '--heat-energy', type=float, default=H_R,
     help="Heat energy per unit of mass parameter. Default: {}".format(H_R))
 parser.add_argument('-hc', '--heat-coefficient', type=float, default=h,
     help="Heat coefficient. Default: {}".format(h))
+parser.add_argument('-TA', '--activation-temperature', type=float, default=T_act,
+    help="Activation energy. Default: {}".format(T_act))
+parser.add_argument('-TH', '--hot-temperature', type=float, default=T_hot,
+    help="Hot temperature. Default: {}".format(T_hot))
 # Domain #
 parser.add_argument('-xmin', '--x-min', type=float, default=x_min,
     help="Left boundary of domain in x. Default: {}".format(x_min))
@@ -37,6 +43,12 @@ parser.add_argument('-Ny', '--y-nodes', type=int, default=Ny,
     help="Number of nodes in y. Default: {}".format(Ny))
 parser.add_argument('-Nt', '--t-nodes', type=int, default=Nt,
     help="Number of nodes in t. Default: {}".format(Nt))
+# Others parameters for debugging #
+parser.add_argument('-d', '--debug', type=int, default=0,
+    help="Debug. 1 for debugging. Default: {}".format(0))
+parser.add_argument('-sic', '--show-initial-condition', type=int, default=0,
+    help="Show (plot) initial conditions. 1 for plot. Default: {}".format(0))
+
 """"
 parser.add_argument('-v', '--visualization', type=str, 
     help='Type of visualization. Options: "horizontal" or "vertical". Default: "vertical".', default="vertical")

@@ -1,7 +1,7 @@
 import numpy as np
 from poisson import solve_fftfd
 from turbulence import turbulence
-from utils import K, S2, S3
+from utils import K, S2, S3#, hv#, Yft, S_T, AT
 import time
 
 OUTPUT_LOG = "Time step: {:=6d}, Simulation time: {:.2f} s"
@@ -57,7 +57,7 @@ def Phi(t, C, params):
     g = params['g']
     T_inf = params['T_inf']
     A = params['A']
-    B = params['B']
+    T_act = params['T_act']
     # E_A = params['E_A']
     # R = params['R']
     H_R = params['H_R']
@@ -69,6 +69,10 @@ def Phi(t, C, params):
     Y_f = params['Y_f']
     turb = params['turbulence']
     conservative = params['conservative']
+    S_top = params['S_top']
+    T_mask = params['T_mask'] # Temperature fixed source
+    T_hot = params['T_hot'] # Temperature fixed source
+    debug = params['debug']
 
     # Get variables
     u, v, T, Y = C
@@ -78,7 +82,7 @@ def Phi(t, C, params):
     g_x, g_y = g
     # # Drag force
     mod_U = np.sqrt(u ** 2 + v ** 2)
-    Y_mask = Y > Y_thr # Valid only for solid fuel mask = Ym <= dx
+    Y_mask = Y > Y_thr # Valid only for solid fuel mask = Ym <= Y_height
     F_d_x = C_D * a_v * mod_U * u * Y_mask
     F_d_y = C_D * a_v * mod_U * v * Y_mask
     
@@ -207,15 +211,58 @@ def Phi(t, C, params):
         sgs_x, sgs_y, sgs_T = turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, params)
     
     # Reaction Rate
-    Ke = K(T, A, B) * S3(T, T_pc) # S2(T, 1, 10, T_pc) # 
+    # Y_f = 2, A_T=200, 100 (works but the fire ends soon)
+    # if t <= 30:
+    #     A_T = 250.0
+    #     Y_f = 1.1#.25
+    # elif t <= 60:
+    #     A_T = 100
+    #     Y_f = 1.5#2.5
+    # elif t <= 90:
+    #     A_T = 200
+    #     Y_f = 1.2
+    # else:
+    #     A_T = 100
+    #     Y_f = 1
+    # Ke = K(T, AT(T, A_T), B) * S3(T, T_pc) # S2(T, 1, 10, T_pc) # 
+    Ke = K(T, A, T_act) * S3(T, T_pc) # S2(T, 1, 10, T_pc) # 
+    # Ke[Ke > 1] = 1
+    # Testing
+    #Ke[Ke >= 1000] = 1000
+    #T_mask = T >= T_pc
     
+    # Dissipation function
+    # phi = nu * rho * (2 * (uxx ** 2 + uyy ** 2) + (vx + uy) ** 2)
+
     # # Temperature source term
     # S = rho * H_R * Y * Ke - h * (T - T_inf)
-    #h = 12.12 - 1.16 * mod_U + 11.6 * mod_U ** 2
-    S = H_R * Y * Ke / C_p - h * (T - T_inf) / (rho * C_p)
-
-    # print("K:", np.min(Ke), np.max(Ke))
-    # print("S:", np.min(S), np.max(S))
+    # h = hv(mod_U)
+    S1 = H_R * Y * Ke / C_p 
+    S2 = - h * (T - T_inf) / (rho * C_p) 
+    S1[S1 > S_top] = S_top
+    S = S1 + S2
+    #S = S_T(S)
+    
+    # S = Y * 200 * S3(T, T_pc) -  h * (T - T_inf) / (rho * C_p)
+    # S = 0
+    if debug:
+        # dt = params['dt']
+        # if t % (dt * 100) == 0:
+        # print(t, dt * 100)
+        print("-" * 30)
+        # print("K:", np.min(Ke), np.max(Ke))
+        print("S:", np.min(S), np.max(S))
+        print("S1:", np.min(S1), np.max(S1))
+        print("S2:", np.min(S2), np.max(S2))
+        # print("Tx:", np.min(Tx), np.max(Tx))
+        # print("Ty:", np.min(Ty), np.max(Ty))
+        # print("Txx:", np.min(Txx), np.max(Txx))
+        # print("Tyy:", np.min(Tyy), np.max(Tyy))
+        # lapT = k * (Txx + Tyy)
+        # print("lapT", np.min(lapT), np.max(lapT))
+        print("sgs_T", np.min(sgs_T), np.max(sgs_T))
+        print("S - sgs_T", np.min(S - sgs_T), np.max(S - sgs_T))
+        print("-" * 30)
 
     if conservative: # RHS Inside domain (conservative form - using central difference)
         # Conservative form for convection
@@ -231,8 +278,13 @@ def Phi(t, C, params):
         U_ = nu * (uxx + uyy) - (u_plu * uxm + u_min * uxp + v_plu * uym + v_min * uyp) + F_x - sgs_x
         V_ = nu * (vxx + vyy) - (u_plu * vxm + u_min * vxp + v_plu * vym + v_min * vyp) + F_y - sgs_y
         T_ = k * (Txx + Tyy) - (u * Tx  + v * Ty) + S - sgs_T 
+
+    if t < 5:
+        if T_mask is not None:
+            T[T_mask] = T_hot
     
-    Y_ = -Y * Ke * Y_f
+    # Y_f = Yft(t)
+    Y_ = -Y * Ke * Y_f 
 
     U_, V_, T_, Y_ = boundary_conditions(U_, V_, T_, Y_, params)
 
@@ -240,8 +292,6 @@ def Phi(t, C, params):
 
 def boundary_conditions(u, v, T, Y, params):
     T_inf = params['T_inf']
-    TA = params['TA']
-    T_mask = params['T_mask'] # Temperature fixed source
     bc_on_y = params['bc_on_y'] # Boundary conditions (for Dirichlet)
     u_y_min, u_y_max = bc_on_y[0]
     v_y_min, v_y_max = bc_on_y[1]
@@ -282,8 +332,8 @@ def boundary_conditions(u, v, T, Y, params):
     T[-1] = T_n
     Y[-1] = Y_n
 
-    if T_mask is not None:
-       T[T_mask] = TA 
+    # if T_mask is not None:
+    #    T[T_mask] = T_hot
 
     # BC at edge nodes
     T_s = (4 * T[cut_nodes_y + 1, cut_nodes_x] - T[cut_nodes_y + 2, cut_nodes_x]) / 3 # Derivative using O(h^2)	
@@ -366,6 +416,7 @@ def data_post_processing(z, p, params):
 def solve_pde(z_0, params):
     Nx, Ny, Nt = params['Nx'], params['Ny'], params['Nt']
     dx, dy, dt = params['dx'], params['dy'], params['dt']
+    # T_mask = params['T_mask']
     NT = params['NT']
     t = params['t']
     method = params['method']
@@ -402,6 +453,8 @@ def solve_pde(z_0, params):
             # Simulation 
             time_start = time.time()
             z_tmp, p_tmp = methods[method](t[n], z_tmp, dt, params)
+            # if t[n] <= 3:
+            #     z_tmp[2][T_mask] = TA
             if n % NT == 0:
                 # print("Time step:", n)
                 # print("Simulation time:", t[n], " s")

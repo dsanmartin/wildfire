@@ -1,5 +1,8 @@
+""" Initial conditions
+"""
 import numpy as np
-from parameters import u_ast, kappa, d, z_0, u_r, y_r, alpha, T_inf, TA, x_start, x_end, y_start, y_end
+from topography import flat, hill
+from parameters import u_ast, kappa, d, z_0, u_r, y_r, alpha, T_inf, T_hot, x_start, x_end, y_start, y_end, fuel_height, hill_center
 from utils import create_plate, create_half_gaussian
 
 # Initial fluid flow vector field $\mathbf{u}=(u, v)$ at t=0 #
@@ -16,7 +19,9 @@ u0 = lambda x, y: initial_u(x, y) #+ np.random.rand(*x.shape) * 0.5
 v0 = lambda x, y: x * 0 
 
 # Initial fuel $Y(x,y,0)$ #
-Y0 = lambda x, y: x * 0 
+topo = flat # flat or hill
+Y0 = lambda x, y: y <= (topo(x) + fuel_height)
+# Y_0 = Y_0 + (Ym) <= topo(Xm) + 2 * dy 
 
 # Initial temperature $T(x,y,0)$ #
 # x_start = 250
@@ -37,8 +42,10 @@ height = (y_end - y_start)
 plate = create_plate(x_start, x_end, y_start, y_end) # Return True if x_min <= x <= x_max & y_min <= y <= y_max
 half_gaussian = create_half_gaussian(x_center, width, height)#create_half_gaussian(1, 3, 1) # .5
 shape = half_gaussian
-T0 = lambda x, y: T_inf + (shape(x, y)) * (TA - T_inf)
+T0 = lambda x, y: T_inf + (shape(x, y)) * (T_hot - T_inf)
 # T0 = lambda x, y, t: (t <= 11) * (T_inf + (plate(x, y)) * (TA - T_inf))
+# T_mask = plate
+
 
 # Initial pressure $p(x, y, 0)$ #
 p0 = lambda x, y: x * 0 
