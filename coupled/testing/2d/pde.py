@@ -1,7 +1,7 @@
 import numpy as np
 from poisson import solve_fftfd
 from turbulence import turbulence
-from utils import K, S2, S3#, hv#, Yft, S_T, AT
+from utils import K, H, Km, hv, source, sink #, Yft, S_T, AT
 import time
 
 OUTPUT_LOG = "Time step: {:=6d}, Simulation time: {:.2f} s"
@@ -62,7 +62,7 @@ def Phi(t, C, params):
     # R = params['R']
     H_R = params['H_R']
     h = params['h']
-    T_ign = params['T_ign']
+    T_pc = params['T_pc']
     C_D = params['C_D']
     a_v = params['a_v']
     Y_thr = params['Y_thr']
@@ -73,7 +73,9 @@ def Phi(t, C, params):
     S_bot = params['S_bot']
     T_mask = params['T_mask'] # Temperature fixed source
     T_hot = params['T_hot'] # Temperature fixed source
+    T_0 = params['T_0'] # Temperature fixed source
     debug = params['debug']
+    source_filter = params['source_filter']
 
     # Get variables
     u, v, T, Y = C
@@ -81,9 +83,9 @@ def Phi(t, C, params):
     # Forces
     F_x, F_y = F
     g_x, g_y = g
-    # # Drag force
+    # Drag force
     mod_U = np.sqrt(u ** 2 + v ** 2)
-    Y_mask = Y > Y_thr # Valid only for solid fuel mask = Ym <= Y_height
+    Y_mask = Y > Y_thr # Valid only for solid fuel
     F_d_x = C_D * a_v * mod_U * u * Y_mask
     F_d_y = C_D * a_v * mod_U * v * Y_mask
     
@@ -225,12 +227,13 @@ def Phi(t, C, params):
     # else:
     #     A_T = 100
     #     Y_f = 1
-    # Ke = K(T, AT(T, A_T), B) * S3(T, T_ign) # S2(T, 1, 10, T_ign) # 
-    Ke = K(T, A, T_act) * S3(T, T_ign) # S2(T, 1, 10, T_ign) # 
+    # Ke = K(T, AT(T, A_T), B) * S3(T, T_pc) # S2(T, 1, 10, T_pc) # 
+    # Ke = K(T) * S1(T) # S2(T, 1, 10, T_pc) # 
+    # Ke = Km(T, A, T_act) * S3(T, T_pc) # S2(T, 1, 10, T_pc) #
     # Ke[Ke > 1] = 1
     # Testing
     #Ke[Ke >= 1000] = 1000
-    #T_mask = T >= T_ign
+    #T_mask = T >= T_pc
     
     # Dissipation function
     # phi = nu * rho * (2 * (uxx ** 2 + uyy ** 2) + (vx + uy) ** 2)
@@ -238,13 +241,14 @@ def Phi(t, C, params):
     # # Temperature source term
     # S = rho * H_R * Y * Ke - h * (T - T_inf)
     # h = hv(mod_U)
-    S1 = H_R * Y * Ke / C_p 
-    S2 = -h * a_v * (T - T_inf) / (rho * C_p) 
-    S1[S1 >= S_top] = S_bot
+    S1 = source(T, Y)
+    S2 = sink(T)
+    if source_filter:
+        S1[S1 >= S_top] = S_bot
     S = S1 + S2
     #S = S_T(S)
     
-    # S = Y * 200 * S3(T, T_ign) -  h * (T - T_inf) / (rho * C_p)
+    # S = Y * 200 * S3(T, T_pc) -  h * (T - T_inf) / (rho * C_p)
     # S = 0
     if debug:
         # dt = params['dt']
@@ -284,12 +288,12 @@ def Phi(t, C, params):
         V_ = nu * (vxx + vyy) - (u_plu * vxm + u_min * vxp + v_plu * vym + v_min * vyp) + F_y - sgs_y
         T_ = k * (Txx + Tyy) - (u * Tx  + v * Ty) + S - sgs_T 
 
-    if t < 5:
-        if T_mask is not None:
-            T[T_mask] = T_hot
+    # if t < 5:
+    #     if T_mask is not None:
+    #         T_[T_mask] = T_0[T_mask]
     
     # Y_f = Yft(t)
-    Y_ = -Y * Ke * Y_f 
+    Y_ = -Y_f * K(T) * H(T) * Y #Y_ = -Y * Ke * Y_f 
 
     U_, V_, T_, Y_ = boundary_conditions(U_, V_, T_, Y_, params)
 
@@ -421,7 +425,10 @@ def data_post_processing(z, p, params):
 def solve_pde(z_0, params):
     Nx, Ny, Nt = params['Nx'], params['Ny'], params['Nt']
     dx, dy, dt = params['dx'], params['dy'], params['dt']
-    # T_mask = params['T_mask']
+    T_mask = params['T_mask']
+    T_0 = params['T_0']
+    T_hot = params['T_hot']
+    # print(T_hot)
     NT = params['NT']
     t = params['t']
     method = params['method']
@@ -442,9 +449,12 @@ def solve_pde(z_0, params):
             time_start = time.time()
             z[n+1], p[n+1] = methods[method](t[n], z[n], dt, params)
             Ut, Vt = z[n+1, :2].copy()
+            # if t[n] <= 5:
+            #     z[n+1, 2] = T_0 * T_mask + z[n+1, 2] * (1 - T_mask)
             time_end = time.time()
             elapsed_time = (time_end - time_start)
             print("CFL: {:.6f}".format(dt * (np.max(np.abs(Ut)) / dx + np.max(np.abs(Vt)) / dy)))
+            print("Max T: {:.6f}".format(np.max(z[n+1, 2])))
             print("Step time: {:.6f} s".format(elapsed_time))
         
     else:
@@ -458,8 +468,8 @@ def solve_pde(z_0, params):
             # Simulation 
             time_start = time.time()
             z_tmp, p_tmp = methods[method](t[n], z_tmp, dt, params)
-            # if t[n] <= 3:
-            #     z_tmp[2][T_mask] = TA
+            # if t[n] <= 5:
+            #     z_tmp[2] = T_0 * T_mask + z_tmp[2] * (1 - T_mask)
             if n % NT == 0:
                 # print("Time step:", n)
                 # print("Simulation time:", t[n], " s")
@@ -469,9 +479,17 @@ def solve_pde(z_0, params):
                 Ut, Vt = z_tmp[:2].copy()
                 elapsed_time = (time_end - time_start)
                 print("CFL: {:.6f}".format(dt * (np.max(np.abs(Ut)) / dx + np.max(np.abs(Vt)) / dy)))
+                print("Max T: {:.6f}".format(np.max(z_tmp[2])))
                 print("Step time: {:f} s".format(elapsed_time))
         # Last approximation
         z[-1] = z_tmp
         p[-1] = p_tmp
+        # Last time step
+        print(OUTPUT_LOG.format(Nt - 1, t[Nt - 1]))
+        time_end = time.time()
+        Ut, Vt = z_tmp[:2].copy()
+        elapsed_time = (time_end - time_start)
+        print("CFL: {:.6f}".format(dt * (np.max(np.abs(Ut)) / dx + np.max(np.abs(Vt)) / dy)))
+        print("Step time: {:f} s".format(elapsed_time))
 
     return data_post_processing(z, p, params)

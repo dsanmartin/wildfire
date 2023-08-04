@@ -41,10 +41,10 @@ width = (x_end - x_start)
 height = (y_end - y_start)
 plate = create_plate(x_start, x_end, y_start, y_end) # Return True if x_min <= x <= x_max & y_min <= y <= y_max
 half_gaussian = create_half_gaussian(x_center, width, height)#create_half_gaussian(1, 3, 1) # .5
-shape = half_gaussian
+shape = plate #half_gaussian # plate
 T0 = lambda x, y: T_inf + (shape(x, y)) * (T_hot - T_inf)
 # T0 = lambda x, y, t: (t <= 11) * (T_inf + (plate(x, y)) * (TA - T_inf))
-# T_mask = plate
+# T_mask = 
 
 
 # Initial pressure $p(x, y, 0)$ #

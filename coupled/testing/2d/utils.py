@@ -1,16 +1,22 @@
 import numpy as np
-from parameters import h, Y_f, A, C_p, H_R, T_act, A_T, rho, T_inf#, S_top, S_bot, Sx #  B_tilde, A_alpha
+from parameters import h, Y_f, A, C_p, H_R, T_act, T_pc, rho, T_inf, a_v, n_arrhenius, h_rad#, S_top, S_bot, Sx #  B_tilde, A_alpha, A_T
 
 # Gaussian
 G = lambda x, y, x0, y0, sx, sy, A: A * np.exp(-((x - x0) ** 2 / sx ** 2 + (y - y0) ** 2 / sy ** 2)) 
 
 # Arrhenius-like equation 
-K = lambda T, A, B: A * np.exp(-B / T) 
-CV = lambda x, T_ign: 2 * x / T_ign - 1
+K = lambda T: A * np.exp(-T_act / T) # K = lambda T, A, T_act: A * np.exp(-T_act / T) 
+Km = lambda T: K(T) * T ** n_arrhenius
+# Step function and mofiied step function
+H = lambda T: T > T_pc
+CV = lambda x, T_pc: 2 * x / T_pc - 1
 Sg = lambda x, x0, k: 1 / (1 + np.exp(-2 * k * (x - x0)))
-S1 = lambda x, x0, k: .5 * (1 + np.tanh(k * (x - x0)))#
-S2 = lambda x, x0, k, T_ign: Sg(CV(x, T_ign), x0, k)
-S3 = lambda x, T_ign: x > T_ign
+HS2 = lambda x, x0, k: .5 * (1 + np.tanh(k * (x - x0)))#
+HS3 = lambda x, x0, k, T_pc: Sg(CV(x, T_pc), x0, k)
+# Source/sink
+Q_rad = lambda T: h_rad * (T ** 4 - T_inf ** 4) / (rho * C_p)
+source = lambda T, Y: H_R * Y * K(T) * H(T) / C_p + Q_rad(T)
+sink = lambda T: -h * a_v * (T - T_inf) / (rho * C_p) 
 # # A parameter nodel, 
 # if A < 0:
 #     # AT = lambda T: np.exp(B_tilde) * T ** (A_alpha) # A(T) = B * T ** A_alpha
@@ -20,13 +26,13 @@ S3 = lambda x, T_ign: x > T_ign
 # else:
 #     AT = lambda T: A # Constant
 # # Convective heat transfer coefficient
-# if h < 0:
-#     hv = lambda v: np.piecewise(v, [v < 2, v >= 2], [
-#             lambda v: 0 * v, # No information
-#             lambda v: 12.12 - 1.16 * v + 11.6 * v ** 0.5 # Wind chill factor
-#     ])
-# else:
-#     hv = lambda v: h # Constant 17-18 W/m^2/K?
+if h < 0:
+    hv = lambda v: np.piecewise(v, [v < 2, v >= 2], [
+            lambda v: 0 * v, # No information
+            lambda v: 12.12 - 1.16 * v + 11.6 * v ** 0.5 # Wind chill factor
+    ])
+else:
+    hv = lambda v: h # Constant 17-18 W/m^2/K?
 # # Fuel consumption coefficient
 # if Y_f < 0:
 #     Yft = lambda t: np.piecewise(t, [t <= 20, t > 20], [lambda t: 2, lambda t: 3])

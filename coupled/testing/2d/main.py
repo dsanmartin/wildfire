@@ -13,12 +13,12 @@ from arguments import args
 from logs import show_info, save_info
 
 def main():
-    # Others... To check
+    # Get arguments
     input_ic = False
     show_ic = args.show_initial_condition
     debug = args.debug
-    # Get arguments
     sim_name = args.name
+    save_path = args.save_path
     Nx = args.x_nodes
     Ny = args.y_nodes
     Nt = args.t_nodes
@@ -30,7 +30,8 @@ def main():
     Pr = args.prandtl
     Y_f = args.fuel_consumption
     H_R = args.heat_energy
-    h = args.heat_coefficient
+    h = args.convective_coefficient
+    A = args.pre_exponential_coefficient
     T_act = args.activation_temperature
     Y_thr = args.fuel_threshold
     T_hot = args.hot_temperature
@@ -50,7 +51,8 @@ def main():
     values_dead_nodes = np.array([u_dead_nodes, v_dead_nodes, T_dead_nodes, Y_dead_nodes])
     topo_distance = topography_distance(Xm, Ym, topo)
     # Temperature mask
-    T_mask = None#plate(Xm, Ym) #shape(Xm, Ym) > 0.01
+    T_mask = None #T_0 > T_inf #plate(Xm, Ym) #shape(Xm, Ym) > 0.01
+    # T_mask = T_mask.astype(int)
     ### THIS CAN BE IMPROVED MAYBE CREATING INITIAL CONDITIONS INCLUDING TOPOGRAPHY :')
     if input_ic is not True:
         U_0[dead_nodes] = 0
@@ -59,11 +61,14 @@ def main():
         Y_0[dead_nodes] = 1
         # Y_0 = Y_0 + (Ym) <= topo(Xm) + 2 * dy
     if show_ic:
-        plot_ic(Xm, Ym, U_0, V_0, T_0, Y_0)
+        # plot_ic(Xm, Ym, U_0, V_0, T_0, Y_0)
         # mask = (Ym >= 1.9) & (Ym <= 2.1)
         # print(U_0[mask])
         #plot_1D(Xm[0], T_0[0])
-        # plot_2D(Xm, Ym, T_mask)
+        print(T_0[T_mask].shape)
+        plot_2D(Xm, Ym, T_mask)
+        plot_2D(Xm, Ym, T_0)
+        plot_2D(Xm, Ym, T_0[np.array(T_mask)])
     if debug:
         return False
     # Dirichlet boundary conditions
@@ -99,7 +104,7 @@ def main():
         # Temperature
         'k': k, 'C_p': C_p, 
         # Fuel 
-        'A': A, 'T_act': T_act, 'T_ign': T_ign, 'H_R': H_R, 'h': h, 'Y_thr': Y_thr, 'Y_f': Y_f,
+        'A': A, 'T_act': T_act, 'T_pc': T_pc, 'H_R': H_R, 'h': h, 'Y_thr': Y_thr, 'Y_f': Y_f,
         # Boundary conditions just in y (because it's periodic on x)
         'bc_on_y': dirichlet_y_bc,    
         # IBM
@@ -108,6 +113,7 @@ def main():
         'method': method, # IVP solver 
         'T_hot': T_hot,
         'T_mask': T_mask, 
+        'T_0': T_0,
         # 'T_mask': plate(Xm, Ym),
         # 'ST': ST,
         # 'u_y_min': u_y_min,
@@ -126,7 +132,8 @@ def main():
         'S_top': S_top,
         'S_bot': S_bot,
         'Sx': Sx,
-        'debug': debug_pde
+        'debug': debug_pde,
+        'source_filter': source_filter,
     }
     # Show parameters
     # print(params)
@@ -140,7 +147,8 @@ def main():
     # print("Solver time: ", solve_time, "s\n")
     print("Solver time: ", str(datetime.timedelta(seconds=round(solve_time))), "\n")
     # Create simulation folder
-    save_path = create_simulation_folder(args.name)
+    if save_path is None:
+        save_path = create_simulation_folder(args.name)
     save_info(params, save_path)
     # Save outputs
     save_approximation(save_path, x, y, t[::NT], u, v, T, Y, p)

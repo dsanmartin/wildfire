@@ -6,22 +6,26 @@ parser = argparse.ArgumentParser(description='2D simplified wildfire numerical s
 # Parameters
 parser.add_argument('-n', '--name', type=str, default=datetime.now().strftime("%Y%m%d%H%M%S"),
     help="Numerical simulation name. Default: Current datetime with format 'YYYYMMDDhhmmss'")
+parser.add_argument('-path', '--save-path', type=str, default=None,
+    help="Numerical simulation save path. Default: None")
 parser.add_argument('-k', '--diffusivity', type=float, default=k,
     help="Thermal diffusivity parameter. Default: {}".format(k))
 parser.add_argument('-nu', '--viscosity', type=float, default=nu,
     help="Kinematic viscosity parameter. Default: {}".format(nu))
 parser.add_argument('-Pr', '--prandtl', type=float, default=Pr,
     help="Prandtl number parameter. Default: {}".format(Pr))
-parser.add_argument('-fc', '--fuel-consumption', type=float, default=Y_f,
+parser.add_argument('-Yf', '--fuel-consumption', type=float, default=Y_f,
     help="Fuel consumption parameter. Default: {}".format(Y_f))
 parser.add_argument('-Yt', '--fuel-threshold', type=float, default=Y_thr,
     help="Solid fuel threshold force. Default: {}".format(Y_thr))
 parser.add_argument('-HR', '--heat-energy', type=float, default=H_R,
     help="Heat energy per unit of mass parameter. Default: {}".format(H_R))
-parser.add_argument('-hc', '--heat-coefficient', type=float, default=h,
+parser.add_argument('-hc', '--convective-coefficient', type=float, default=h,
     help="Convective heat coefficient. Default: {}".format(h))
 parser.add_argument('-Ta', '--activation-temperature', type=float, default=T_act,
     help="Activation energy. Default: {}".format(T_act))
+parser.add_argument('-A', '--pre-exponential-coefficient', type=float, default=A,
+    help="Pre-exponential coefficient. Default: {}".format(A))
 parser.add_argument('-Th', '--hot-temperature', type=float, default=T_hot,
     help="Hot temperature. Default: {}".format(T_hot))
 parser.add_argument('-St', '--source-top', type=float, default=S_top,

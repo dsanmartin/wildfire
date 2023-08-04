@@ -10,12 +10,13 @@ def show_info(params):
     U_0, V_0, T_0 = params['u0'], params['v0'], params['T0']
     sim_name = params['sim_name']
     method = params['method']
-    rho, T_hot, T_inf, T_ign = params['rho'], params['T_hot'], params['T_inf'], params['T_ign']
+    rho, T_hot, T_inf, T_pc = params['rho'], params['T_hot'], params['T_inf'], params['T_pc']
     nu, k, Pr, g = params['nu'], params['k'], params['Pr'], params['g']
     A, T_act, H_R, h = params['A'], params['T_act'], params['H_R'], params['h']
     Y_f, Y_thr, C_p = params['Y_f'], params['Y_thr'], params['C_p']
     turb, conser = params['turbulence'], params['conservative']
     S_top, S_bot, Sx = params['S_top'], params['S_bot'], params['Sx']
+    source_filter = params['source_filter']
 
     L = ((x_max - x_min) * (y_max - y_min)) ** 0.5
     Re = np.mean(U_0[:,0]) * L / nu
@@ -32,11 +33,12 @@ def show_info(params):
     print("Samples: %d" % NT)
     print("nu: %.2e, g: (%.4f, %.4f)" % (nu, g[0], g[1]))
     print("k: %.2e, C_p: %.4f, T_inf: %.4f, T_hot: %.4f" % (k, C_p, T_inf, T_hot))
-    print("rho: %.4f, T_ign: %.4f, A: %.4f, T_act: %.4f" % (rho, T_ign, A, T_act))
+    print("rho: %.4f, T_pc: %.4f, A: %.4f, T_act: %.4f" % (rho, T_pc, A, T_act))
     print("H_R: %.4f, h: %.6f, Y_thr: %.4f, Y_f: %.4f" % (H_R, h, Y_thr, Y_f))
     print("S_top: %.4f, S_bot: %.4f, Sx: %.4f" % (S_top, S_bot, Sx))
     print("Turbulence: %r" % turb)
     print("Conservative: %r" % conser)
+    print("Source filter: %r" % source_filter)
     print("Reynolds: %.4f" %  Re)
     print("Prandtl: %.4f" % Pr)
     print("Grashof: %.2e" % Gr)
@@ -52,12 +54,13 @@ def save_info(params, dir_path):
     U_0, V_0, T_0 = params['u0'], params['v0'], params['T0']
     sim_name = params['sim_name']
     method = params['method']
-    rho, T_hot, T_inf, T_ign = params['rho'], params['T_hot'], params['T_inf'], params['T_ign']
+    rho, T_hot, T_inf, T_pc = params['rho'], params['T_hot'], params['T_inf'], params['T_pc']
     nu, k, Pr, g = params['nu'], params['k'], params['Pr'], params['g']
     A, T_act, H_R, h = params['A'], params['T_act'], params['H_R'], params['h']
     Y_f, Y_thr, C_p = params['Y_f'], params['Y_thr'], params['C_p']
     turb, conser = params['turbulence'], params['conservative']
     S_top, S_bot, Sx = params['S_top'], params['S_bot'], params['Sx']
+    source_filter = params['source_filter']
 
     L = ((x_max - x_min) * (y_max - y_min)) ** 0.5
     Re = np.mean(U_0[:,0]) * L / nu
@@ -75,11 +78,12 @@ def save_info(params, dir_path):
         print("Samples: %d" % NT, file=f)
         print("nu: %.2e, g: (%.4f, %.4f)" % (nu, g[0], g[1]), file=f)
         print("k: %.2e, C_p: %.4f, T_inf: %.4f, T_hot: %.4f" % (k, C_p, T_inf, T_hot), file=f)
-        print("rho: %.4f, T_ign: %.4f, A: %.4f, T_act: %.4f" % (rho, T_ign, A, T_act), file=f)
+        print("rho: %.4f, T_pc: %.4f, A: %.4f, T_act: %.4f" % (rho, T_pc, A, T_act), file=f)
         print("H_R: %.4f, h: %.6f, Y_thr: %.4f, Y_f: %.4f" % (H_R, h, Y_thr, Y_f), file=f)
         print("S_top: %.4f, S_bot: %.4f, Sx: %.4f" % (S_top, S_bot, Sx), file=f)
         print("Turbulence: %r" % turb, file=f)
         print("Conservative: %r" % conser, file=f)
+        print("Source filter: %r" % source_filter, file=f)
         print("Reynolds: %.4f" %  Re, file=f)
         print("Prandtl: %.4f" % Pr, file=f)
         print("Grashof: %.2e" % Gr, file=f)
