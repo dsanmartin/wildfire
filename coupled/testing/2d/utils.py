@@ -15,7 +15,7 @@ HS2 = lambda x, x0, k: .5 * (1 + np.tanh(k * (x - x0)))#
 HS3 = lambda x, x0, k, T_pc: Sg(CV(x, T_pc), x0, k)
 # Source/sink
 Q_rad = lambda T: h_rad * (T ** 4 - T_inf ** 4) / (rho * C_p)
-source = lambda T, Y: H_R * Y * K(T) * H(T) / C_p + Q_rad(T)
+source = lambda T, Y: H_R * Y * K(T) * H(T) / C_p #+ Q_rad(T)
 sink = lambda T: -h * a_v * (T - T_inf) / (rho * C_p) 
 # # A parameter nodel, 
 # if A < 0:

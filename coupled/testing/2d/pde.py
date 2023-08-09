@@ -74,6 +74,8 @@ def Phi(t, C, params):
     T_mask = params['T_mask'] # Temperature fixed source
     T_hot = params['T_hot'] # Temperature fixed source
     T_0 = params['T_0'] # Temperature fixed source
+    sigma = params['sigma']
+    delta = params['delta']
     debug = params['debug']
     source_filter = params['source_filter']
 
@@ -247,7 +249,7 @@ def Phi(t, C, params):
         S1[S1 >= S_top] = S_bot
     S = S1 + S2
     #S = S_T(S)
-    
+
     # S = Y * 200 * S3(T, T_pc) -  h * (T - T_inf) / (rho * C_p)
     # S = 0
     if debug:
@@ -273,20 +275,27 @@ def Phi(t, C, params):
         print("S - sgs_T", np.min(S - sgs_T), np.max(S - sgs_T))
         print("-" * 30)
 
+    # PDE
+    U_ = nu * (uxx + uyy) + F_x - sgs_x
+    V_ = nu * (vxx + vyy) + F_y - sgs_y
+    # No radiation
+    # T_ = k * (Txx + Tyy) - (u * Tx  + v * Ty) + S - sgs_T 
+    # Radiation
+    T_ = 12 * sigma * delta * T ** 2 * (Tx ** 2 + Ty ** 2) + (k + 4 * sigma * delta * T ** 3) * (Txx + Tyy) - (u * Tx  + v * Ty) + S - sgs_T
+
     if conservative: # RHS Inside domain (conservative form - using central difference)
         # Conservative form for convection
         uux = (u_ip1j ** 2 - u_im1j ** 2) / (2 * dx) # (u_{i+1, j}^2 - u_{i-1, j}^2) / (2 * dx)
-        uvy = (u_ijp1 * v_ijp1 - u_ijm1 * v_ijm1) / (2 * dx)
-        vux = (v_ip1j * u_ip1j - v_im1j * u_im1j) / (2 * dx)
-        vvy = (v_ijp1 ** 2 - v_im1j ** 2) / (2 * dy)
+        uvy = (u_ijp1 * v_ijp1 - u_ijm1 * v_ijm1) / (2 * dx) # (u_{i, j+1} * v_{i, j+1} - u_{i, j-1} * v_{i, j-1}) / (2 * dy)
+        vux = (v_ip1j * u_ip1j - v_im1j * u_im1j) / (2 * dx) # (v_{i+1, j} * u_{i+1, j} - v_{i-1, j} * u_{i-1, j}) / (2 * dx)
+        vvy = (v_ijp1 ** 2 - v_im1j ** 2) / (2 * dy) # (v_{i, j+1}^2 - v_{i, j-1}^2) / (2 * dy)
         # PDE
-        U_ = nu * (uxx + uyy) - (uux + uvy) + F_x - sgs_x
-        V_ = nu * (vxx + vyy) - (vux + vvy) + F_y - sgs_y
-        T_ = k * (Txx + Tyy) - (u * Tx + v * Ty) + S - sgs_T
+        U_ -= uux + uvy
+        V_ -= vux + vvy
     else: # RHS Inside domain (non-conservative form - using upwind!)
-        U_ = nu * (uxx + uyy) - (u_plu * uxm + u_min * uxp + v_plu * uym + v_min * uyp) + F_x - sgs_x
-        V_ = nu * (vxx + vyy) - (u_plu * vxm + u_min * vxp + v_plu * vym + v_min * vyp) + F_y - sgs_y
-        T_ = k * (Txx + Tyy) - (u * Tx  + v * Ty) + S - sgs_T 
+        # Non-conservative form for convection
+        U_ -= u_plu * uxm + u_min * uxp + v_plu * uym + v_min * uyp
+        V_ -= u_plu * vxm + u_min * vxp + v_plu * vym + v_min * vyp
 
     # if t < 5:
     #     if T_mask is not None:
@@ -310,6 +319,7 @@ def boundary_conditions(u, v, T, Y, params):
     cut_nodes_y, cut_nodes_x = cut_nodes # For FD in BC
     dead_nodes = params['dead_nodes']
     u_dn, v_dn, T_dn, Y_dn = params['values_dead_nodes']
+    T_0 = params['T_0']
     
 
     # Boundary conditions on x
@@ -322,6 +332,8 @@ def boundary_conditions(u, v, T, Y, params):
     # Boundary at south. Derivative using O(h^2)	
     T_s = (4 * T[1, :] - T[2, :]) / 3 # dT/dy = 0
     Y_s = (4 * Y[1, :] - Y[2, :]) / 3 # dY/dy = 0
+
+    # T_s = T_0[0] # Fixed temperature
 
     # Boundary at north. Derivative using O(h^2)
     u_n = (4 * u[-2, :] - u[-3, :]) / 3 # du/dy = 0
@@ -454,7 +466,8 @@ def solve_pde(z_0, params):
             time_end = time.time()
             elapsed_time = (time_end - time_start)
             print("CFL: {:.6f}".format(dt * (np.max(np.abs(Ut)) / dx + np.max(np.abs(Vt)) / dy)))
-            print("Max T: {:.6f}".format(np.max(z[n+1, 2])))
+            print("Temperature: Min = {:.2f} K, Max {:.2f} K".format(np.min(z[n+1, 2]), np.max(z[n+1, 2])))
+            print("Fuel: Min = {:.2f}, Max {:.2f}".format(np.min(z[n+1, 3]), np.max(z[n+1, 3])))
             print("Step time: {:.6f} s".format(elapsed_time))
         
     else:
@@ -479,7 +492,8 @@ def solve_pde(z_0, params):
                 Ut, Vt = z_tmp[:2].copy()
                 elapsed_time = (time_end - time_start)
                 print("CFL: {:.6f}".format(dt * (np.max(np.abs(Ut)) / dx + np.max(np.abs(Vt)) / dy)))
-                print("Max T: {:.6f}".format(np.max(z_tmp[2])))
+                print("Temperature: Min = {:.2f} K, Max {:.2f} K".format(np.min(z_tmp[2]), np.max(z_tmp[2])))
+                print("Fuel: Min = {:.2f}, Max {:.2f}".format(np.min(z_tmp[3]), np.max(z_tmp[3])))
                 print("Step time: {:f} s".format(elapsed_time))
         # Last approximation
         z[-1] = z_tmp

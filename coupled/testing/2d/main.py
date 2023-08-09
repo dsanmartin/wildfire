@@ -3,7 +3,7 @@ import datetime
 import numpy as np
 from parameters import *
 from utils import domain
-from initial_conditions import u0, v0, T0, Y0, p0, F, plate, topo, shape#, T_mask
+from initial_conditions import u0, v0, T0, Y0, p0, F, topo, shape#, T_mask
 # from topography import topo
 from ibm import topography_nodes, topography_distance
 from pde import solve_pde
@@ -51,8 +51,9 @@ def main():
     values_dead_nodes = np.array([u_dead_nodes, v_dead_nodes, T_dead_nodes, Y_dead_nodes])
     topo_distance = topography_distance(Xm, Ym, topo)
     # Temperature mask
-    T_mask = None #T_0 > T_inf #plate(Xm, Ym) #shape(Xm, Ym) > 0.01
-    # T_mask = T_mask.astype(int)
+    T_mask = T_0 > T_inf #plate(Xm, Ym) #shape(Xm, Ym) > 0.01
+    T_mask = T_mask.astype(int)
+    T_mask = None
     ### THIS CAN BE IMPROVED MAYBE CREATING INITIAL CONDITIONS INCLUDING TOPOGRAPHY :')
     if input_ic is not True:
         U_0[dead_nodes] = 0
@@ -61,14 +62,14 @@ def main():
         Y_0[dead_nodes] = 1
         # Y_0 = Y_0 + (Ym) <= topo(Xm) + 2 * dy
     if show_ic:
-        # plot_ic(Xm, Ym, U_0, V_0, T_0, Y_0)
+        plot_ic(Xm, Ym, U_0, V_0, T_0, Y_0)
         # mask = (Ym >= 1.9) & (Ym <= 2.1)
         # print(U_0[mask])
-        #plot_1D(Xm[0], T_0[0])
-        print(T_0[T_mask].shape)
-        plot_2D(Xm, Ym, T_mask)
-        plot_2D(Xm, Ym, T_0)
-        plot_2D(Xm, Ym, T_0[np.array(T_mask)])
+        # plot_1D(Xm[0], T_0[0])
+        # print(Y_0.min(), Y_0.max())
+        # plot_2D(Xm, Ym, T_mask)
+        # plot_2D(Xm, Ym, T_0)
+        # plot_2D(Xm, Ym, T_0[np.array(T_mask)])
     if debug:
         return False
     # Dirichlet boundary conditions
@@ -103,6 +104,7 @@ def main():
         'conservative': conser,
         # Temperature
         'k': k, 'C_p': C_p, 
+        'delta': delta, 'sigma': sigma, 
         # Fuel 
         'A': A, 'T_act': T_act, 'T_pc': T_pc, 'H_R': H_R, 'h': h, 'Y_thr': Y_thr, 'Y_f': Y_f,
         # Boundary conditions just in y (because it's periodic on x)
