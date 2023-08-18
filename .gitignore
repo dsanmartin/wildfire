@@ -142,6 +142,7 @@ coupled/testing/2d/input/
 coupled/testing/2d/output/
 coupled/testing/2d_v1/
 coupled/testing/3d/
+coupled/testing/2d/others/
 
 # Script
 coupled/testing/2d/*.sh

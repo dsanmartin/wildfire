@@ -1,5 +1,6 @@
 import numpy as np
-from parameters import h, Y_f, A, C_p, H_R, T_act, T_pc, rho, T_inf, a_v, n_arrhenius, h_rad#, S_top, S_bot, Sx #  B_tilde, A_alpha, A_T
+from arguments import T_act, A, H_R, h # Parameters from command line
+from parameters import T_pc, T_inf, n_arrhenius, h_rad, C_p, rho, a_v, S_T_0, S_k_0, S_k # Default parameters
 
 # Gaussian
 G = lambda x, y, x0, y0, sx, sy, A: A * np.exp(-((x - x0) ** 2 / sx ** 2 + (y - y0) ** 2 / sy ** 2)) 
@@ -49,6 +50,9 @@ S_tilde = lambda S, S_top, S_bot, Sx: np.piecewise(S, [S <= S_top, S > S_top, (S
 #     lambda S: (S_bot - S_top) / (Sx - S_top) * (S - S_top) + S_top
 # ])
 # S_T = lambda S: S_tilde(S, S_top, S_bot, Sx)
+# Sutherland's law
+kT = lambda T: S_k_0 * (T / S_T_0) ** 1.5 * (S_T_0 + S_k) / (T + S_k) / (rho * C_p)
+kTp = lambda T: 1.5 * S_k_0 * (S_T_0 + S_k) / T ** 1.5 * (T ** .5 * (T + S_k) - T ** 1.5) / (T + S_k) ** 2 / (rho * C_p)
 
 
 def domain(x_min, x_max, y_min, y_max, t_min, t_max, Nx, Ny, Nt):
@@ -64,7 +68,7 @@ def domain(x_min, x_max, y_min, y_max, t_min, t_max, Nx, Ny, Nt):
 
 # For temperature initial condition
 def create_plate(x_start, x_end, y_start, y_end):
-    plate = lambda x, y: (y >= y_start) & (y <= y_end) & (x <= x_end) & (x >= x_start)
+    plate = lambda x, y: ((y >= y_start) & (y <= y_end) & (x <= x_end) & (x >= x_start)).astype(int)
     return plate
 
 def create_half_gaussian(x_center, width, height):

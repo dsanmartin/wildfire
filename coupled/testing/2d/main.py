@@ -1,42 +1,18 @@
 import time
 import datetime
 import numpy as np
-from parameters import *
+from arguments import * # Include default parameters + command line arguments
 from utils import domain
 from initial_conditions import u0, v0, T0, Y0, p0, F, topo, shape#, T_mask
-# from topography import topo
 from ibm import topography_nodes, topography_distance
 from pde import solve_pde
 from inout import create_simulation_folder, save_approximation, save_parameters
 from plots import plot_2D, plot_ic, plot_1D
-from arguments import args
-from logs import show_info, save_info
+from logs import log_params
 
 def main():
     # Get arguments
     input_ic = False
-    show_ic = args.show_initial_condition
-    debug = args.debug
-    sim_name = args.name
-    save_path = args.save_path
-    Nx = args.x_nodes
-    Ny = args.y_nodes
-    Nt = args.t_nodes
-    x_min, x_max = args.x_min, args.x_max
-    y_min, y_max = args.y_min, args.y_max
-    t_min, t_max = args.t_min, args.t_max
-    nu = args.viscosity
-    k = args.diffusivity
-    Pr = args.prandtl
-    Y_f = args.fuel_consumption
-    H_R = args.heat_energy
-    h = args.convective_coefficient
-    A = args.pre_exponential_coefficient
-    T_act = args.activation_temperature
-    Y_thr = args.fuel_threshold
-    T_hot = args.hot_temperature
-    S_top = args.source_top
-    S_bot = args.source_bottom
     # Create arrays
     x, y, t, Xm, Ym, dx, dy, dt = domain(x_min, x_max, y_min, y_max, t_min, t_max, Nx, Ny, Nt)
     # Evaluate initial conditions 
@@ -51,9 +27,8 @@ def main():
     values_dead_nodes = np.array([u_dead_nodes, v_dead_nodes, T_dead_nodes, Y_dead_nodes])
     topo_distance = topography_distance(Xm, Ym, topo)
     # Temperature mask
-    T_mask = T_0 > T_inf #plate(Xm, Ym) #shape(Xm, Ym) > 0.01
-    T_mask = T_mask.astype(int)
-    T_mask = None
+    T_mask = T_0 > 300 #plate(Xm, Ym) #shape(Xm, Ym) > 0.01
+    #T_mask = shape(Xm, Ym) == 1
     ### THIS CAN BE IMPROVED MAYBE CREATING INITIAL CONDITIONS INCLUDING TOPOGRAPHY :')
     if input_ic is not True:
         U_0[dead_nodes] = 0
@@ -62,12 +37,13 @@ def main():
         Y_0[dead_nodes] = 1
         # Y_0 = Y_0 + (Ym) <= topo(Xm) + 2 * dy
     if show_ic:
+        test = shape(Xm, Ym)
         plot_ic(Xm, Ym, U_0, V_0, T_0, Y_0)
         # mask = (Ym >= 1.9) & (Ym <= 2.1)
         # print(U_0[mask])
         # plot_1D(Xm[0], T_0[0])
-        # print(Y_0.min(), Y_0.max())
-        # plot_2D(Xm, Ym, T_mask)
+        # print(T_0.min(), T_0.max())
+        # plot_2D(Xm, Ym, T_0)
         # plot_2D(Xm, Ym, T_0)
         # plot_2D(Xm, Ym, T_0[np.array(T_mask)])
     if debug:
@@ -102,9 +78,11 @@ def main():
         'C_D': C_D, 'a_v': a_v, # Drag force
         'turbulence': turb,
         'conservative': conser,
+        'radiation': radiation,
+        'include_source': include_source,
         # Temperature
         'k': k, 'C_p': C_p, 
-        'delta': delta, 'sigma': sigma, 
+        'delta': delta, 'sigma': sigma, # Radiation
         # Fuel 
         'A': A, 'T_act': T_act, 'T_pc': T_pc, 'H_R': H_R, 'h': h, 'Y_thr': Y_thr, 'Y_f': Y_f,
         # Boundary conditions just in y (because it's periodic on x)
@@ -112,10 +90,12 @@ def main():
         # IBM
         'cut_nodes': cut_nodes, 'dead_nodes': dead_nodes, 'values_dead_nodes': values_dead_nodes, 'Y_top': topo_distance,
         # 'mask': mask,
-        'method': method, # IVP solver 
+        'method': method, # IVP solver Initial u type
         'T_hot': T_hot,
         'T_mask': T_mask, 
         'T_0': T_0,
+        't_source': t_source,
+        'T_source': T_0,
         # 'T_mask': plate(Xm, Ym),
         # 'ST': ST,
         # 'u_y_min': u_y_min,
@@ -136,10 +116,45 @@ def main():
         'Sx': Sx,
         'debug': debug_pde,
         'source_filter': source_filter,
+        # Initial conditions
+        # Wind
+        'initial_u_type': initial_u_type,
+        'u_z_0': u_z_0,
+        'd': d,
+        'u_ast': u_ast,
+        'kappa': kappa,
+        'u_r': u_r,
+        'y_r': y_r,
+        'alpha': alpha,
+        # Temperature
+        'T0_shape': T0_shape,
+        'T0_x_start': T0_x_start,
+        'T0_x_end': T0_x_end,
+        'T0_y_start': T0_y_start,
+        'T0_y_end': T0_y_end,
+        'T0_x_center': T0_x_center,
+        'T0_width': T0_width,
+        'T0_height': T0_height,
+        # Topography
+        'topography_shape': topography_shape,
+        'hill_center': hill_center,
+        'hill_height': hill_height,
+        'hill_width': hill_width,
+        # Fuel
+        'fuel_height': fuel_height,
+        # Sutherland's law
+        'sutherland_law': sutherland_law,
+        'S_T_0': S_T_0,
+        'S_k_0': S_k_0,
+        'S_k': S_k,
+        'truncate': truncate,
+        'T_min': T_min,
+        'T_max': T_max,
+        'Y_min': Y_min,
+        'Y_max': Y_max,
     }
     # Show parameters
-    # print(params)
-    show_info(params)
+    log_params(params)
     # Solve PDE
     z_0 = np.array([U_0, V_0, T_0, Y_0])
     time_start = time.time()
@@ -150,8 +165,8 @@ def main():
     print("Solver time: ", str(datetime.timedelta(seconds=round(solve_time))), "\n")
     # Create simulation folder
     if save_path is None:
-        save_path = create_simulation_folder(args.name)
-    save_info(params, save_path)
+        save_path = create_simulation_folder(sim_name)
+    log_params(params, save_path)
     # Save outputs
     save_approximation(save_path, x, y, t[::NT], u, v, T, Y, p)
     # Remove Soruce temperature!

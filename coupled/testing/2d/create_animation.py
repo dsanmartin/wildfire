@@ -199,6 +199,7 @@ for n in range(0, Nt, ts):
 
     if "T" in plots:
         pi = axes[i].contourf(x, y, T[n],cmap=plt.cm.jet, vmin=np.min(T), vmax=np.max(T))
+        # pi = axes[i].imshow(T[n],cmap=plt.cm.jet, extent=[x.min(), x.max(), y.min(), y.max()], origin='lower', vmin=np.min(T), vmax=np.max(T))
         axes[i].set_title(r'Temperature $T$')
         fig.colorbar(pi, ax=axes[i], label='K')
         i += 1

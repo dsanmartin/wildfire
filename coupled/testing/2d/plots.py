@@ -6,10 +6,11 @@ def plot_1D(x, y):
     plt.show()
 
 def plot_2D(x, y, z, cmap=plt.cm.jet):
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(12, 6))
     plt.contourf(x, y, z, cmap=cmap)
     plt.colorbar()
     plt.gca().set_aspect('equal')
+    plt.tight_layout()
     plt.show()
 
 def plot_ic(x, y, u, v, T, Y):

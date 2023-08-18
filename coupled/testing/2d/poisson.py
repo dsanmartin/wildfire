@@ -239,12 +239,30 @@ def solve_fftfd(u, v, **kwargs):
     u_ip2j = np.roll(u,-2, axis=1) # u_{i+2, j}
     u_im1j = np.roll(u, 1, axis=1) # u_{i-1, j}
     u_im2j = np.roll(u, 2, axis=1) # u_{i-2, j}
+    # Half step
+    u_iphj = 0.5 * (u_ij + u_ip1j) # u_{i+1/2, j}
+    u_imhj = 0.5 * (u_im1j + u_ij) # u_{i-1/2, j}
+    # # 1.5 step
+    # u_ip3hj = 0.5 * (u_ip1j + u_ip2j) # u_{i+3/2, j}
+    # u_im3hj = 0.5 * (u_im2j + u_im1j) # u_{i-3/2, j} 
+    # Interpolation
+    # u_iphj = (1 / 16) * (-u_im1j + 9 * u_ij + 9 * u_ip1j - u_ip2j) # u_{i+1/2, j}
+    # u_imhj = (1 / 16) * (-u_im2j + 9 * u_im1j + 9 * u_ij - u_ip1j) # u_{i-1/2, j}
     # v
     v_ij = v.copy() # v_{i, j}
     v_ijp1 = np.roll(v,-1, axis=0) # v_{i, j+1}
     v_ijp2 = np.roll(v,-2, axis=0) # v_{i, j+2}
     v_ijm1 = np.roll(v, 1, axis=0) # v_{i, j-1}    
     v_ijm2 = np.roll(v, 2, axis=0) # v_{i, j-2}
+    # Half step
+    v_ijph = 0.5 * (v_ij + v_ijp1) # v_{i, j+1/2}
+    v_ijmh = 0.5 * (v_ijm1 + v_ij) # v_{i, j-1/2}
+    # # 1.5 step
+    # v_ijp3h = 0.5 * (v_ijp1 + v_ijp2) # v_{i, j+3/2}
+    # v_ijm3h = 0.5 * (v_ijm2 + v_ijm1) # v_{i, j-3/2}
+    # Interpolation
+    # v_ijph = (1 / 16) * (-v_ijm1 + 9 * v_ij + 9 * v_ijp1 - v_ijp2) # v_{i, j+1/2}
+    # v_ijmh = (1 / 16) * (-v_ijm2 + 9 * v_ijm1 + 9 * v_ij - v_ijp1) # v_{i, j-1/2}
 
     # First derivative 
     # Forward/backward difference O(h)
@@ -253,13 +271,19 @@ def solve_fftfd(u, v, **kwargs):
     # ux = (u_ij - u_im1j) / dx # Backward difference. 
     # vy = (v_ij - v_ijm1) / dy # Backward difference. This work but is O(h)
     # Using central difference O(h^2)
-    ux = (u_ip1j - u_im1j) / (2 * dx)
-    vy = (v_ijp1 - v_ijm1) / (2 * dy) 
+    # ux = (u_ip1j - u_im1j) / (2 * dx)
+    # vy = (v_ijp1 - v_ijm1) / (2 * dy) 
     # Forward/backward difference O(h^2)
     # ux = (-u_ip2j + 4 * u_ip1j - 3 * u_ij) / (2 * dx) # Forward difference.
     # vy = (-v_ijp2 + 4 * v_ijp1 - 3 * v_ij) / (2 * dy) # Forward difference. 
-    # ux = (3 * u_ij - 4 * u_im1j + u_im2j) / (2 * dx) # Backward difference. 
-    # vy = (3 * v_ij - 4 * v_ijm1 + v_ijm2) / (2 * dy) # Backward difference. This doesn't work
+    # ux = (3 * u_ij - 4 * u_im1j + u_im2j) / (2 * dx) # Backward difference.
+    # vy = (3 * v_ij - 4 * v_ijm1 + v_ijm2) / (2 * dy) # Backward difference. 
+    # Using half step
+    ux = (u_iphj - u_imhj) / dx
+    vy = (v_ijph - v_ijmh) / dy
+    # Using 1.5 step central difference O(h^2)
+    # ux = (-2 * u_ip3hj + 4 * u_iphj - 4 * u_imhj + 2 * u_im3hj) / (3  * dx)
+    # vy = (-2 * v_ijp3h + 4 * v_ijph - 4 * v_ijmh + 2 * v_ijm3h) / (3  * dy)
     # Boundary conditions correction on y. x is periodic, so no correction needed.
     # O(h) correction for O(h)-forward difference
     # vy[-1] = (v_ij[-1] - v_ij[-2]) / dy # Backward at y=y_max

@@ -2,13 +2,14 @@
 """
 import numpy as np
 from topography import flat, hill
-from parameters import u_ast, kappa, d, z_0, u_r, y_r, alpha, T_inf, T_hot, x_start, x_end, y_start, y_end, fuel_height, shape_type, initial_u_type, hill_center
 from utils import create_plate, create_half_gaussian
+from arguments import T_hot # Parameters from command line
+from parameters import T_inf, u_ast, kappa, d, u_z_0, u_r, y_r, alpha, initial_u_type, topography_shape, fuel_height, T0_shape, T0_x_start, T0_x_end, T0_y_start, T0_y_end, T0_x_center, T0_width, T0_height
 
 # Initial fluid flow vector field $\mathbf{u}=(u, v)$ at t=0 #
 # Log wind profile
 log_wind = lambda x, y: np.piecewise(y, [y > 0, y == 0], [ # Piecewise is used for y=0
-        lambda y: u_ast / kappa * np.log((y - d) / z_0), # Log wind profile if y > 0
+        lambda y: u_ast / kappa * np.log((y - d) / u_z_0), # Log wind profile if y > 0
         lambda y: y * 0 # 0 if y = 0
     ])
 # Power law wind profile (FDS experiment)
@@ -19,36 +20,15 @@ u0 = lambda x, y: initial_u(x, y) #+ np.random.rand(*x.shape) * 0.5
 v0 = lambda x, y: x * 0 
 
 # Initial fuel $Y(x,y,0)$ #
-topo = flat # flat or hill
-Y0 = lambda x, y: (y <= (topo(x) + fuel_height)).astype(int) 
-# Y_0 = Y_0 + (Ym) <= topo(Xm) + 2 * dy 
+topo = flat if topography_shape == 'flat' else hill
+Y0 = lambda x, y: (y <= (topo(x) + fuel_height)).astype(int) # 1 if y <= topo(x) + fuel_height else 0
 
 # Initial temperature $T(x,y,0)$ #
-# x_start = 250
-# x_end = 550
-# Experiments
-# x_start = 10
-# x_end = x_start + 2
-# y_start = 0
-# y_end = .5 
-# # FDS
-# x_start = 0
-# x_end = x_start + 3.3 
-# y_start = 0
-# y_end = .25
-x_center = (x_start + x_end) / 2
-width = (x_end - x_start)
-height = (y_end - y_start)
-
-if shape_type == 'plate':
-    shape = create_plate(x_start, x_end, y_start, y_end) # Return True if x_min <= x <= x_max & y_min <= y <= y_max
+if T0_shape == 'plate':
+    shape = create_plate(T0_x_start, T0_x_end, T0_y_start, T0_y_end) # Return True if x_min <= x <= x_max & y_min <= y <= y_max
 else:
-    shape = create_half_gaussian(x_center, width, height) #
-
+    shape = create_half_gaussian(T0_x_center, T0_width, T0_height) #
 T0 = lambda x, y: T_inf + (shape(x, y)) * (T_hot - T_inf)
-# T0 = lambda x, y, t: (t <= 11) * (T_inf + (plate(x, y)) * (TA - T_inf))
-# T_mask = 
-
 
 # Initial pressure $p(x, y, 0)$ #
 p0 = lambda x, y: x * 0 
