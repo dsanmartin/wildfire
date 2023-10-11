@@ -2,7 +2,7 @@
 Coupled Atmosphere-Wildfire Model Implementation
 
 ## Mathematical model
-This code solves the following system of PDEs 
+This code solves the following system of PDEs to simulate the spread of wildfires:
 
 ```math
 \begin{split}
@@ -13,7 +13,6 @@ This code solves the following system of PDEs
     & + \text{Initial and boundary conditions},
 \end{split}
 ```
-to simulate the spread of wildfires.
 
 ## Examples
 
