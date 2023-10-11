@@ -131,18 +131,11 @@ dmypy.json
 
 # Extra folders
 .vscode/
-atmospheric/higrad/output/
-atmospheric/higrad/backups/
-coupled/higrad_firetec/output/
-coupled/higrad_firetec/backups/
-coupled/test/output/
-coupled/testing/output/
-coupled/testing/backups/
-coupled/testing/2d/input/
-coupled/testing/2d/output/
-coupled/testing/2d_v1/
-coupled/testing/3d/
-coupled/testing/2d/others/
+src/2d/output/
+src/2d/input/
+src/2d/others/
+src/2d/gpu/
+src/3d/*
 
 # Script
-coupled/testing/2d/*.sh
+src/*/*.sh
