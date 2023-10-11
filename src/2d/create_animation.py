@@ -4,6 +4,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import imageio
 import argparse
+import pickle
+from matplotlib.colors import ListedColormap
+
+black_cmap = ListedColormap(['black'])
 
 parser = argparse.ArgumentParser(description='Visualization of numerical simulations')
 parser.add_argument('-v', '--visualization', type=str, 
@@ -15,6 +19,7 @@ parser.add_argument('-s', '--show', type=str,
 parser.add_argument('-t', '--time-sample', type=int, help='Time sample step. Default 1', default=1)
 parser.add_argument('-n', '--time-step', type=int, help='Up to time step n. Default 0 (all data)', default=0)
 parser.add_argument('-i', '--input', type=str, help='Simulation directory.', required=True)
+parser.add_argument('-o', '--output', type=str, help='Output directory.', default='')
 parser.add_argument('-xmin', '--x-min', type=float, default=666, help="Left boundary of domain in x.")
 parser.add_argument('-xmax', '--x-max', type=float, default=666, help="Right boundary of domain in x.")
 parser.add_argument('-ymin', '--y-min', type=float, default=666, help="Bottom boundary of domain in y.")
@@ -25,6 +30,7 @@ args = parser.parse_args()
 visualization = args.visualization #"horizontal" # or vertical
 plots = args.plots.split() #"modU T p"
 filename = args.input
+output_dir = args.output
 show = args.show # plot, video or gif
 streamplot = True
 qs = 2 # Quiver samples
@@ -37,9 +43,13 @@ if show != "plot":
     file = filename_split[-1]
     sim_id = filename_split[-2]
     base_dir = "/".join(filename_split[:-1]) + "/"
-    # Ouput format
-    gif_name = base_dir + sim_id + "_" + file.replace('npz', 'gif')
-    video_name = base_dir + sim_id + "_" + file.replace('npz', 'mp4')
+    # Output format
+    if output_dir == "":
+        gif_name = base_dir + sim_id + "_" + file.replace('npz', 'gif')
+        video_name = base_dir + sim_id + "_" + file.replace('npz', 'mp4')
+    else:
+        gif_name = output_dir + file.replace('npz', 'gif')
+        video_name = output_dir + file.replace('npz', 'mp4')
 
 # Load data
 data = np.load(filename)
@@ -138,6 +148,16 @@ else:
 vvariable = r'$z$ (m)'
 hvariable = r'$x$ (m)'
 
+# Terrain
+path = base_dir + sim_id + "/"
+with open(path + 'parameters.pkl', 'rb') as fp:
+    parameters = pickle.load(fp)
+dead_nodes = parameters['dead_nodes']
+
+terrain = np.zeros_like(Y[0])
+terrain[:] = np.nan
+terrain[dead_nodes] = 1
+
 Nt = t.shape[0]
 # Plot
 for n in range(0, Nt, ts):
@@ -206,6 +226,7 @@ for n in range(0, Nt, ts):
     
     if "Y" in plots:
         pi = axes[i].contourf(x, y, Y[n], cmap=plt.cm.Oranges, vmin=np.min(Y), vmax=np.max(Y))
+        axes[i].contourf(x, y, terrain, cmap=black_cmap)
         axes[i].set_title(r'Fuel $Y$')
         fig.colorbar(pi, ax=axes[i], label="%")
         i += 1
