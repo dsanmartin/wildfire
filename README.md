@@ -13,7 +13,7 @@ This code solves the following system of PDEs
     & + \text{Initial and boundary conditions},
 \end{split}
 ```
-to simulate the wildfires spreading.
+to simulate the spread of wildfires.
 
 ## Examples
 
