@@ -9,20 +9,6 @@ y_min, y_max = 0, 20 # Distance interval [y_min, y_max] in m
 t_min, t_max = 0, 140 # Time interval [t_min, t_max] in s
 # Numerical grid
 Nx, Ny, Nt = 512, 256, 30001 # Number of nodes per axis
-
-# Testing domain #
-# x_min, x_max = -25, 225 # Distance interval [x_min, x_max] in m
-# x_min, x_max = -100, 300 # Distance interval [x_min, x_max] in m
-# x_min, x_max = -200, 400 # Distance interval [x_min, x_max] in m
-# x_min, x_max = -500, 700 # Distance interval [x_min, x_max] in m
-# y_min, y_max = 0, 20 # Distance interval [y_min, y_max] in m
-# x_min, x_max = -200, 200 # Distance interval [x_min, x_max] in m
-# y_min, y_max = 0, 400 # Distance interval [x_min, x_max] in m
-t_min, t_max = 0, 60 # Time interval [t_min, t_max] in s
-# # # Testing numerical grid
-# Nx, Ny, Nt = 256, 128, 20001 # Number of nodes per axis
-Nx, Ny, Nt = 512, 256, 50001 # Number of nodes per axis
-
 NT = 100 # Number of samples to store. The simulation stores each NT timesteps
 
 # Time numerical method
@@ -127,7 +113,7 @@ T0_height = (T0_y_end - T0_y_start)
 fuel_height = .51 #.5 # Height of fuel in m
 
 # Topography
-topography_shape = 'hill' # 'flat' or 'hill'
+topography_shape = 'flat' # 'flat' or 'hill'
 hill_center = 100 / 2 # Center of hill in m
 hill_height = 2.5 # Height of hill in m
 hill_width = 20 # Width of hill in m

@@ -1,4 +1,5 @@
 import argparse
+import configparser
 from parameters import *
 from datetime import datetime
 
@@ -60,7 +61,8 @@ parser.add_argument('-d', '--debug', type=int, default=0,
     help="Debug. 1 for debugging. Default: {}".format(0))
 parser.add_argument('-sic', '--show-initial-condition', type=int, default=0,
     help="Show (plot) initial conditions. 1 for plot. Default: {}".format(0))
-
+parser.add_argument('-param', '--parameter-file', type=str, default=None,
+    help="Use parameter file. Default: None")
 """"
 parser.add_argument('-v', '--visualization', type=str, 
     help='Type of visualization. Options: "horizontal" or "vertical". Default: "vertical".', default="vertical")
@@ -98,3 +100,20 @@ S_top = args.source_top
 S_bot = args.source_bottom
 T_min = args.min_temperature
 T_max = args.max_temperature
+parameter_file = args.parameter_file
+
+# Overwrite default values with parameter file
+if parameter_file is not None:
+    config = configparser.ConfigParser()
+    config.optionxform=str
+    config.read(parameter_file)
+    x_min = config.getfloat("domain", "x_min")
+    x_max = config.getfloat("domain", "x_max")
+    y_min = config.getfloat("domain", "y_min")
+    y_max = config.getfloat("domain", "y_max")
+    t_min = config.getfloat("domain", "t_min")
+    t_max = config.getfloat("domain", "t_max")
+    Nx = config.getint("numerics", "Nx")
+    Ny = config.getint("numerics", "Ny")
+    Nt = config.getint("numerics", "Nt")
+    NT = config.getint("numerics", "NT")

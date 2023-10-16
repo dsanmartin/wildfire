@@ -13,6 +13,26 @@ def plot_2D(x, y, z, cmap=plt.cm.jet):
     plt.tight_layout()
     plt.show()
 
+def plot_scalar_field(fig, ax, x, y, z, cmap, z_bounds, ticks, title, label, alpha=1):
+    z_min, z_max = z_bounds
+    ax.contourf(x, y, z,cmap=cmap, vmin=z_min, vmax=z_max, alpha=alpha)
+    # pi = axes[i].imshow(T[n],cmap=plt.cm.jet, extent=[x.min(), x.max(), y.min(), y.max()], origin='lower', vmin=np.min(T), vmax=np.max(T))
+    if title is not None:
+        ax.set_title(title)
+    if label is not None:
+        m = plt.cm.ScalarMappable(cmap=cmap)
+        m.set_array(z)
+        m.set_clim(z_min, z_max)
+        fig.colorbar(m, ax=ax, ticks=ticks, label=label)
+    return None
+
+def plot_vector_field(ax, x, y, u, v, streamplot=True, qs=1, density=1.2, linewidth=.5, arrowsize=.3, color='k'):
+    if streamplot: 
+        ax.streamplot(x, y, u, v, density=density, linewidth=linewidth, arrowsize=arrowsize, color=color)
+    else: 
+        ax.quiver(x[::qs,::qs], y[::qs,::qs], u[::qs,::qs], v[::qs,::qs])
+
+
 def plot_ic(x, y, u, v, s, T, Y, plot_lims=None):
     # fig, axes = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(12, 8))
     # u_plot = axes[0, 0].contourf(x, y, u, cmap=plt.cm.viridis)
