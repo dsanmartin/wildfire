@@ -2,8 +2,8 @@
 args=("$@");
 # sim_name=${args[0]};
 input_dir=${args[0]};
-t=${args[1]};
-n=${args[2]};
+ts=${args[1]};
+tn=${args[2]};
 xmin=${args[3]};
 xmax=${args[4]};
 ymin=${args[5]};
@@ -41,4 +41,4 @@ if [ -z "${ymax}" ]; then
 fi
 # Create animation
 # python create_animation.py -i ${data} -t ${t} -n ${n} -xmin ${xmin} -xmax ${xmax} -ymin ${ymin} -ymax ${ymax};
-python src/2d/create_animation.py -i ${input_dir} -t ${t} -n ${n} -xmin ${xmin} -xmax ${xmax} -ymin ${ymin} -ymax ${ymax};
+python src/2d/create_animation.py -i ${input_dir} -ts ${ts} -tn ${tn} -xmin ${xmin} -xmax ${xmax} -ymin ${ymin} -ymax ${ymax};

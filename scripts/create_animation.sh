@@ -14,4 +14,4 @@ if [ -z "${output_dir}" ]; then
     output_dir=$input_dir;
 fi
 # Create animation
-python -u src/2d/create_animation.py -i ${input_dir} -o ${output_dir} -s ${show} -xmin ${xmin} -xmax ${xmax} -ymin ${ymin} -ymax ${ymax} -n ${n_max} > ${input_dir}log.log &
+python -u src/2d/create_animation.py -i ${input_dir} -o ${output_dir} -s ${show} -xmin ${xmin} -xmax ${xmax} -ymin ${ymin} -ymax ${ymax} -tn ${n_max} > ${input_dir}animation.log &
