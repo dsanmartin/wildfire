@@ -39,12 +39,16 @@ if output_dir[-1] != "/":
 data_path = input_dir + "/data.npz"
 parameters_path = input_dir + "/parameters.pkl"
 U_comp = ['modU', 'divU', 'curlU'] # Computation
+dpi = 200
+filename = None
 
-# Create name for video
+# Parameters for video or GIF
 if show != "plot":
     sim_id = input_dir.split("/")[-2]
     gif_name = output_dir + sim_id + ".gif"
     video_name = output_dir + sim_id + ".mp4"
+    ext = '.png' if show in ['gif', 'video'] else '.pdf'
+    dpi = 400
 
 # Load data
 x, y, t, data_plots = load_data_for_plots(data_path, parameters_path, plots, tn=None)
@@ -60,11 +64,6 @@ plot_lims = [x_min, x_max, y_min, y_max]
 # Filenames for output
 filenames = []
 
-filename = None # Assume it is just a plot
-# File extensions
-if show != "plot":
-    ext = '.png' if show in ['gif', 'video'] else '.pdf'
-
 # Number of samples to show
 Nt = t.shape[0]
 # Plot
@@ -74,7 +73,7 @@ for n in range(0, Nt, ts):
         print("Creating figure %d/%d" % (n+1, Nt))
         filename = output_dir + str(n) + ext 
         filenames.append(filename)
-    plot(n, t, x, y, data_plots, plot_lims, title=True, filename=filename, dpi=400)
+    plot(n, t, x, y, data_plots, plot_lims, title=True, filename=filename, dpi=dpi)
 
 # Build video or GIF
 if show not in ["plot", "pdf"]:

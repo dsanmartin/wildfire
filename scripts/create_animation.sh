@@ -3,7 +3,8 @@
 # OUTPUT_DIR="";
 args=("$@");
 input_dir=${args[0]};
-output_dir=${args[1]};
+log=${args[1]};
+output_dir=${args[2]};
 xmin=0;
 xmax=200;
 ymin=0;
@@ -14,4 +15,8 @@ if [ -z "${output_dir}" ]; then
     output_dir=$input_dir;
 fi
 # Create animation
-python -u src/2d/create_animation.py -i ${input_dir} -o ${output_dir} -s ${show} -xmin ${xmin} -xmax ${xmax} -ymin ${ymin} -ymax ${ymax} -tn ${n_max} > ${input_dir}animation.log &
+python -u src/2d/create_animation.py -i ${input_dir} -o ${output_dir} -s ${show} -xmin ${xmin} -xmax ${xmax} -ymin ${ymin} -ymax ${ymax} -tn ${n_max} > ${output_dir}animation.log &
+if [ "${log}" = "log" ]; then
+    sleep .5
+    tail -f ${output_dir}animation.log
+fi
