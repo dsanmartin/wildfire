@@ -8,7 +8,7 @@ from initial_conditions import u0, v0, T0, Y0, p0, F, topo, shape#, T_mask
 from ibm import topography_nodes, topography_distance
 from pde import solve_pde, OUTPUT_LOG
 from inout import create_simulation_folder, save_approximation, save_parameters
-from plots import plot_2D, plot_ic, plot_1D
+from plots import plot_initial_conditions, plot_2D, plot_1D
 from logs import log_params
 
 def main():
@@ -40,7 +40,7 @@ def main():
     if show_ic:
         # test = shape(Xm, Ym)
         S_0 = np.sqrt(U_0**2 + V_0**2)
-        plot_ic(Xm, Ym, U_0, V_0, S_0, T_0, Y_0, plot_lims=[[0, 200], [0, 20]])
+        plot_initial_conditions(Xm, Ym, U_0, V_0, S_0, T_0, Y_0, plot_lims=[[0, 200], [0, 20]])
         # mask = (Ym >= 1.9) & (Ym <= 2.1)
         # print(U_0[mask])
         # plot_1D(Xm[0], T_0[0])

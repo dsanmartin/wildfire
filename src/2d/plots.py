@@ -6,6 +6,10 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.colors import ListedColormap
 from derivatives import compute_gradient_plots, compute_curl_plots, compute_divergence_plots
 
+vvariable = r'$z$ (m)' # Vertical variable
+hvariable = r'$x$ (m)' # Horizontal variable
+U_comp = ['modU', 'divU', 'curlU'] # Computation over velocity field
+
 # Check if LaTeX is installed
 if shutil.which('latex'):
     # Use LaTeX for rendering
@@ -18,11 +22,6 @@ if shutil.which('latex'):
     })
 else:
     print("LaTeX not installed! Using default font.")
-
-black_cmap = ListedColormap(['black']) # For plotting terrain
-vvariable = r'$z$ (m)' # Vertical variable
-hvariable = r'$x$ (m)' # Horizontal variable
-U_comp = ['modU', 'divU', 'curlU'] # Computation over velocity field
 
 def get_variable(data: dict, variable: str, tn: int = None) -> tuple:
     """
@@ -104,7 +103,7 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
         data_plots['T'] = {
             'data': T,
             'bounds': [T_min - 100 * 0, T_max + 100],
-            'ticks': np.array(np.ceil(np.linspace(T_min, T_max + 1, 5, dtype=int) / 100.0) * 100, dtype=int)
+            'ticks': np.array(np.ceil(np.linspace(T_min, T_max, 5, dtype=int) / 100.0) * 100, dtype=int)
         }
     if 'Y' in plots:
         Y, Y_min, Y_max = get_variable(data, 'Y', tn)
@@ -141,7 +140,7 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
         modU_min, modU_max = modU.min(), modU.max()
         data_plots['modU'] = {
             'data': [modU, u, v],
-            'bounds': [modU_min, modU_max],
+            'bounds': [modU_min - 1, modU_max + 1],
             'ticks': np.round(np.linspace(modU_min, modU_max, 5), 1)
         }
     if 'divU' in plots:
@@ -161,7 +160,6 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
             'ticks': np.round(np.linspace(curlU_min, curlU_max, 5), 1)
         }
     return x, y, t, data_plots
-
 
 def plot_scalar_field(fig: plt.Figure, ax: plt.Axes, x: np.ndarray, y: np.ndarray, z: np.ndarray, cmap: plt.cm, 
         z_bounds: list, ticks: list, title: str = None, label: str = None, alpha: float = 1, plot_type: str = 'imshow') -> None:
@@ -187,13 +185,13 @@ def plot_scalar_field(fig: plt.Figure, ax: plt.Axes, x: np.ndarray, y: np.ndarra
     ticks : list
         The tick locations for the colorbar.
     title : str, optional
-        The title of the plot.
+        The title of the plot. Default is None.
     label : str, optional
-        The label for the colorbar.
-    contour : bool, optional
-        If True, plot the scalar field as a contour plot. If False, plot as an image.
+        The label for the colorbar. Default is None.
+    plot_type : str, optional
+        Type of plot. Options: 'contour', 'imshow', 'pcolormesh'. Default is 'imshow'.
     alpha : float, optional
-        The alpha value for the plot.
+        The alpha value for the plot. Default is 1.
 
     Returns
     -------
@@ -205,7 +203,6 @@ def plot_scalar_field(fig: plt.Figure, ax: plt.Axes, x: np.ndarray, y: np.ndarra
     elif plot_type == 'imshow':
         ax.imshow(z, cmap=cmap, extent=[x.min(), x.max(), y.min(), y.max()], origin='lower', 
             interpolation='bilinear', vmin=z_min, vmax=z_max, alpha=alpha)
-        im_ratio = z.shape[0] / z.shape[1]
     elif plot_type == 'pcolormesh':
         ax.pcolormesh(x, y, z, cmap=cmap, vmin=z_min, vmax=z_max, alpha=alpha)
     if title is not None:
@@ -217,7 +214,7 @@ def plot_scalar_field(fig: plt.Figure, ax: plt.Axes, x: np.ndarray, y: np.ndarra
         if plot_type == 'imshow':
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="1%", pad=0.1)
-            fig.colorbar(m, ax=ax, cax=cax, ticks=ticks) # fraction=0.046, pad=0.04)
+            fig.colorbar(m, ax=ax, cax=cax, ticks=ticks, label=label) # fraction=0.046, pad=0.04)
         else:
             fig.colorbar(m, ax=ax, ticks=ticks, label=label)
     return None
@@ -248,9 +245,9 @@ def plot_vector_field(ax: plt.Axes, x: np.ndarray, y: np.ndarray, u: np.ndarray,
     linewidth : float, optional
         The linewidth of the streamlines in a streamplot. Only used if `streamplot` is True.
     arrowsize : float, optional
-        The size of the arrows in a streamplot or quiver plot.
+        The size of the arrows in a streamplot or quiver plot. Default is .3.
     color : str, optional
-        The color of the streamlines or arrows.
+        The color of the streamlines or arrows. Default is 'k' (black).
 
     Returns
     -------
@@ -262,8 +259,43 @@ def plot_vector_field(ax: plt.Axes, x: np.ndarray, y: np.ndarray, u: np.ndarray,
         ax.quiver(x[::qs,::qs], y[::qs,::qs], u[::qs,::qs], v[::qs,::qs], scale=1, scale_units='xy', color=color)
     return None
 
-# Plot one time step
-def plot(n, t, x, y, plots, plot_lims, title=True, filename=None, dpi=200, streamplot=True, qs=1):
+def plot(n: int, t: np.ndarray, x: np.ndarray, y: np.ndarray, plots: dict, plot_lims: list, 
+        title: bool = True, filename: str = None, dpi: int = 200, streamplot: bool = True, qs: int = 1) -> None:
+    """
+    Plot simulation data for time step `n`.
+
+    Parameters
+    ----------
+    n : int
+        Index of the time step to plot.
+    t : numpy.ndarray (Nt)
+        Time value of the time step to plot.
+    x : numpy.ndarray (Nx) or (Ny, Nx)
+        1D or 2D array with the x-coordinates of the grid.
+    y : numpy.ndarray
+        1D or 2D array with the y-coordinates of the grid.
+    plots : dict
+        Dictionary with the data to plot. The keys are the names of the variables to plot and the values are dictionaries with the following keys:
+        - 'data': numpy.ndarray with the data to plot.
+        - 'bounds': list with the minimum and maximum values of the data.
+        - 'ticks': list with the tick values of the colorbar.
+    plot_lims : list
+        Tuple with the limits of the variable 'phi' (phi_min, phi_max).
+    title : bool, optional
+        Whether to add a title to the plot. Default is True. Title is the time value of the time step.
+    filename : str, optional
+        Name of the file to save the plot. If None, the plot is displayed instead of saved. Default is None.
+    dpi : int, optional
+        Resolution of the saved figure in dots per inch. Default is 200.
+    streamplot : bool, optional
+        Whether to plot streamlines for vector fields. Default is True.
+    qs : int, optional
+        Density of streamlines for vector fields. Default is 1.
+
+    Returns
+    -------
+    None
+    """
     n_plots = len(plots)
     x_min, x_max, y_min, y_max = plot_lims
     fig, axes = plt.subplots(n_plots, 1, sharex=True, figsize=(12, n_plots * 2))#, dpi=dpi)
@@ -337,7 +369,7 @@ def plot(n, t, x, y, plots, plot_lims, title=True, filename=None, dpi=200, strea
         )
         # Plot terrain (IBM nodes)
         plot_scalar_field(
-            fig, axes[i], x, y, plots['Y']['data'][1], black_cmap, (0, 1), None, None, None
+            fig, axes[i], x, y, plots['Y']['data'][1], ListedColormap(['black']), [0, 1], None, None, None
         )
         i += 1
 
@@ -353,8 +385,9 @@ def plot(n, t, x, y, plots, plot_lims, title=True, filename=None, dpi=200, strea
         )
         i += 1
     
-    fig.tight_layout()
+    fig.tight_layout() # Adjust spacing between subplots
     
+    # Save or show plot
     if filename is not None:
         plt.savefig(filename, dpi=dpi, bbox_inches='tight', transparent=True)
         plt.close()
@@ -362,70 +395,69 @@ def plot(n, t, x, y, plots, plot_lims, title=True, filename=None, dpi=200, strea
         plt.show()
     return None
 
-def plot_1D(x, y):
-    plt.plot(x, y)
-    plt.grid(True)
-    plt.show()
+def plot_initial_conditions(x: np.ndarray, y: np.ndarray, u: np.ndarray, v: np.ndarray, s: np.ndarray, T: np.ndarray, Y: np.ndarray, plot_lims: list = None) -> None:
+    """
+    Plots the initial conditions of a wildfire simulation.
 
-def plot_2D(x, y, z, cmap=plt.cm.jet):
-    plt.figure(figsize=(12, 6))
-    plt.contourf(x, y, z, cmap=cmap)
-    plt.colorbar()
-    plt.gca().set_aspect('equal')
-    plt.tight_layout()
-    plt.show()
+    Parameters
+    ----------
+    x : numpy.ndarray (Ny, Nx) 
+        Array of x-coordinates.
+    y : numpy.ndarray (Ny, Nx) 
+        Array of y-coordinates.
+    u : numpy.ndarray (Ny, Nx) 
+        Array of velocity component u.
+    v : numpy.ndarray (Ny, Nx)
+        Array of velocity component v.
+    s : numpy.ndarray (Ny, Nx)
+        Array of speed.
+    T : numpy.ndarray (Ny, Nx)
+        Array of temperature.
+    Y : numpy.ndarray (Ny, Nx)
+        Array of fuel.
+    plot_lims : list, optional
+        List containing the limits of the plot, in the form [[xmin, xmax], [ymin, ymax]], by default None.
 
-
-def plot_ic(x, y, u, v, s, T, Y, plot_lims=None):
-    # fig, axes = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(12, 8))
-    # u_plot = axes[0, 0].contourf(x, y, u, cmap=plt.cm.viridis)
-    # v_plot = axes[0, 1].contourf(x, y, v, cmap=plt.cm.viridis)
-    # T_plot = axes[1, 0].contourf(x, y, T, cmap=plt.cm.jet)
-    # Y_plot = axes[1, 1].contourf(x, y, Y, cmap=plt.cm.Oranges)
-
-    # axes[0, 0].set_title(r"Velocity component $u$")
-    # axes[0, 1].set_title(r"Velocity component $v$")
-    # axes[1, 0].set_title(r"Temperature $T$")
-    # axes[1, 1].set_title(r"Fuel $Y$")
-
-    # fig.colorbar(u_plot, ax=axes[0, 0], label=r'm s$^{-1}$')
-    # fig.colorbar(v_plot, ax=axes[0, 1], label=r'm s$^{-1}$')
-    # fig.colorbar(T_plot, ax=axes[1, 0], label=r'K')
-    # fig.colorbar(Y_plot, ax=axes[1, 1], label=r'%')
-
+    Returns
+    -------
+    None
+    """
     fig, axes = plt.subplots(5, 1, sharex=True, figsize=(12, 8))
-    s_plot = axes[0].contourf(x, y, s, cmap=plt.cm.viridis)
-    axes[0].streamplot(x, y, u, v, density=1.2, linewidth=.5, arrowsize=.3, color='k')
-    u_plot = axes[1].contourf(x, y, u, cmap=plt.cm.viridis)
-    v_plot = axes[2].contourf(x, y, v, cmap=plt.cm.viridis)
-    T_plot = axes[3].contourf(x, y, T, cmap=plt.cm.jet)
-    Y_plot = axes[4].contourf(x, y, Y, cmap=plt.cm.Oranges)
 
-    axes[0].set_title(r"Speed $\|\mathbf{u}\|$")
-    axes[1].set_title(r"Velocity component $u$")
-    axes[2].set_title(r"Velocity component $v$")
-    axes[3].set_title(r"Temperature $T$")
-    axes[4].set_title(r"Fuel $Y$")
-
-    fig.colorbar(s_plot, ax=axes[0], label=r'm s$^{-1}$')
-    fig.colorbar(u_plot, ax=axes[1], label=r'm s$^{-1}$')
-    fig.colorbar(v_plot, ax=axes[2], label=r'm s$^{-1}$')
-    fig.colorbar(T_plot, ax=axes[3], label=r'K')
-    fig.colorbar(Y_plot, ax=axes[4], label=r'%')
-
-    axes[-1].set_xlabel(r"x")
+    # Axis labels
+    axes[-1].set_xlabel('x')
     for i in range(len(axes)):
-        axes[i].set_ylabel(r"z")
+        axes[i].set_ylabel('y')
 
+    # Set limits if given
     if plot_lims is not None:
         for i in range(len(axes)):
             axes[i].set_xlim(plot_lims[0])
             axes[i].set_ylim(plot_lims[1])
 
-    fig.tight_layout()
-    # plt.gca().set_aspect('equal')
-    plt.show()
+    # Plot speed
+    plot_scalar_field(fig, axes[0], x, y, s, plt.cm.viridis, 
+        [s.min(), s.max()], None, r'Speed $\|\mathbf{u}\|$', r'm s$^{-1}$') 
+    
+    # Plot velocity u component
+    plot_scalar_field(fig, axes[1], x, y, u, plt.cm.viridis,
+        [u.min(), u.max()], None, r'Velocity component $u$', r'm s$^{-1}$')
+    
+    # Plot velocity v component
+    plot_scalar_field(fig, axes[2], x, y, v, plt.cm.viridis,
+        [v.min(), v.max()], None, r'Velocity component $v$', r'm s$^{-1}$')
+    
+    # Plot temperature
+    plot_scalar_field(fig, axes[3], x, y, T, plt.cm.jet,
+        [T.min(), T.max()], None, r'Temperature $T$', r'K')
+    
+    # Plot fuel
+    plot_scalar_field(fig, axes[4], x, y, Y, plt.cm.Oranges,
+        [Y.min(), Y.max()], None, r'Fuel $Y$', r'\%')
 
+    fig.tight_layout() # Adjust spacing between subplots
+    plt.show()
+    return None
 
 def plot_grid_ibm(x, y, topo, cut_nodes, dead_nodes):
     # AA = np.zeros_like(Xm)
@@ -441,4 +473,17 @@ def plot_grid_ibm(x, y, topo, cut_nodes, dead_nodes):
     #plt.contourf(Xm, Ym, AA)
     #plt.imshow(AA, origin="lower", interpolation=None)
     # plt.colorbar()
+    plt.show()
+
+def plot_1D(x, y):
+    plt.plot(x, y)
+    plt.grid(True)
+    plt.show()
+
+def plot_2D(x, y, z, cmap=plt.cm.jet):
+    plt.figure(figsize=(12, 6))
+    plt.contourf(x, y, z, cmap=cmap)
+    plt.colorbar()
+    plt.gca().set_aspect('equal')
+    plt.tight_layout()
     plt.show()
