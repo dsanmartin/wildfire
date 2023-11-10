@@ -1,72 +1,22 @@
+import time
 import numpy as np
+from derivatives import compute_gradient, compute_laplacian, compute_first_derivative_upwind, compute_first_derivative
 from poisson import solve_fftfd
 from turbulence import turbulence
 from utils import K, H, Km, hv, source, sink, kT, kTp #, Yft, S_T, AT
-import time
 from plots import plot_2D
 
 OUTPUT_LOG = "Time step: {:=6d}, Simulation time: {:.2f} s"
 
 def grad_pressure(p, **params):
+    # Get interval size
     dx = params['dx']
     dy = params['dy']
-    # cut_nodes_y, cut_nodes_x = kwparams['cut_nodes']
-    # dead_nodes = kwparams['dead_nodes']
-    # px, py = np.zeros_like(p), np.zeros_like(p)
-    # Get nodes
-    p_ij = np.copy(p) # p_{i, j}
-    p_ip2j = np.roll(p,-2, axis=1) # p_{i+2, j}
-    p_ip1j = np.roll(p,-1, axis=1) # p_{i+1, j}
-    p_im1j = np.roll(p, 1, axis=1) # p_{i-1, j}
-    p_im2j = np.roll(p, 2, axis=1) # p_{i-2, j}
-    p_ijp2 = np.roll(p,-2, axis=0) # p_{i, j+2}
-    p_ijp1 = np.roll(p,-1, axis=0) # p_{i, j+1}
-    p_ijm1 = np.roll(p, 1, axis=0) # p_{i, j-1}
-    p_ijm2 = np.roll(p, 2, axis=0) # p_{i, j-2}
-    p_imhj = 0.5 * (p_im1j + p_ij) # p_{i-1/2, j}
-    p_iphj = 0.5 * (p_ij + p_ip1j) # p_{i+1/2, j}
-    p_ijmh = 0.5 * (p_ijm1 + p_ij) # p_{i, j-1/2}
-    p_im3hj = 0.5 * (p_im2j + p_im1j) # p_{i-3/2, j}
+    # Compute grad(p)
+    grad_p = compute_gradient(p, dx, dy)
+    return grad_p
 
-    p_ijmh = 0.5 * (p_ijm1 + p_ij) # p_{i, j-1/2}
-    p_ijph = 0.5 * (p_ij + p_ijp1) # p_{i, j+1/2}
-    p_ip3hj = 0.5 * (p_ip2j + p_ip1j) # p_{i+3/2, j}
-    p_ijm3h = 0.5 * (p_ijm2 + p_ijm1) # p_{i, j-3/2}
-    p_ijp3h = 0.5 * (p_ijp2 + p_ijp1) # p_{i, j+3/2}
-    
-    # Computing derivatives
-    # Using central difference O(h^2).
-    px = (p_ip1j - p_im1j) / (2 * dx) 
-    py = (p_ijp1 - p_ijm1) / (2 * dy)
-    # Using backward difference
-    # px = (p_ij - p_im1j) / dx
-    # py = (p_ij - p_ijm1) / dy
-    # Using forward difference
-    # px = (p_ip1j - p_ij) / dx
-    # py = (p_ijp1 - p_ij) / dy
-    # Using backward difference O(h^2)
-    # px = (3 * p_ij - 4 * p_im1j + p_im2j) / (2 * dx) 
-    # py = (3 * p_ij - 4 * p_ijm1 + p_ijm2) / (2 * dy) 
-    # Using half nodes
-    # px = (p_iphj - p_im3hj) / (2 * dx)
-    # py = (p_ijph - p_ijm3h) / (2 * dy)
-    # px = (p_ip3hj - p_imhj) / (2 * dx)
-    # py = (p_ijp3h - p_ijmh) / (2 * dy)
-
-    # Boundary conditions correction on y. x is periodic, so no correction needed.
-    # O(h) correction for forward difference
-    # py[-1] = (p_ij[-1] - p_ij[-2]) / dy # Backward at y=y_max
-    # O(h) correction for backward difference
-    # py[0] = (p_ij[1] - p_ij[0]) / dy # Forward at y=y_min
-    # O(h^2) correction for central difference
-    py[0, :] = (-p_ij[2, :] + 4 * p_ij[1, :] - 3 * p_ij[0, :]) / (2 * dy) # Forward at y=y_min
-    # py[1, :] = (-p_ij[3, :] + 4 * p_ij[2, :] - 3 * p_ij[1, :]) / (2 * dy) # Forward at y=y_min+dy
-    py[-1,:] = (3 * p_ij[-1, :] - 4 * p_ij[-2, :] + p_ij[-3, :]) / (2 * dy) # Backward at y=y_max
-    # py[-2,:] = (3 * p_ij[-2, :] - 4 * p_ij[-3, :] + p_ij[-4, :]) / (2 * dy) # Backward at y=y_max-dy
-
-    return np.array([px, py])
-
-def Phi(t, C, params):
+def Phi2(t, C, params):
     dx = params['dx']
     dy = params['dy']
     nu = params['nu']
@@ -244,7 +194,8 @@ def Phi(t, C, params):
     # Turbulence
     sgs_x = sgs_y = sgs_T = 0
     if turb:
-        sgs_x, sgs_y, sgs_T = turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, params)
+        # sgs_x, sgs_y, sgs_T = turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, params)
+        sgs_x, sgs_y, sgs_T = turbulence(u, v, T, params)
     
     # Dissipation function
     # phi = nu * rho * (2 * (uxx ** 2 + uyy ** 2) + (vx + uy) ** 2)
@@ -318,6 +269,146 @@ def Phi(t, C, params):
         U_ -= u_plu * uxm + u_min * uxp + v_plu * uym + v_min * uyp
         V_ -= u_plu * vxm + u_min * vxp + v_plu * vym + v_min * vyp
 
+    Y_ = -Y_f * K(T) * H(T) * Y 
+
+    U_, V_, T_, Y_ = boundary_conditions(U_, V_, T_, Y_, params)
+
+    return np.array([U_, V_, T_, Y_])
+
+def Phi(t, C, params):
+    dx = params['dx']
+    dy = params['dy']
+    nu = params['nu']
+    rho = params['rho']
+    k = params['k']
+    #P = params['p']
+    C_p = params['C_p']
+    F = params['F']
+    g = params['g']
+    T_inf = params['T_inf']
+    A = params['A']
+    T_act = params['T_act']
+    # E_A = params['E_A']
+    # R = params['R']
+    H_R = params['H_R']
+    h = params['h']
+    T_pc = params['T_pc']
+    C_D = params['C_D']
+    a_v = params['a_v']
+    Y_thr = params['Y_thr']
+    Y_f = params['Y_f']
+    turb = params['turbulence']
+    conservative = params['conservative']
+    S_top = params['S_top']
+    S_bot = params['S_bot']
+    T_mask = params['T_mask'] # Temperature fixed source
+    T_hot = params['T_hot'] # Temperature fixed source
+    T_0 = params['T_0'] # Temperature fixed source
+    sigma = params['sigma']
+    delta = params['delta']
+    debug = params['debug']
+    source_filter = params['source_filter']
+    radiation = params['radiation']
+    include_source = params['include_source']
+    sutherland_law = params['sutherland_law']
+
+    # Get variables
+    u, v, T, Y = C
+    
+    # Forces
+    F_x, F_y = F # 'External' forces
+    g_x, g_y = g # Gravity
+    # Drag force
+    mod_U = np.sqrt(u ** 2 + v ** 2)
+    # Y_mask = (Y > Y_thr).astype(int) # Valid only for solid fuel
+    Y_mask = Y * Y_thr # Valid only for solid fuel
+    F_d_x = C_D * a_v * mod_U * u * Y_mask
+    F_d_y = C_D * a_v * mod_U * v * Y_mask
+    
+    # All forces
+    F_x = F_x - g_x * (T - T_inf) / T - F_d_x 
+    F_y = F_y - g_y * (T - T_inf) / T - F_d_y
+    # F_x = F_x - g_x * ((T - T_inf) + (T - T_inf) ** 2) / T - F_d_x
+    # F_y = F_y - g_y * ((T - T_inf) + (T - T_inf) ** 2) / T - F_d_y
+    
+
+    # Derivatives #
+    # First derivatives 
+    if conservative:
+        # Conservative form for convection
+        uux = compute_first_derivative(u * u, dx, 1) # (u_{i+1, j}^2 - u_{i-1, j}^2) / (2 * dx)
+        vuy = compute_first_derivative(u * v, dy, 0) # (u_{i, j+1} * v_{i, j+1} - u_{i, j-1} * v_{i, j-1}) / (2 * dy)
+        uvx = compute_first_derivative(v * u, dx, 1)# (v_{i+1, j} * u_{i+1, j} - v_{i-1, j} * u_{i-1, j}) / (2 * dx)
+        vvy = compute_first_derivative(v * v, dy, 0) # (v_{i, j+1}^2 - v_{i, j-1}^2) / (2 * dy)
+    else:
+        # Non-conservative form for convection
+        uux = compute_first_derivative_upwind(u, u, dx, 1) 
+        vuy = compute_first_derivative_upwind(v, u, dy, 0)
+        uvx = compute_first_derivative_upwind(u, v, dx, 1)
+        vvy = compute_first_derivative_upwind(v, v, dy, 0)
+    Tx, Ty = compute_gradient(T, dx, dy)
+
+    # Compute Laplacian
+    lap_u = compute_laplacian(u, dx, dy)
+    lap_v = compute_laplacian(v, dx, dy)
+    lap_T = compute_laplacian(T, dx, dy)
+
+    # Turbulence
+    sgs_x = sgs_y = sgs_T = 0
+    if turb:
+        sgs_x, sgs_y, sgs_T = turbulence(u, v, T, params)
+
+    # Temperature source term
+    S = 0 # No source
+    if include_source:
+        S1 = source(T, Y)
+        S2 = sink(T)
+        if source_filter:
+            S1[S1 >= S_top] = S_bot
+        S = S1 + S2
+        
+        #S = S_T(S)
+
+    # S = Y * 200 * S3(T, T_pc) -  h * (T - T_inf) / (rho * C_p)
+    # S = 0
+    if debug:
+        # dt = params['dt']
+        # if t % (dt * 100) == 0:
+        # print(t, dt * 100)
+        print("-" * 30)
+        # print("A:", A)
+        # print("h:", h)
+        # print("S_top:", S_top)
+        # print("S_bot:", S_bot)
+        # print("K:", np.min(Ke), np.max(Ke))
+        # print("S:", np.min(S), np.max(S))
+        # print("S1:", np.min(S1), np.max(S1))
+        # print("S2:", np.min(S2), np.max(S2))
+        # print("Tx:", np.min(Tx), np.max(Tx))
+        # print("Ty:", np.min(Ty), np.max(Ty))
+        # print("Txx:", np.min(Txx), np.max(Txx))
+        # print("Tyy:", np.min(Tyy), np.max(Tyy))
+        # lapT = k * (Txx + Tyy)
+        # print("lapT", np.min(lapT), np.max(lapT))
+        # print("sgs_T", np.min(sgs_T), np.max(sgs_T))
+        # print("S - sgs_T", np.min(S - sgs_T), np.max(S - sgs_T))
+        print("K(T) * H(T)", np.min(K(T) * H(T)) , np.max(K(T) * H(T)))
+        print("-" * 30)
+
+    # PDE
+    # Velocity
+    U_ = nu * lap_u - (uux + vuy) + F_x - sgs_x
+    V_ = nu * lap_v - (uvx + vvy) + F_y - sgs_y
+    # Temperature
+    # Radiation
+    if radiation:
+        T_ = 12 * sigma * delta * T ** 2 * (Tx ** 2 + Ty ** 2) + (k + 4 * sigma * delta * T ** 3) * lap_T - (u * Tx  + v * Ty) + S - sgs_T
+    elif sutherland_law:
+        T_ = kTp(T) * (Tx ** 2 + Ty ** 2) + kT(T) * lap_T - (u * Tx  + v * Ty) + S - sgs_T 
+    else:
+        T_ = k * lap_T - (u * Tx  + v * Ty) + S - sgs_T 
+
+    # Combustion model
     Y_ = -Y_f * K(T) * H(T) * Y 
 
     U_, V_, T_, Y_ = boundary_conditions(U_, V_, T_, Y_, params)

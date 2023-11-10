@@ -1,8 +1,21 @@
 import sys
-import numpy as np
 from utils import non_dimensional_numbers
 
-def log_params(params, dir_path=None):
+def log_params(params: dict, dir_path: str = None) -> None:
+    """
+    Log simulation parameters to stdout or file.
+
+    Parameters
+    ----------
+    params : dict
+        Dictionary containing simulation parameters.
+    dir_path : str, optional
+        Path to directory where the parameters file will be saved. If None, the parameters will be printed to stdout.
+
+    Returns
+    -------
+    None
+    """
     # Get data
     x_min, x_max = params['x'][0], params['x'][-1]
     y_min, y_max = params['y'][0], params['y'][-1]
@@ -35,13 +48,16 @@ def log_params(params, dir_path=None):
     truncate = params['truncate']
     T_min, T_max = params['T_min'], params['T_max']
     Y_min, Y_max = params['Y_min'], params['Y_max']
+
     # Non dimensional numbers calculation
     Re, Gr, Ra, Sr, Ste, St, Ze = non_dimensional_numbers(params)
+
     # Print to stdout or file
     if dir_path is None:
         f = sys.stdout
     else:
         f = open(dir_path + 'parameters.txt', 'w')
+
     print("Simulation name:", sim_name, file=f)
     print("Domain: [%.4f, %.4f] x [%.4f, %.4f] x [%.4f, %.4f]" % (x_min, x_max, y_min, y_max, t_min, t_max), file=f)
     print("Grid size: Nx: %d, Ny: %d, Nt: %d" % (Nx, Ny, Nt), file=f)
@@ -89,3 +105,5 @@ def log_params(params, dir_path=None):
 
     if dir_path is not None:
         f.close()
+
+    return None

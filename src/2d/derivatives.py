@@ -1,7 +1,7 @@
 import numpy as np
 
 ### Derivatives for PDE solver ###
-def compute_first_derivative(phi: np.ndarray, h: float, axis: int) -> np.ndarray:
+def compute_first_derivative(phi: np.ndarray, h: float, axis: int, type: str = 'central') -> np.ndarray:
     """
     Compute the first derivative of a 2D scalar field along a given axis.
 
@@ -16,6 +16,9 @@ def compute_first_derivative(phi: np.ndarray, h: float, axis: int) -> np.ndarray
         Spacing between grid points.
     axis : int
         Axis along which to compute the derivative. 0 for y, 1 for x.
+    type : str
+        Type of difference scheme. 'forward' for forward difference, 'backward'
+        for backward difference and 'central' for central difference. Default is 'central'.
 
     Returns
     -------
@@ -29,12 +32,117 @@ def compute_first_derivative(phi: np.ndarray, h: float, axis: int) -> np.ndarray
     or y direction, a second-order forward/backward difference scheme is used.
 
     """
-    # General case 
-    dphi_h = (np.roll(phi, -1, axis=axis) - np.roll(phi, 1, axis=axis)) / (2 * h)
+    # Get nodes
+    phi_ip1 = np.roll(phi,-1, axis=axis) # phi_{i+1}
+    phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
+    # Compute derivative
+    if type == 'forward':
+        phi_h = (phi_ip1 - phi) / h # Forward difference
+        if axis == 0: # Fix boundary in y - O(dy)
+            phi_h[-1,:] = (phi[-1,:] - phi[-2,:]) / h # Backward
+    elif type == 'backward':
+        phi_h = (phi - phi_im1) / h
+        if axis == 0: # Fix boundary in y - O(dy)
+            phi_h[0, :] = (phi[1, :] - phi[0, :]) / h
+    elif type == 'central':
+        phi_h = (phi_ip1 - phi_im1) / (2 * h) # Central difference
+        if axis == 0: # Fix boundary in y - O(dy^2)
+            phi_h[0, :] = (-3 * phi[0, :] + 4 * phi[1, :] - phi[2, :]) / (2 * h) # Forward
+            phi_h[-1,:] = (3 * phi[-1, :] - 4 * phi[-2,:] + phi[-3,:]) / (2 * h) # Backward
+    return phi_h
+
+def compute_first_derivative_upwind(a: np.ndarray, phi: np.ndarray, h: float, axis: int, order: int = 2) -> np.ndarray:
+    """
+    Compute the first derivative of a 2D scalar field along a given axis.
+
+    .. math::
+        \frac{\partial \phi}{\partial h} = \frac{\phi_{i+1} - \phi_{i}}{h}
+
+    Parameters
+    ----------
+    a: numpy.ndarray (Ny, Nx)
+        2D scalar field.
+    phi : numpy.ndarray (Ny, Nx)
+        2D scalar field.
+    h : float
+        Spacing between grid points.
+    axis : int
+        Axis along which to compute the derivative. 0 for y, 1 for x.
+    order : int
+        Order of the difference scheme. 1 for first-order, 2 for second-order.
+
+    Returns
+    -------
+    numpy.ndarray
+        First derivative of `phi` along `axis`.
+
+    Notes
+    -----
+    This function uses a first-order forward difference scheme to compute the
+    derivative in the general case. For the boundary points along the `axis=0`
+    or y direction, a first-order forward/backward difference scheme is used.
+
+    """
+    # Mask for upwind scheme
+    a_plu = np.maximum(a, 0)
+    a_min = np.minimum(a, 0)
+    # Get nodes
+    phi_ip1 = np.roll(phi,-1, axis=axis) # phi_{i+1}
+    phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
+    if order == 1: # First order
+        phi_hm = compute_first_derivative(phi, h, axis, type='backward') # Backward
+        phi_hp = compute_first_derivative(phi, h, axis, type='forward') # Forward
+    elif order == 2: # Second order
+        phi_ip2 = np.roll(phi,-2, axis=axis) # phi_{i+2}
+        phi_im2 = np.roll(phi, 2, axis=axis) # phi_{i-2}
+        phi_hm = (3 * phi - 4 * phi_im1 + phi_im2) / (2 * h) # Backward
+        phi_hp = (-phi_ip2 + 4 * phi_ip1 - 3 * phi) / (2 * h) # Forward
+        if axis == 0: # Fix boundary in y - O(dy^2)
+            phi_hm[0, :] = (-3 * phi[0, :] + 4 * phi[1, :] - phi[2, :]) / (2 * h) # Forward
+            phi_hm[1, :] = (-3 * phi[1, :] + 4 * phi[2, :] - phi[3, :]) / (2 * h) # Forward
+            phi_hp[-1,:] = (phi[-1, :] - 4 * phi[-2,:] + 3 * phi[-3,:]) / (2 * h) # Backward
+            phi_hp[-2,:] = (phi[-2, :] - 4 * phi[-3,:] + 3 * phi[-4,:]) / (2 * h) # Backward
+    # Upwind scheme
+    phi_h = a_plu * phi_hm + a_min * phi_hp
+    return phi_h
+
+def compute_second_derivative(phi: np.ndarray, h: float, axis: int) -> np.ndarray:
+    """
+    Compute the second derivative of a 2D scalar field along a given axis.
+
+    .. math::
+        \frac{\partial^2 \phi}{\partial h^2} = \frac{\phi_{i+1} - 2 \phi_i + \phi_{i-1}}{h^2}
+
+    Parameters
+    ----------
+    phi : numpy.ndarray (Ny, Nx)
+        2D scalar field.
+    h : float
+        Spacing between grid points.
+    axis : int
+        Axis along which to compute the derivative. 0 for y, 1 for x.
+
+    Returns
+    -------
+    numpy.ndarray
+        Second derivative of `phi` along `axis`.
+
+    Notes
+    -----
+    This function uses a second-order central difference scheme to compute the
+    derivative in the general case. For the boundary points along the `axis=0`
+    or y direction, a second-order forward/backward difference scheme is used.
+
+    """
+    # Get nodes
+    phi_ip1 = np.roll(phi,-1, axis=axis) # phi_{i+1}
+    phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
+    # Second derivative
+    phi_hh = (phi_ip1 - 2 * phi + phi_im1) / h ** 2
     if axis == 0: # Fix boundary in y - O(dy^2)
-        dphi_h[0, :] = (-3 * phi[0, :] + 4 * phi[1, :] - phi[2, :]) / (2 * h) # Forward
-        dphi_h[-1,:] = (3 * phi[-1, :] - 4 * phi[-2,:] + phi[-3,:]) / (2 * h) # Backward
-    return dphi_h
+        phi_hh[0, :] = (2 * phi[0, :] - 5 * phi[1, :] + 4 * phi[2, :] - phi[3, :]) / h ** 2 # Forward
+        phi_hh[-1,:] = (2 * phi[-1, :] - 5 * phi[-2,:] + 4 * phi[-3,:] - phi[-4,:]) / h ** 2 # Backward
+    return phi_hh
 
 def compute_gradient(phi: np.ndarray, dx: float, dy: float) -> np.ndarray:
     """
@@ -61,6 +169,32 @@ def compute_gradient(phi: np.ndarray, dx: float, dy: float) -> np.ndarray:
     dphi_y = compute_first_derivative(phi, dy, axis=0) # dphi/dy
     gradient = np.array([dphi_x, dphi_y])
     return gradient
+
+def compute_laplacian(phi: np.ndarray, dx: float, dy: float) -> np.ndarray:
+    """
+    Compute the Laplacian of a 2D scalar field.
+
+    .. math::
+        \nabla^2 \phi = \frac{\partial^2 \phi}{\partial x^2} + \frac{\partial^2 \phi}{\partial y^2}
+
+    Parameters
+    ----------
+    phi : numpy.ndarray (Ny, Nx)
+        Scalar field to compute the derivatives of.
+    dx : float
+        Spacing between grid points in the x direction.
+    dy : float
+        Spacing between grid points in the y direction.
+
+    Returns
+    -------
+    numpy.ndarray
+        Laplacian of `phi`.
+    """
+    phi_xx = compute_second_derivative(phi, dx, axis=1) # d^2phi/dx^2
+    phi_yy = compute_second_derivative(phi, dy, axis=0) # d^2phi/dy^2
+    laplacian = phi_xx + phi_yy
+    return laplacian
 
 def compute_curl(vphi: np.ndarray, dx: float, dy: float) -> np.ndarray:
     """
@@ -111,15 +245,14 @@ def compute_divergence(vphi: np.ndarray, dx: float, dy: float) -> np.ndarray:
     numpy.ndarray (Ny, Nx)
         Divergence of `vphi`.
     """
-    vphix = vphi[0]
-    vphiy = vphi[1]
+    vphix, vphiy = vphi
     dphix_x = compute_first_derivative(vphix, dx, axis=1) # dphix/dx
     dphiy_y = compute_first_derivative(vphiy, dy, axis=0) # dphiy/dy
     divergence = dphix_x + dphiy_y
     return divergence
 
 ### Derivatives for plotting ###
-# The difference es the number of axis. For plotting we have an extra axis for time!
+# The difference is the number of axes. For plotting we have an extra axis for time!
 def compute_first_derivative_plots(phi: np.ndarray, h: float, axis: int) -> np.ndarray:
     """
     Compute the first derivative of a 2D scalar field along a given axis. This is the same

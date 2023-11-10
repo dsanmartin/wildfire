@@ -1,80 +1,11 @@
 import numpy as np
+from derivatives import compute_first_derivative, compute_second_derivative, compute_gradient
 
 f_w1 = lambda z, u_tau, nu: 1 - np.exp(-z * u_tau / 25 / nu)
 f_w2 = lambda z, u_tau, nu: (1 - np.exp(-(z * u_tau / 25 / nu) ** 3)) ** 0.5
 
-def turbulence1(ux, uy, vx, vy, uxx, uyy, vxx, vyy, args):
-    dx = args['dx']
-    dy = args['dy']
-    C_s = args['C_s'] 
-    Delta = (dx * dy) ** (1/2)
-
-    # Turbulence
-    S_ij_mod = (2 * (ux ** 2 + vy ** 2) + (uy + vx) ** 2) ** (1 / 2)
-    nu_sgs = (C_s * Delta) ** 2 * S_ij_mod
-    # For velocity
-    # Mixed derivatives
-    vxy = (np.roll(vx, -1, axis=0) - np.roll(vx, 1, axis=0)) / (2 * dy)
-    uyx = (np.roll(uy, -1, axis=1) - np.roll(uy, 1, axis=1)) / (2 * dx)
-    # Mixed derivatives at boundaries
-    # Periodic on x
-    # On y
-    vxy[0, :] = (-3 * vx[0, :] + 4 * vx[1, :] - vx[2, :]) / (2 * dy) # Forward at y=y_min
-    vxy[-1, :] = (3 * vx[-1, :] - 4 * vx[-2, :] + vx[-3, :]) / (2 * dy) # Backward at y=y_max
-    tau_x = uxx + 0.5 * (vxy + uyy)
-    tau_y = vyy + 0.5 * (uyx + vxx)
-    sgs_x = -2 * nu_sgs * tau_x 
-    sgs_y = -2 * nu_sgs * tau_y 
-    nu_sgs_x = (np.roll(nu_sgs, -1, axis=1) - np.roll(nu_sgs, 1, axis=1)) / (2 * dx)
-    nu_sgs_y = (np.roll(nu_sgs, -1, axis=0) - np.roll(nu_sgs, 1, axis=0)) / (2 * dy)
-    sgs_x = -2 * (nu_sgs_x * ux + 0.5 * nu_sgs_y * (uy + vx) + nu_sgs * (uxx + 0.5 * (vxy + uyy)))
-    sgs_y = -2 * (nu_sgs_y * vy + 0.5 * nu_sgs_x * (vx + uy) + nu_sgs * (vyy + 0.5 * (uyx + vxx)))
-
-    return np.array([sgs_x, sgs_y])
-
-def turbulence2(ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, args):
-    dx = args['dx']
-    dy = args['dy']
-    C_s = args['C_s'] 
-    Pr = args['Pr']
-    Delta = (dx * dy) ** (1/2)
-
-    # Turbulence
-    S_ij_mod = (2 * (ux ** 2 + vy ** 2) + (uy + vx) ** 2) ** (1 / 2)
-    nu_sgs = (C_s * Delta) ** 2 * S_ij_mod
-    # Mixed derivatives
-    vxy = (np.roll(vx, -1, axis=0) - np.roll(vx, 1, axis=0)) / (2 * dy)
-    uyx = (np.roll(uy, -1, axis=1) - np.roll(uy, 1, axis=1)) / (2 * dx)
-    vyx = (np.roll(vy, -1, axis=1) - np.roll(vy, 1, axis=1)) / (2 * dx)
-    uxy = (np.roll(ux, -1, axis=0) - np.roll(ux, 1, axis=0)) / (2 * dy)
-    # Mixed derivatives at boundaries
-    # Periodic on x (nothing to do)
-    # On y
-    vxy[0, :] = (-3 * vx[0, :] + 4 * vx[1, :] - vx[2, :]) / (2 * dy) # Forward at y=y_min
-    vxy[-1, :] = (3 * vx[-1, :] - 4 * vx[-2, :] + vx[-3, :]) / (2 * dy) # Backward at y=y_max
-    uxy[0, :] = (-3 * ux[0, :] + 4 * ux[1, :] - ux[2, :]) / (2 * dy) # Forward at y=y_min
-    uxy[-1, :] = (3 * ux[-1, :] - 4 * ux[-2, :] + ux[-3, :]) / (2 * dy) # Backward at y=y_max
-
-    # 'psi_x' and 'psi_y'
-    psi_x = 4 * uxx + 4 * vyx + 2 * (uy + vx) * (uyx + vxx) 
-    psi_y = 4 * vyy + 4 * uxy + 2 * (uy + vx) * (uyy + vxy)
-
-    sgs_x = -2 * (C_s * Delta) ** 2 * ( 
-        1 / (2 * S_ij_mod) * psi_x * ux + 0.5 * psi_y * (uy + vx) +
-        S_ij_mod * (uxx + 0.5 * (vxy + uyy))
-    )
-    sgs_y = -2 * (C_s * Delta) ** 2 * (
-        1 / (2 * S_ij_mod) * psi_y * vy + 0.5 * psi_x * (vx + uy) +
-        S_ij_mod * (vyy + 0.5 * (uyx + vxx))
-    )
-    # For temperature
-    # sgsT_x = -nu_sgs / Pr * Txx
-    # sgsT_y = -nu_sgs / Pr * Tyy
-    sgs_T = -nu_sgs / Pr * (Txx + Tyy)
-
-    return np.array([sgs_x, sgs_y, sgs_T])
-
-def turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, args):
+# def turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, args):
+def turbulence(u, v, T, args):
     dx = args['dx']
     dy = args['dy']
     C_s = args['C_s'] 
@@ -84,20 +15,26 @@ def turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, args)
     nu = args['nu']
     Delta = (dx * dy) ** (1/2)
 
+    # Compute derivatives #
+    # First derivatives
+    ux, uy = compute_gradient(u, dx, dy)
+    vx, vy = compute_gradient(v, dx, dy)
+    Tx, Ty = compute_gradient(T, dx, dy)
+    # Second derivatives
+    uxx = compute_second_derivative(u, dx, 1)
+    uyy = compute_second_derivative(u, dy, 0)
+    vxx = compute_second_derivative(v, dx, 1)
+    vyy = compute_second_derivative(v, dy, 0)
+    Txx = compute_second_derivative(T, dx, 1)
+    Tyy = compute_second_derivative(T, dy, 0)
+    # Mixed derivatives
+    vxy = compute_first_derivative(vx, dy, 0)
+    uyx = compute_first_derivative(uy, dx, 1)
+    vyx = compute_first_derivative(vy, dx, 1)
+    uxy = compute_first_derivative(ux, dy, 0)
+
     # Turbulence
     S_ij_mod = (2 * (ux ** 2 + vy ** 2) + (uy + vx) ** 2) ** (1 / 2) + 1e-16
-    # Mixed derivatives
-    vxy = (np.roll(vx, -1, axis=0) - np.roll(vx, 1, axis=0)) / (2 * dy)
-    uyx = (np.roll(uy, -1, axis=1) - np.roll(uy, 1, axis=1)) / (2 * dx)
-    vyx = (np.roll(vy, -1, axis=1) - np.roll(vy, 1, axis=1)) / (2 * dx)
-    uxy = (np.roll(ux, -1, axis=0) - np.roll(ux, 1, axis=0)) / (2 * dy)
-    # Mixed derivatives at boundaries
-    # Periodic on x (nothing to do)
-    # On y
-    vxy[0, :] = (-3 * vx[0, :] + 4 * vx[1, :] - vx[2, :]) / (2 * dy) # Forward at y=y_min
-    vxy[-1,:] = (3 * vx[-1, :] - 4 * vx[-2, :] + vx[-3, :]) / (2 * dy) # Backward at y=y_max
-    uxy[0, :] = (-3 * ux[0, :] + 4 * ux[1, :] - ux[2, :]) / (2 * dy) # Forward at y=y_min
-    uxy[-1,:] = (3 * ux[-1, :] - 4 * ux[-2, :] + ux[-3, :]) / (2 * dy) # Backward at y=y_max
 
     # 'psi_x' and 'psi_y'
     psi_x = 4 * (ux * uxx + vy * vyx) + 2 * (uy + vx) * (uyx + vxx) 
@@ -112,11 +49,9 @@ def turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, args)
 
     # Damping stuff
     fw = f_w1(Ym, u_tau, nu)
-    fwx = (np.roll(fw, -1, axis=1) - np.roll(fw, 1, axis=1)) / (2 * dx)
-    fwy = (np.roll(fw, -1, axis=0) - np.roll(fw, 1, axis=0)) / (2 * dy)
-    # Boundary conditions 
-    fwy[0, :] = (-3 * fw[0, :] + 4 * fw[1, :] - fw[2, :]) / (2 * dy) # Forward at y=y_min
-    fwy[-1,:] = (3 * fw[-1, :] - 4 * fw[-2, :] + fw[-3, :]) / (2 * dy) # Backward at y=y_max
+    fwx = compute_first_derivative(fw, dx, 1)
+    fwy = compute_first_derivative(fw, dy, 0)
+
     sgs_x_damp = 2 * S_ij_mod * fw * (fwx * ux + 0.5 * fwy * (vx + uy))
     sgs_y_damp = 2 * S_ij_mod * fw * (0.5 * fwx * (uy + vx) + fwy * vy)
 
@@ -132,35 +67,3 @@ def turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, args)
     sgs_T = -l ** 2 / Pr * (sgs_T_no_damp * fw ** 2 + sgs_T_damp)
 
     return np.array([sgs_x, sgs_y, sgs_T])
-
-def periodic_turbulence_2d(u, v, ux, uy, vx, vy, uxx, uyy, vxx, vyy, args):
-    dx = args['dx']
-    dy = args['dy']
-    C_s = args['C_s'] 
-    Delta = (dx * dy) ** (1/2)
-
-    # Turbulence
-    S_ij_mod = (2 * (ux ** 2 + vy ** 2) + (uy + vx) ** 2) ** (1 / 2) + 1e-16
-
-    # Mixed derivatives
-    vxy = (np.roll(vx, -1, axis=0) - np.roll(vx, 1, axis=0)) / (2 * dy)
-    uyx = (np.roll(uy, -1, axis=1) - np.roll(uy, 1, axis=1)) / (2 * dx)
-    vyx = (np.roll(vy, -1, axis=1) - np.roll(vy, 1, axis=1)) / (2 * dx)
-    uxy = (np.roll(ux, -1, axis=0) - np.roll(ux, 1, axis=0)) / (2 * dy)
-
-    # 'psi_x' and 'psi_y'
-    psi_x = 4 * (ux * uxx + vy * vyx) + 2 * (uy + vx) * (uyx + vxx) 
-    psi_y = 4 * (ux * uxy + vy * vyy) + 2 * (uy + vx) * (uyy + vxy)
-
-    l = C_s * Delta #* f_sgs(z_plus, 25)
-
-    sgs_x = -2 * l ** 2 * ( 
-        1 / (2 * S_ij_mod) * psi_x * ux + 0.5 * psi_y * (uy + vx) +
-        S_ij_mod * (uxx + 0.5 * (vxy + uyy))
-    )
-    sgs_y = -2 * l ** 2 * (
-        1 / (2 * S_ij_mod) * psi_y * vy + 0.5 * psi_x * (vx + uy) +
-        S_ij_mod * (vyy + 0.5 * (uyx + vxx))
-    )
-
-    return np.array([sgs_x, sgs_y])

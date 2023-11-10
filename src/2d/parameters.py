@@ -1,7 +1,5 @@
+"""This file handles the default parameters of the model
 """
-This file handles the parameters of the model
-"""
-### DEFAULT VALUES ###
 
 # Domain [x_min, x_max] \times [y_min, y_max] \times [t_min, t_max] 
 x_min, x_max = -500, 700 # Distance interval [x_min, x_max] in m 
