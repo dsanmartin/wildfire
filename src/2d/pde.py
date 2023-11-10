@@ -1,7 +1,7 @@
 import time
 import numpy as np
 from derivatives import compute_gradient, compute_laplacian, compute_first_derivative_upwind, compute_first_derivative
-from poisson import solve_fftfd
+from poisson import solve_pressure
 from turbulence import turbulence
 from utils import K, H, Km, hv, source, sink, kT, kTp #, Yft, S_T, AT
 from plots import plot_2D
@@ -139,8 +139,10 @@ def Phi(t, C, params):
 
     # PDE
     # Velocity
-    U_ = nu * lap_u - (uux + vuy) + F_x - sgs_x
-    V_ = nu * lap_v - (uvx + vvy) + F_y - sgs_y
+    U_ = nu * lap_u + F_x - sgs_x - (uux + vuy) 
+    V_ = nu * lap_v + F_y - sgs_y - (uvx + vvy)
+    # U_ = nu * lap_u + F_x - ((uux + vuy) + sgs_x)
+    # V_ = nu * lap_v + F_y - ((uvx + vvy) + sgs_y)
     # Temperature
     # Radiation
     if radiation:
@@ -153,6 +155,7 @@ def Phi(t, C, params):
     # Combustion model
     Y_ = -Y_f * K(T) * H(T) * Y 
 
+    # Boundary conditions
     U_, V_, T_, Y_ = boundary_conditions(U_, V_, T_, Y_, params)
 
     return np.array([U_, V_, T_, Y_])
@@ -227,21 +230,22 @@ def solve_tn(t_n, y_n, dt, method, params):
     T_mask = params['T_mask']
     t_source = params['t_source']
     T_source = params['T_source']
-    truncate = params['truncate']
+    bound = params['bound']
     T_min, T_max = params['T_min'], params['T_max']
     Y_min, Y_max = params['Y_min'], params['Y_max']
     # Solve time step 
     y_np1 = method(t_n, y_n, dt, params)
     Ut, Vt = y_np1[:2].copy()
     # Solve Pressure problem
-    p = solve_fftfd(Ut, Vt, **params).copy()
+    # p = solve_pressure(Ut, Vt, **params).copy()
+    p = solve_pressure(Ut, Vt, params)#.copy(
     grad_p = grad_pressure(p, **params)
     # Correct velocity
     y_np1[:2] = y_np1[:2] - dt / rho * grad_p
     Ut, Vt, Tt, Yt = y_np1.copy()
     # Update boundary conditions
     y_np1 = boundary_conditions(Ut, Vt, Tt, Yt, params)
-    if truncate:
+    if bound:
         # Remove wrong mass fraction
         y_np1[3, y_np1[3] < Y_min] = Y_min 
         y_np1[3, y_np1[3] > Y_max] = Y_max 

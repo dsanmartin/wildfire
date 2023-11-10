@@ -106,6 +106,38 @@ def compute_first_derivative_upwind(a: np.ndarray, phi: np.ndarray, h: float, ax
     phi_h = a_plu * phi_hm + a_min * phi_hp
     return phi_h
 
+def compute_first_derivative_half_step(phi: np.ndarray, h: float, axis: int) -> np.ndarray:
+    """
+    Computes the derivative of a 2D array `phi` along a given `axis` using a central difference scheme.
+    The derivative is computed at half-integer positions using the values of `phi` at integer positions.
+    
+    .. math::
+        \frac{\partial \phi}{\partial h} = \frac{\phi_{i+1/2} - \phi_{i-1/2}}{h}
+
+    Parameters
+    ----------
+    phi : numpy.ndarray (Ny, Nx)
+        The 2D array to compute the derivative of.
+    h : float
+        The grid spacing.
+    axis : int
+        The axis along which to compute the derivative.
+    
+    Returns
+    -------
+    numpy.ndarray
+        The derivative of `phi` along the specified `axis` at half-integer positions.
+    """
+    phi_ip1 = np.roll(phi,-1, axis=axis) # phi_{i+1}
+    phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
+    phi_iphj = 0.5 * (phi_ip1 + phi) # phi_{i+1/2}
+    phi_imhj = 0.5 * (phi_im1 + phi) # phi_{i-1/2}
+    phi_h = (phi_iphj - phi_imhj) / h # Central difference
+    if axis == 0: # Fix boundary in y - O(dy^2)
+        phi_h[0] = (-phi[2] + 4 * phi[1] - 3 * phi[0]) / (2 * h)
+        phi_h[-1] = (3 * phi[-1] - 4 * phi[-2] + phi[-3]) / (2 * h)
+    return phi_h
+
 def compute_second_derivative(phi: np.ndarray, h: float, axis: int) -> np.ndarray:
     """
     Compute the second derivative of a 2D scalar field along a given axis.

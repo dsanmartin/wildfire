@@ -1,11 +1,32 @@
 import numpy as np
 from derivatives import compute_first_derivative, compute_second_derivative, compute_gradient
 
+# Wall damping functions
 f_w1 = lambda z, u_tau, nu: 1 - np.exp(-z * u_tau / 25 / nu)
 f_w2 = lambda z, u_tau, nu: (1 - np.exp(-(z * u_tau / 25 / nu) ** 3)) ** 0.5
 
-# def turbulence(u, v, ux, uy, vx, vy, Tx, Ty, uxx, uyy, vxx, vyy, Txx, Tyy, args):
-def turbulence(u, v, T, args):
+def turbulence(u: np.ndarray, v: np.ndarray, T: np.ndarray, args: dict) -> np.ndarray:
+    """
+    Computes the subgrid-scale (SGS) stresses and SGS thermal energy
+    for a turbulent flow.
+
+    Parameters
+    ----------
+    u : numpy.ndarray (Ny, Nx)
+        Velocity component in the x-direction.
+    v : numpy.ndarray (Ny, Nx)
+        Velocity component in the y-direction.
+    T : numpy.ndarray (Ny, Nx)
+        Temperature.
+    args : dict
+        Dictionary containing the parameters of the simulation.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array containing the SGS stresses and SGS thermal energy in the
+        following order: [sgs_x, sgs_y, sgs_T].
+    """
     dx = args['dx']
     dy = args['dy']
     C_s = args['C_s'] 

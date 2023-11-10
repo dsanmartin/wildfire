@@ -149,7 +149,7 @@ def main():
         'S_T_0': S_T_0,
         'S_k_0': S_k_0,
         'S_k': S_k,
-        'truncate': truncate,
+        'bound': bound,
         'T_min': T_min,
         'T_max': T_max,
         'Y_min': Y_min,
@@ -163,19 +163,18 @@ def main():
     u, v, T, Y, p  = solve_pde(z_0, params)
     time_end = time.time()
     solve_time = (time_end - time_start)
-    # print("Solver time: ", solve_time, "s\n")
     print("Solver time: ", str(timedelta(seconds=round(solve_time))), "\n")
     # Create simulation folder
-    if save_path is None:
-        save_path_ = create_simulation_folder(sim_name)
-    else:
-        save_path_ = save_path
-    log_params(params, save_path_)
+    # if save_path is None:
+    #     save_path_ = create_simulation_folder(sim_name)
+    # else:
+    #     save_path_ = save_path
+    log_params(params, save_path)
     # Save outputs
-    save_approximation(save_path_, x, y, t[::NT], u, v, T, Y, p)
+    save_approximation(save_path, x, y, t[::NT], u, v, T, Y, p)
     # Remove Soruce temperature!
     # del args['ST']
-    save_parameters(save_path_, params)
+    save_parameters(save_path, params)
     print("Simulation name:", sim_name) # To easily get the name of the simulation for visualization
 
 if __name__ == "__main__":

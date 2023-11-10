@@ -2,6 +2,7 @@ import argparse
 import configparser
 from parameters import *
 from datetime import datetime
+from inout import create_simulation_folder
 
 parser = argparse.ArgumentParser(description='2D simplified coupled wildfire-atmosphere numerical simulation')
 # Parameters
@@ -79,7 +80,6 @@ args = parser.parse_args()
 show_ic = args.show_initial_condition
 debug = args.debug
 sim_name = args.name
-save_path = args.save_path
 Nx = args.x_nodes
 Ny = args.y_nodes
 Nt = args.t_nodes
@@ -101,6 +101,10 @@ S_bot = args.source_bottom
 T_min = args.min_temperature
 T_max = args.max_temperature
 parameter_file = args.parameter_file
+if args.save_path is None:
+    save_path = create_simulation_folder(sim_name)
+else:
+    save_path = args.save_path
 
 # Overwrite default values with parameter file
 if parameter_file is not None:

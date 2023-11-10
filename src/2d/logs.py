@@ -45,7 +45,7 @@ def log_params(params: dict, dir_path: str = None) -> None:
     fuel_height = params['fuel_height']
     sutherland_law = params['sutherland_law']
     S_T_0, S_k_0, S_k = params['S_T_0'], params['S_k_0'], params['S_k']
-    truncate = params['truncate']
+    bound = params['bound']
     T_min, T_max = params['T_min'], params['T_max']
     Y_min, Y_max = params['Y_min'], params['Y_max']
 
@@ -90,8 +90,8 @@ def log_params(params: dict, dir_path: str = None) -> None:
     print("Sutherland's law: %r" % sutherland_law, file=f)
     if sutherland_law:
         print("  T_0: %.4f, k_0: %.4f, S_k: %.4f" % (S_T_0, S_k_0, S_k), file=f)
-    print("Truncate: %r" % truncate, file=f)
-    if truncate:
+    print("Bound: %r" % bound, file=f)
+    if bound:
         print("  Temperature: [%.4f, %.4f]" % (T_min, T_max), file=f)
         print("  Fuel: [%.4f, %.4f]" % (Y_min, Y_max), file=f)
     print("Reynolds: %.2e" %  Re, file=f)
