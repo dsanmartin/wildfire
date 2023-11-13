@@ -27,8 +27,7 @@ def turbulence(u: np.ndarray, v: np.ndarray, T: np.ndarray, args: dict) -> np.nd
         Array containing the SGS stresses and SGS thermal energy in the
         following order: [sgs_x, sgs_y, sgs_T].
     """
-    dx = args['dx']
-    dy = args['dy']
+    dx, dy = args['dx'], args['dy']
     C_s = args['C_s'] 
     Pr = args['Pr']
     rho = args['rho']
@@ -38,21 +37,21 @@ def turbulence(u: np.ndarray, v: np.ndarray, T: np.ndarray, args: dict) -> np.nd
 
     # Compute derivatives #
     # First derivatives
-    ux, uy = compute_gradient(u, dx, dy)
-    vx, vy = compute_gradient(v, dx, dy)
-    Tx, Ty = compute_gradient(T, dx, dy)
+    ux, uy = compute_gradient(u, dx, dy, (False, True))
+    vx, vy = compute_gradient(v, dx, dy, (False, True))
+    Tx, Ty = compute_gradient(T, dx, dy, (False, True))
     # Second derivatives
     uxx = compute_second_derivative(u, dx, 1)
-    uyy = compute_second_derivative(u, dy, 0)
+    uyy = compute_second_derivative(u, dy, 0, False)
     vxx = compute_second_derivative(v, dx, 1)
-    vyy = compute_second_derivative(v, dy, 0)
+    vyy = compute_second_derivative(v, dy, 0, False)
     Txx = compute_second_derivative(T, dx, 1)
-    Tyy = compute_second_derivative(T, dy, 0)
+    Tyy = compute_second_derivative(T, dy, 0, False)
     # Mixed derivatives
-    vxy = compute_first_derivative(vx, dy, 0)
+    vxy = compute_first_derivative(vx, dy, 0, False)
     uyx = compute_first_derivative(uy, dx, 1)
     vyx = compute_first_derivative(vy, dx, 1)
-    uxy = compute_first_derivative(ux, dy, 0)
+    uxy = compute_first_derivative(ux, dy, 0, False)
 
     # Turbulence
     S_ij_mod = (2 * (ux ** 2 + vy ** 2) + (uy + vx) ** 2) ** (1 / 2) + 1e-16
@@ -71,7 +70,7 @@ def turbulence(u: np.ndarray, v: np.ndarray, T: np.ndarray, args: dict) -> np.nd
     # Damping stuff
     fw = f_w1(Ym, u_tau, nu)
     fwx = compute_first_derivative(fw, dx, 1)
-    fwy = compute_first_derivative(fw, dy, 0)
+    fwy = compute_first_derivative(fw, dy, 0, False)
 
     sgs_x_damp = 2 * S_ij_mod * fw * (fwx * ux + 0.5 * fwy * (vx + uy))
     sgs_y_damp = 2 * S_ij_mod * fw * (0.5 * fwx * (uy + vx) + fwy * vy)

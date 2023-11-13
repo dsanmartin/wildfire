@@ -5,7 +5,8 @@ import numpy as np
 # Default output directory
 OUTPUT_DIR = './output/'
 
-def create_simulation_folder(sim_name: str) -> str:
+# def create_simulation_folder(sim_name: str) -> str:
+def create_simulation_folder(save_path: str) -> None:
     """
     Create a folder for saving simulation outputs.
 
@@ -20,10 +21,11 @@ def create_simulation_folder(sim_name: str) -> str:
         Path to the folder where outputs will be saved.
     """
     # Create output save path
-    save_path = OUTPUT_DIR + sim_name + '/'
+    # save_path = OUTPUT_DIR + sim_name + '/'
     if not os.path.exists(save_path): # Create folder if it doesn't exist
         os.makedirs(save_path)
-    return save_path # Return save path for outputs
+    # return save_path # Return save path for outputs
+    return None
 
 def save_approximation(save_path: str, x: np.ndarray, y: np.ndarray, t: np.ndarray, u: np.ndarray, v: np.ndarray, T: np.ndarray, Y: np.ndarray, p: np.ndarray) -> None:
     """
@@ -54,6 +56,9 @@ def save_approximation(save_path: str, x: np.ndarray, y: np.ndarray, t: np.ndarr
     -------
     None
     """
+    # Create folder for saving simulation outputs
+    create_simulation_folder(save_path)
+    # Save approximation data
     filename = save_path + 'data.npz'
     np.savez(filename, u=u, v=v, T=T, Y=Y, p=p, x=x, y=y, t=t)
     return None
@@ -73,6 +78,9 @@ def save_parameters(save_path: str, params: dict) -> None:
     -------
     None
     """
+    # Create folder for saving simulation outputs
+    create_simulation_folder(save_path)
+    # Create filename
     filename = save_path + 'parameters.pkl'
     # Save parameters
     with open(filename, 'wb') as f:

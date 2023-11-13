@@ -102,7 +102,8 @@ T_min = args.min_temperature
 T_max = args.max_temperature
 parameter_file = args.parameter_file
 if args.save_path is None:
-    save_path = create_simulation_folder(sim_name)
+    save_path = output_dir + sim_name + "/"
+    # save_path = create_simulation_folder(sim_name)
 else:
     save_path = args.save_path
 

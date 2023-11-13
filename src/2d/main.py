@@ -154,6 +154,7 @@ def main():
         'T_max': T_max,
         'Y_min': Y_min,
         'Y_max': Y_max,
+        'periodic_axes': periodic_axes,
     }
     # Show parameters
     log_params(params)

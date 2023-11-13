@@ -5,8 +5,10 @@
 x_min, x_max = -500, 700 # Distance interval [x_min, x_max] in m 
 y_min, y_max = 0, 20 # Distance interval [y_min, y_max] in m
 t_min, t_max = 0, 140 # Time interval [t_min, t_max] in s
+t_min, t_max = 0, 10
 # Numerical grid
 Nx, Ny, Nt = 512, 256, 30001 # Number of nodes per axis
+Nx, Ny, Nt = 256, 128, 1001 # Number of nodes per axis
 NT = 100 # Number of samples to store. The simulation stores each NT timesteps
 
 # Time numerical method
@@ -126,3 +128,7 @@ Y_dead_nodes = 1
 S_T_0 = 273 # Reference temperature in K
 S_k_0 = 0.024 # Thermal conductivity in W m^{-1} K^{-1} or kg m s^{-3} K ^{-1}  (Air: 0.024)
 S_k = 194 # Sutherland's constant in K
+
+periodic_axes = (False, True)
+
+output_dir = './output/'

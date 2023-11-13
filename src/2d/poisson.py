@@ -51,7 +51,7 @@ def thomas_algorithm(A: tuple[np.ndarray], f: np.ndarray) -> np.ndarray:
         u[k-1] = (y[k-1] - c[k] * u[k]) / v[k-1]
     return u
 
-def fftfd(f: np.ndarray, params: dict, solver=thomas_algorithm) -> np.ndarray:
+def fftfd(f: np.ndarray, params: dict, solver: callable = thomas_algorithm) -> np.ndarray:
     """
     Compute the 2D Poisson equation using the FFT-FD method.
     FFT for x-direction and central differences for y-direction.
@@ -159,7 +159,7 @@ def solve_pressure(u: np.ndarray, v: np.ndarray, params: dict) -> np.ndarray:
     dx, dy, dt = params['dx'], params['dy'], params['dt']
     # Compute ux and vy using half step to avoid odd-even decoupling
     ux = compute_first_derivative_half_step(u, dx, 1) 
-    vy = compute_first_derivative_half_step(v, dy, 0)
+    vy = compute_first_derivative_half_step(v, dy, 0, False)
     # Compute f
     f = rho / dt * (ux + vy)
     # Solve using FFT-FD

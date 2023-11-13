@@ -1,7 +1,7 @@
 import numpy as np
 
 ### Derivatives for PDE solver ###
-def compute_first_derivative(phi: np.ndarray, h: float, axis: int, type: str = 'central') -> np.ndarray:
+def compute_first_derivative(phi: np.ndarray, h: float, axis: int, periodic: bool = True, type: str = 'central') -> np.ndarray:
     """
     Compute the first derivative of a 2D scalar field along a given axis.
 
@@ -19,6 +19,8 @@ def compute_first_derivative(phi: np.ndarray, h: float, axis: int, type: str = '
     type : str
         Type of difference scheme. 'forward' for forward difference, 'backward'
         for backward difference and 'central' for central difference. Default is 'central'.
+    periodic : bool
+        True if the domain is periodic, False otherwise. Default is True.
 
     Returns
     -------
@@ -38,20 +40,20 @@ def compute_first_derivative(phi: np.ndarray, h: float, axis: int, type: str = '
     # Compute derivative
     if type == 'forward':
         phi_h = (phi_ip1 - phi) / h # Forward difference
-        if axis == 0: # Fix boundary in y - O(dy)
+        if periodic == False: # Fix boundary in y - O(dy)
             phi_h[-1,:] = (phi[-1,:] - phi[-2,:]) / h # Backward
     elif type == 'backward':
         phi_h = (phi - phi_im1) / h
-        if axis == 0: # Fix boundary in y - O(dy)
+        if periodic == False: # Fix boundary in y - O(dy)
             phi_h[0, :] = (phi[1, :] - phi[0, :]) / h
     elif type == 'central':
         phi_h = (phi_ip1 - phi_im1) / (2 * h) # Central difference
-        if axis == 0: # Fix boundary in y - O(dy^2)
+        if periodic == False: # Fix boundary in y - O(dy^2)
             phi_h[0, :] = (-3 * phi[0, :] + 4 * phi[1, :] - phi[2, :]) / (2 * h) # Forward
             phi_h[-1,:] = (3 * phi[-1, :] - 4 * phi[-2,:] + phi[-3,:]) / (2 * h) # Backward
     return phi_h
 
-def compute_first_derivative_upwind(a: np.ndarray, phi: np.ndarray, h: float, axis: int, order: int = 2) -> np.ndarray:
+def compute_first_derivative_upwind(a: np.ndarray, phi: np.ndarray, h: float, axis: int, order: int = 2, periodic: bool = True) -> np.ndarray:
     """
     Compute the first derivative of a 2D scalar field along a given axis.
 
@@ -70,6 +72,8 @@ def compute_first_derivative_upwind(a: np.ndarray, phi: np.ndarray, h: float, ax
         Axis along which to compute the derivative. 0 for y, 1 for x.
     order : int
         Order of the difference scheme. 1 for first-order, 2 for second-order.
+    periodic : bool
+        True if the domain is periodic, False otherwise. Default is True.
 
     Returns
     -------
@@ -90,14 +94,14 @@ def compute_first_derivative_upwind(a: np.ndarray, phi: np.ndarray, h: float, ax
     phi_ip1 = np.roll(phi,-1, axis=axis) # phi_{i+1}
     phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
     if order == 1: # First order
-        phi_hm = compute_first_derivative(phi, h, axis, type='backward') # Backward
-        phi_hp = compute_first_derivative(phi, h, axis, type='forward') # Forward
+        phi_hm = compute_first_derivative(phi, h, axis, periodic=periodic, type='backward') # Backward
+        phi_hp = compute_first_derivative(phi, h, axis, periodic=periodic, type='forward') # Forward
     elif order == 2: # Second order
         phi_ip2 = np.roll(phi,-2, axis=axis) # phi_{i+2}
         phi_im2 = np.roll(phi, 2, axis=axis) # phi_{i-2}
         phi_hm = (3 * phi - 4 * phi_im1 + phi_im2) / (2 * h) # Backward
         phi_hp = (-phi_ip2 + 4 * phi_ip1 - 3 * phi) / (2 * h) # Forward
-        if axis == 0: # Fix boundary in y - O(dy^2)
+        if periodic == False: # Fix boundary in y - O(dy^2)
             phi_hm[0, :] = (-3 * phi[0, :] + 4 * phi[1, :] - phi[2, :]) / (2 * h) # Forward
             phi_hm[1, :] = (-3 * phi[1, :] + 4 * phi[2, :] - phi[3, :]) / (2 * h) # Forward
             phi_hp[-1,:] = (phi[-1, :] - 4 * phi[-2,:] + 3 * phi[-3,:]) / (2 * h) # Backward
@@ -106,7 +110,7 @@ def compute_first_derivative_upwind(a: np.ndarray, phi: np.ndarray, h: float, ax
     phi_h = a_plu * phi_hm + a_min * phi_hp
     return phi_h
 
-def compute_first_derivative_half_step(phi: np.ndarray, h: float, axis: int) -> np.ndarray:
+def compute_first_derivative_half_step(phi: np.ndarray, h: float, axis: int, periodic: bool = True) -> np.ndarray:
     """
     Computes the derivative of a 2D array `phi` along a given `axis` using a central difference scheme.
     The derivative is computed at half-integer positions using the values of `phi` at integer positions.
@@ -122,6 +126,8 @@ def compute_first_derivative_half_step(phi: np.ndarray, h: float, axis: int) -> 
         The grid spacing.
     axis : int
         The axis along which to compute the derivative.
+    periodic : bool
+        True if the domain is periodic, False otherwise. Default is True.
     
     Returns
     -------
@@ -133,12 +139,12 @@ def compute_first_derivative_half_step(phi: np.ndarray, h: float, axis: int) -> 
     phi_iphj = 0.5 * (phi_ip1 + phi) # phi_{i+1/2}
     phi_imhj = 0.5 * (phi_im1 + phi) # phi_{i-1/2}
     phi_h = (phi_iphj - phi_imhj) / h # Central difference
-    if axis == 0: # Fix boundary in y - O(dy^2)
+    if periodic == False: # Fix boundary in y - O(dy^2)
         phi_h[0] = (-phi[2] + 4 * phi[1] - 3 * phi[0]) / (2 * h)
         phi_h[-1] = (3 * phi[-1] - 4 * phi[-2] + phi[-3]) / (2 * h)
     return phi_h
 
-def compute_second_derivative(phi: np.ndarray, h: float, axis: int) -> np.ndarray:
+def compute_second_derivative(phi: np.ndarray, h: float, axis: int, periodic: bool = True) -> np.ndarray:
     """
     Compute the second derivative of a 2D scalar field along a given axis.
 
@@ -153,6 +159,8 @@ def compute_second_derivative(phi: np.ndarray, h: float, axis: int) -> np.ndarra
         Spacing between grid points.
     axis : int
         Axis along which to compute the derivative. 0 for y, 1 for x.
+    periodic : bool
+        True if the domain is periodic, False otherwise. Default is True.
 
     Returns
     -------
@@ -171,12 +179,12 @@ def compute_second_derivative(phi: np.ndarray, h: float, axis: int) -> np.ndarra
     phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
     # Second derivative
     phi_hh = (phi_ip1 - 2 * phi + phi_im1) / h ** 2
-    if axis == 0: # Fix boundary in y - O(dy^2)
+    if periodic == False: # Fix boundary in y - O(dy^2)
         phi_hh[0, :] = (2 * phi[0, :] - 5 * phi[1, :] + 4 * phi[2, :] - phi[3, :]) / h ** 2 # Forward
         phi_hh[-1,:] = (2 * phi[-1, :] - 5 * phi[-2,:] + 4 * phi[-3,:] - phi[-4,:]) / h ** 2 # Backward
     return phi_hh
 
-def compute_gradient(phi: np.ndarray, dx: float, dy: float) -> np.ndarray:
+def compute_gradient(phi: np.ndarray, dx: float, dy: float, periodic_axes: tuple) -> np.ndarray:
     """
     Compute the gradient of a 2D scalar field.
 
@@ -191,18 +199,20 @@ def compute_gradient(phi: np.ndarray, dx: float, dy: float) -> np.ndarray:
         Spacing between grid points in the x direction.
     dy : float
         Spacing between grid points in the y direction.
+    periodic_axes : tuple
+        Axes along which the domain is periodic. True in the position of periodic axes, False otherwise.
 
     Returns
     -------
     numpy.ndarray
         Gradient of `phi`.
     """
-    dphi_x = compute_first_derivative(phi, dx, axis=1) # dphi/dx
-    dphi_y = compute_first_derivative(phi, dy, axis=0) # dphi/dy
+    dphi_x = compute_first_derivative(phi, dx, axis=1, periodic=periodic_axes[1]) # dphi/dx
+    dphi_y = compute_first_derivative(phi, dy, axis=0, periodic=periodic_axes[0]) # dphi/dy
     gradient = np.array([dphi_x, dphi_y])
     return gradient
 
-def compute_laplacian(phi: np.ndarray, dx: float, dy: float) -> np.ndarray:
+def compute_laplacian(phi: np.ndarray, dx: float, dy: float, periodic_axes: tuple) -> np.ndarray:
     """
     Compute the Laplacian of a 2D scalar field.
 
@@ -217,18 +227,20 @@ def compute_laplacian(phi: np.ndarray, dx: float, dy: float) -> np.ndarray:
         Spacing between grid points in the x direction.
     dy : float
         Spacing between grid points in the y direction.
+    periodic_axes : tuple
+        Axes along which the domain is periodic. True in the position of periodic axes, False otherwise.
 
     Returns
     -------
     numpy.ndarray
         Laplacian of `phi`.
     """
-    phi_xx = compute_second_derivative(phi, dx, axis=1) # d^2phi/dx^2
-    phi_yy = compute_second_derivative(phi, dy, axis=0) # d^2phi/dy^2
+    phi_xx = compute_second_derivative(phi, dx, axis=1, periodic=periodic_axes[1]) # d^2phi/dx^2
+    phi_yy = compute_second_derivative(phi, dy, axis=0, periodic=periodic_axes[0]) # d^2phi/dy^2
     laplacian = phi_xx + phi_yy
     return laplacian
 
-def compute_curl(vphi: np.ndarray, dx: float, dy: float) -> np.ndarray:
+def compute_curl(vphi: np.ndarray, dx: float, dy: float, periodic_axes: tuple) -> np.ndarray:
     """
     Compute the curl of a 2D vector field.
 
@@ -243,20 +255,21 @@ def compute_curl(vphi: np.ndarray, dx: float, dy: float) -> np.ndarray:
         Spacing between grid points in the x direction.
     dy : float
         Spacing between grid points in the y direction.
+    periodic_axes : tuple
+        Axes along which the domain is periodic. True in the position of periodic axes, False otherwise.
 
     Returns
     -------
     numpy.ndarray (Ny, Nx)
         Curl of `vphi`.
     """
-    vphix = vphi[0]
-    vphiy = vphi[1]
-    dphiy_x = compute_first_derivative(vphiy, dx, axis=1) # dphiy/dx
-    dphix_y = compute_first_derivative(vphix, dy, axis=0) # dphix/dy
+    vphix, vphiy = vphi
+    dphiy_x = compute_first_derivative(vphiy, dx, axis=1, periodic=periodic_axes[1]) # dphiy/dx
+    dphix_y = compute_first_derivative(vphix, dy, axis=0, periodic=periodic_axes[0]) # dphix/dy
     curl = dphiy_x - dphix_y
     return curl
 
-def compute_divergence(vphi: np.ndarray, dx: float, dy: float) -> np.ndarray:
+def compute_divergence(vphi: np.ndarray, dx: float, dy: float, periodic_axes: tuple) -> np.ndarray:
     """
     Compute the divergence of a 2D vector field.
 
@@ -271,6 +284,8 @@ def compute_divergence(vphi: np.ndarray, dx: float, dy: float) -> np.ndarray:
         Spacing between grid points in the x direction.
     dy : float
         Spacing between grid points in the y direction.
+    periodic_axes : tuple
+        Axes along which the domain is periodic. True in the position of periodic axes, False otherwise.
 
     Returns
     -------
@@ -278,8 +293,8 @@ def compute_divergence(vphi: np.ndarray, dx: float, dy: float) -> np.ndarray:
         Divergence of `vphi`.
     """
     vphix, vphiy = vphi
-    dphix_x = compute_first_derivative(vphix, dx, axis=1) # dphix/dx
-    dphiy_y = compute_first_derivative(vphiy, dy, axis=0) # dphiy/dy
+    dphix_x = compute_first_derivative(vphix, dx, axis=1, periodic=periodic_axes[1]) # dphix/dx
+    dphiy_y = compute_first_derivative(vphiy, dy, axis=0, periodic=periodic_axes[0]) # dphiy/dy
     divergence = dphix_x + dphiy_y
     return divergence
 

@@ -1,5 +1,6 @@
 import sys
 from utils import non_dimensional_numbers
+from inout import create_simulation_folder
 
 def log_params(params: dict, dir_path: str = None) -> None:
     """
@@ -56,6 +57,7 @@ def log_params(params: dict, dir_path: str = None) -> None:
     if dir_path is None:
         f = sys.stdout
     else:
+        create_simulation_folder(dir_path)
         f = open(dir_path + 'parameters.txt', 'w')
 
     print("Simulation name:", sim_name, file=f)
