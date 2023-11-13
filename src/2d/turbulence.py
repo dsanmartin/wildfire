@@ -53,8 +53,8 @@ def turbulence(u: np.ndarray, v: np.ndarray, T: np.ndarray, args: dict) -> np.nd
     vyx = compute_first_derivative(vy, dx, 1)
     uxy = compute_first_derivative(ux, dy, 0, False)
 
-    # Turbulence
-    S_ij_mod = (2 * (ux ** 2 + vy ** 2) + (uy + vx) ** 2) ** (1 / 2) + 1e-16
+    # |S|
+    mod_S = (2 * (ux ** 2 + vy ** 2) + (uy + vx) ** 2) ** (1 / 2) + 1e-16
 
     # 'psi_x' and 'psi_y'
     psi_x = 4 * (ux * uxx + vy * vyx) + 2 * (uy + vx) * (uyx + vxx) 
@@ -72,18 +72,19 @@ def turbulence(u: np.ndarray, v: np.ndarray, T: np.ndarray, args: dict) -> np.nd
     fwx = compute_first_derivative(fw, dx, 1)
     fwy = compute_first_derivative(fw, dy, 0, False)
 
-    sgs_x_damp = 2 * S_ij_mod * fw * (fwx * ux + 0.5 * fwy * (vx + uy))
-    sgs_y_damp = 2 * S_ij_mod * fw * (0.5 * fwx * (uy + vx) + fwy * vy)
-
-    sgs_x_no_damp = 1 / (2 * S_ij_mod) * (psi_x * ux + 0.5 * psi_y * (uy + vx)) + S_ij_mod * (uxx + 0.5 * (vxy + uyy)) 
-    sgs_y_no_damp = 1 / (2 * S_ij_mod) * (psi_y * vy + 0.5 * psi_x * (vx + uy)) + S_ij_mod * (vyy + 0.5 * (uyx + vxx))
-
-    sgs_x = -2 * l ** 2 * (sgs_x_no_damp * fw ** 2 + sgs_x_damp)
-    sgs_y = -2 * l ** 2 * (sgs_y_no_damp * fw ** 2 + sgs_y_damp)
-
+    # Intermediary terms
+    # with damping
+    sgs_x_damp = 2 * mod_S * fw * (fwx * ux + 0.5 * fwy * (vx + uy))
+    sgs_y_damp = 2 * mod_S * fw * (0.5 * fwx * (uy + vx) + fwy * vy)
+    # without damping
+    sgs_x_no_damp = 1 / (2 * mod_S) * (psi_x * ux + 0.5 * psi_y * (uy + vx)) + mod_S * (uxx + 0.5 * (vxy + uyy)) 
+    sgs_y_no_damp = 1 / (2 * mod_S) * (psi_y * vy + 0.5 * psi_x * (vx + uy)) + mod_S * (vyy + 0.5 * (uyx + vxx))
+    # SGS stresses
+    sgs_x = -2 * l ** 2 * (sgs_x_no_damp * fw ** 2 + sgs_x_damp) # x-component of SGS stresses
+    sgs_y = -2 * l ** 2 * (sgs_y_no_damp * fw ** 2 + sgs_y_damp) # y-component of SGS stresses
     # SGS thermal energy
-    sgs_T_no_damp = 1 / (2 * S_ij_mod) * (psi_x * Tx  + psi_y * Ty) + S_ij_mod * (Txx + Tyy)
-    sgs_T_damp = 2 * fw * S_ij_mod * (fwx * Tx + fwy * Ty)
-    sgs_T = -l ** 2 / Pr * (sgs_T_no_damp * fw ** 2 + sgs_T_damp)
+    sgs_T_no_damp = 1 / (2 * mod_S) * (psi_x * Tx  + psi_y * Ty) + mod_S * (Txx + Tyy) # No damping terms
+    sgs_T_damp = 2 * fw * mod_S * (fwx * Tx + fwy * Ty) # Damping terms
+    sgs_T = -l ** 2 / Pr * (sgs_T_no_damp * fw ** 2 + sgs_T_damp) # SGS thermal energy
 
     return np.array([sgs_x, sgs_y, sgs_T])

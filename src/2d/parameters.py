@@ -5,10 +5,8 @@
 x_min, x_max = -500, 700 # Distance interval [x_min, x_max] in m 
 y_min, y_max = 0, 20 # Distance interval [y_min, y_max] in m
 t_min, t_max = 0, 140 # Time interval [t_min, t_max] in s
-t_min, t_max = 0, 10
 # Numerical grid
 Nx, Ny, Nt = 512, 256, 30001 # Number of nodes per axis
-Nx, Ny, Nt = 256, 128, 1001 # Number of nodes per axis
 NT = 100 # Number of samples to store. The simulation stores each NT timesteps
 
 # Time numerical method
@@ -29,11 +27,11 @@ mu = 1.73e-5 # Dynamic viscosity in kg m^{-1} s^{-1} (Air: 1.73e-5)
 mu = 1.802e-5 # Dynamic viscosity in kg m^{-1} s^{-1} (Air: 1.802e-5, Cengel 2018)
 
 # Temperaure equation parameters
-kappa = 0.024 # Thermal conductivity in W m^{-1} K^{-1} or kg m s^{-3} K ^{-1}  (Air: 0.024)
-kappa = 0.02476 # Thermal conductivity in W m^{-1} K^{-1} or kg m s^{-3} K ^{-1}  (Air: 0.02476 at 15 °C, NASA - Cengel 2018)
-k = 2.07e-5 # Thermal diffusivity in m^2 s^{-1} (Air: 2.07e-5) 
-k = 2.009e-5 # Thermal diffusivity in m^2 s^{-1} (Air: 2.009e-5 at 15 °C - NASA)
-k = kappa / (rho * C_p) # Thermal diffusivity in m^2 s^{-1}
+k = 0.024 # Thermal conductivity in W m^{-1} K^{-1} or kg m s^{-3} K ^{-1}  (Air: 0.024)
+k = 0.02476 # Thermal conductivity in W m^{-1} K^{-1} or kg m s^{-3} K ^{-1}  (Air: 0.02476 at 15 °C, NASA - Cengel 2018)
+alpha = 2.07e-5 # Thermal diffusivity in m^2 s^{-1} (Air: 2.07e-5) 
+alpha = 2.009e-5 # Thermal diffusivity in m^2 s^{-1} (Air: 2.009e-5 at 15 °C - NASA)
+alpha = k / (rho * C_p) # Thermal diffusivity in m^2 s^{-1}
 delta = 1 # Optical path length in m
 
 # Fluid equations parameters
@@ -46,7 +44,7 @@ turb = True # Turbulence model
 conser = False # Conservative equation for convection
 C_s = 0.173 # Smagorinsky constant
 C_s = 0.2 # Smagorinsky constant (McGrattan 2023)
-Pr = nu / k # Prandtl number 1. / (Air: ~.74)
+Pr = nu / alpha # Prandtl number 1. / (Air: ~.74)
 C_D = 1 # Drag coefficient "1 or near to unity according to works of Mell and Linn" 1
 a_v = 5.508 #6000 #1 #  Contact area per unit volume between the gas and the solid in m
 
@@ -61,7 +59,7 @@ E_A = 150e3 # Activation energy in J mol^{-1} or kg m^2 s^{-2} mol^{-1}. E_A = 2
 T_act = E_A / R # Activation temperature in K 
 h = 1.147#3.3#18 # Convection coefficient in W m^{-2} K^{-1} or kg s^{-3} K^{-1}  (Air: 0.5-1000), (15.9 - 18.2, Maragkos 2021)
 h_rad = 0*1e-7 #
-Y_thr = 0.025 #.25 #.25 #.9 # Threshold to add solid fuel force
+Y_D = 0.025 #.25 #.25 #.9 # Threshold to add solid fuel force
 Y_f = 1e2 # Extra parameter to control the fuel consumption rate
 Y_f = 100
 T_hot = T_inf + 500 #500 #600 #450 #Temperature of fire in K
@@ -87,11 +85,11 @@ initial_u_type = 'power law' # 'power law' or 'log'
 u_z_0 = 0.05 # Surface roughness in m
 d = 0 #0.1 # Zero-plane displacement in m
 u_ast = .1#.5 # .1 Friction velocity in ms^{-1}
-kappa = 0.41 # Von Karman constant in 1
+k = 0.41 # Von Karman constant in 1
 # Power law (used by FDS)
 u_r = 4.8 # Reference speed in ms^{-1}
 y_r = 2 # Reference height in m
-alpha = 1 / 7 # Empirical constant in 1
+alpha_u = 1 / 7 # Empirical constant in 1
 
 # Temperature 
 # Shape

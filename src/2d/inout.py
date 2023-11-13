@@ -5,15 +5,14 @@ import numpy as np
 # Default output directory
 OUTPUT_DIR = './output/'
 
-# def create_simulation_folder(sim_name: str) -> str:
 def create_simulation_folder(save_path: str) -> None:
     """
     Create a folder for saving simulation outputs.
 
     Parameters
     ----------
-    sim_name : str
-        Name of the simulation.
+    save_path : str
+        Path to the folder where outputs will be saved.
 
     Returns
     -------

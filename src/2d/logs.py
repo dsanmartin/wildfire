@@ -29,7 +29,7 @@ def log_params(params: dict, dir_path: str = None) -> None:
     rho, T_hot, T_inf, T_pc = params['rho'], params['T_hot'], params['T_inf'], params['T_pc']
     nu, k, Pr, g = params['nu'], params['k'], params['Pr'], params['g']
     A, T_act, H_R, h, a_v = params['A'], params['T_act'], params['H_R'], params['h'], params['a_v']
-    Y_f, Y_thr, C_p = params['Y_f'], params['Y_thr'], params['C_p']
+    Y_f, Y_D, C_p = params['Y_f'], params['Y_D'], params['C_p']
     turb, conser = params['turbulence'], params['conservative']
     S_top, S_bot, Sx = params['S_top'], params['S_bot'], params['Sx']
     source_filter = params['source_filter']
@@ -53,11 +53,11 @@ def log_params(params: dict, dir_path: str = None) -> None:
     # Non dimensional numbers calculation
     Re, Gr, Ra, Sr, Ste, St, Ze = non_dimensional_numbers(params)
 
-    # Print to stdout or file
-    if dir_path is None:
+    
+    if dir_path is None: # Print to stdout or file
         f = sys.stdout
-    else:
-        create_simulation_folder(dir_path)
+    else: # Print to file
+        create_simulation_folder(dir_path) # Create simulation folder if it doesn't exist
         f = open(dir_path + 'parameters.txt', 'w')
 
     print("Simulation name:", sim_name, file=f)
@@ -69,7 +69,7 @@ def log_params(params: dict, dir_path: str = None) -> None:
     print("nu: %.2e, g: (%.4f, %.4f)" % (nu, g[0], g[1]), file=f)
     print("k: %.2e, C_p: %.4f, T_inf: %.4f, T_hot: %.4f" % (k, C_p, T_inf, T_hot), file=f)
     print("rho: %.4f, T_pc: %.4f, A: %.4f, T_act: %.4f" % (rho, T_pc, A, T_act), file=f)
-    print("H_R: %.4f, h: %.4f, a_v: %.4f, Y_thr: %.4f, Y_f: %.4f" % (H_R, h, a_v, Y_thr, Y_f), file=f)
+    print("H_R: %.4f, h: %.4f, a_v: %.4f, Y_D: %.4f, Y_f: %.4f" % (H_R, h, a_v, Y_D, Y_f), file=f)
     print("Initial u type: %s" % initial_u_type, file=f)
     if initial_u_type == 'log':
         print("z_0: %.4f, d: %.4f, u_ast: %.4f, kappa: %.4f" % (u_z_0, d, u_ast, kappa), file=f)

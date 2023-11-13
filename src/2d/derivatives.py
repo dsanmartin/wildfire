@@ -16,11 +16,11 @@ def compute_first_derivative(phi: np.ndarray, h: float, axis: int, periodic: boo
         Spacing between grid points.
     axis : int
         Axis along which to compute the derivative. 0 for y, 1 for x.
+    periodic : bool
+        True if the domain is periodic, False otherwise.
     type : str
         Type of difference scheme. 'forward' for forward difference, 'backward'
         for backward difference and 'central' for central difference. Default is 'central'.
-    periodic : bool
-        True if the domain is periodic, False otherwise. Default is True.
 
     Returns
     -------
@@ -40,17 +40,27 @@ def compute_first_derivative(phi: np.ndarray, h: float, axis: int, periodic: boo
     # Compute derivative
     if type == 'forward':
         phi_h = (phi_ip1 - phi) / h # Forward difference
-        if periodic == False: # Fix boundary in y - O(dy)
-            phi_h[-1,:] = (phi[-1,:] - phi[-2,:]) / h # Backward
+        if periodic == False:
+            if axis == 0: # Fix boundary in y - O(dy)
+                phi_h[-1,:] = (phi[-1,:] - phi[-2,:]) / h # Backward
+            elif axis == 1: # Fix boundary in x - O(dx)
+                phi_h[:,-1] = (phi[:,-1] - phi[:,-2]) / h
     elif type == 'backward':
         phi_h = (phi - phi_im1) / h
-        if periodic == False: # Fix boundary in y - O(dy)
-            phi_h[0, :] = (phi[1, :] - phi[0, :]) / h
+        if periodic == False:
+            if axis == 0: # Fix boundary in y - O(dy)
+                phi_h[0, :] = (phi[1, :] - phi[0, :]) / h
+            elif axis == 1: # Fix boundary in x - O(dx)
+                phi_h[:, 0] = (phi[:, 1] - phi[:, 0]) / h
     elif type == 'central':
         phi_h = (phi_ip1 - phi_im1) / (2 * h) # Central difference
-        if periodic == False: # Fix boundary in y - O(dy^2)
-            phi_h[0, :] = (-3 * phi[0, :] + 4 * phi[1, :] - phi[2, :]) / (2 * h) # Forward
-            phi_h[-1,:] = (3 * phi[-1, :] - 4 * phi[-2,:] + phi[-3,:]) / (2 * h) # Backward
+        if periodic == False:
+            if axis == 0: # Fix boundary in y - O(dy^2)
+                phi_h[0, :] = (-3 * phi[0, :] + 4 * phi[1, :] - phi[2, :]) / (2 * h) # Forward
+                phi_h[-1,:] = (3 * phi[-1, :] - 4 * phi[-2,:] + phi[-3,:]) / (2 * h) # Backward
+            elif axis == 1: # Fix boundary in x - O(dx^2)
+                phi_h[:, 0] = (-3 * phi[:, 0] + 4 * phi[:, 1] - phi[:, 2]) / (2 * h)
+                phi_h[:,-1] = (3 * phi[:,-1] - 4 * phi[:,-2] + phi[:,-3]) / (2 * h)
     return phi_h
 
 def compute_first_derivative_upwind(a: np.ndarray, phi: np.ndarray, h: float, axis: int, order: int = 2, periodic: bool = True) -> np.ndarray:
@@ -101,11 +111,17 @@ def compute_first_derivative_upwind(a: np.ndarray, phi: np.ndarray, h: float, ax
         phi_im2 = np.roll(phi, 2, axis=axis) # phi_{i-2}
         phi_hm = (3 * phi - 4 * phi_im1 + phi_im2) / (2 * h) # Backward
         phi_hp = (-phi_ip2 + 4 * phi_ip1 - 3 * phi) / (2 * h) # Forward
-        if periodic == False: # Fix boundary in y - O(dy^2)
-            phi_hm[0, :] = (-3 * phi[0, :] + 4 * phi[1, :] - phi[2, :]) / (2 * h) # Forward
-            phi_hm[1, :] = (-3 * phi[1, :] + 4 * phi[2, :] - phi[3, :]) / (2 * h) # Forward
-            phi_hp[-1,:] = (phi[-1, :] - 4 * phi[-2,:] + 3 * phi[-3,:]) / (2 * h) # Backward
-            phi_hp[-2,:] = (phi[-2, :] - 4 * phi[-3,:] + 3 * phi[-4,:]) / (2 * h) # Backward
+        if periodic == False: 
+            if axis == 0:# Fix boundary in y - O(dy^2)
+                phi_hm[0, :] = (-3 * phi[0, :] + 4 * phi[1, :] - phi[2, :]) / (2 * h) # Forward
+                phi_hm[1, :] = (-3 * phi[1, :] + 4 * phi[2, :] - phi[3, :]) / (2 * h) # Forward
+                phi_hp[-1,:] = (phi[-1, :] - 4 * phi[-2,:] + 3 * phi[-3,:]) / (2 * h) # Backward
+                phi_hp[-2,:] = (phi[-2, :] - 4 * phi[-3,:] + 3 * phi[-4,:]) / (2 * h) # Backward
+            elif axis == 1: # Fix boundary in x - O(dx^2)
+                phi_hm[:, 0] = (-3 * phi[:, 0] + 4 * phi[:, 1] - phi[:, 2]) / (2 * h)
+                phi_hm[:, 1] = (-3 * phi[:, 1] + 4 * phi[:, 2] - phi[:, 3]) / (2 * h)
+                phi_hp[:,-1] = (phi[:,-1] - 4 * phi[:,-2] + 3 * phi[:,-3]) / (2 * h)
+                phi_hp[:,-2] = (phi[:,-2] - 4 * phi[:,-3] + 3 * phi[:,-4]) / (2 * h)
     # Upwind scheme
     phi_h = a_plu * phi_hm + a_min * phi_hp
     return phi_h
@@ -139,9 +155,13 @@ def compute_first_derivative_half_step(phi: np.ndarray, h: float, axis: int, per
     phi_iphj = 0.5 * (phi_ip1 + phi) # phi_{i+1/2}
     phi_imhj = 0.5 * (phi_im1 + phi) # phi_{i-1/2}
     phi_h = (phi_iphj - phi_imhj) / h # Central difference
-    if periodic == False: # Fix boundary in y - O(dy^2)
-        phi_h[0] = (-phi[2] + 4 * phi[1] - 3 * phi[0]) / (2 * h)
-        phi_h[-1] = (3 * phi[-1] - 4 * phi[-2] + phi[-3]) / (2 * h)
+    if periodic == False: 
+        if axis == 0:# Fix boundary in y - O(dy^2)
+            phi_h[0] = (-phi[2] + 4 * phi[1] - 3 * phi[0]) / (2 * h)
+            phi_h[-1] = (3 * phi[-1] - 4 * phi[-2] + phi[-3]) / (2 * h)
+        if axis == 1:
+            phi_h[:, 0] = (-phi[:, 2] + 4 * phi[:, 1] - 3 * phi[:, 0]) / (2 * h)
+            phi_h[:,-1] = (3 * phi[:,-1] - 4 * phi[:,-2] + phi[:,-3]) / (2 * h)
     return phi_h
 
 def compute_second_derivative(phi: np.ndarray, h: float, axis: int, periodic: bool = True) -> np.ndarray:
@@ -179,9 +199,13 @@ def compute_second_derivative(phi: np.ndarray, h: float, axis: int, periodic: bo
     phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
     # Second derivative
     phi_hh = (phi_ip1 - 2 * phi + phi_im1) / h ** 2
-    if periodic == False: # Fix boundary in y - O(dy^2)
-        phi_hh[0, :] = (2 * phi[0, :] - 5 * phi[1, :] + 4 * phi[2, :] - phi[3, :]) / h ** 2 # Forward
-        phi_hh[-1,:] = (2 * phi[-1, :] - 5 * phi[-2,:] + 4 * phi[-3,:] - phi[-4,:]) / h ** 2 # Backward
+    if periodic == False: 
+        if axis == 0: # Fix boundary in y - O(dy^2)
+            phi_hh[0, :] = (2 * phi[0, :] - 5 * phi[1, :] + 4 * phi[2, :] - phi[3, :]) / h ** 2 # Forward
+            phi_hh[-1,:] = (2 * phi[-1, :] - 5 * phi[-2,:] + 4 * phi[-3,:] - phi[-4,:]) / h ** 2 # Backward
+        elif axis == 1:
+            phi_hh[:, 0] = (2 * phi[:, 0] - 5 * phi[:, 1] + 4 * phi[:, 2] - phi[:, 3]) / h ** 2
+            phi_hh[:,-1] = (2 * phi[:,-1] - 5 * phi[:,-2] + 4 * phi[:,-3] - phi[:,-4]) / h ** 2
     return phi_hh
 
 def compute_gradient(phi: np.ndarray, dx: float, dy: float, periodic_axes: tuple) -> np.ndarray:

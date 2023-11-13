@@ -10,16 +10,16 @@ parser.add_argument('-n', '--name', type=str, default=datetime.now().strftime("%
     help="Numerical simulation name. Default: Current datetime with format 'YYYYMMDDhhmmss'")
 parser.add_argument('-path', '--save-path', type=str, default=None,
     help="Numerical simulation save path. Default: None")
-parser.add_argument('-k', '--diffusivity', type=float, default=k,
-    help="Thermal diffusivity parameter. Default: {}".format(k))
+parser.add_argument('-k', '--diffusivity', type=float, default=alpha,
+    help="Thermal diffusivity parameter. Default: {}".format(alpha))
 parser.add_argument('-nu', '--viscosity', type=float, default=nu,
     help="Kinematic viscosity parameter. Default: {}".format(nu))
 parser.add_argument('-Pr', '--prandtl', type=float, default=Pr,
     help="Prandtl number parameter. Default: {}".format(Pr))
 parser.add_argument('-Yf', '--fuel-consumption', type=float, default=Y_f,
     help="Fuel consumption parameter. Default: {}".format(Y_f))
-parser.add_argument('-Yt', '--fuel-threshold', type=float, default=Y_thr,
-    help="Solid fuel threshold force. Default: {}".format(Y_thr))
+parser.add_argument('-Yt', '--fuel-threshold', type=float, default=Y_D,
+    help="Solid fuel threshold force. Default: {}".format(Y_D))
 parser.add_argument('-HR', '--heat-energy', type=float, default=H_R,
     help="Heat energy per unit of mass parameter. Default: {}".format(H_R))
 parser.add_argument('-hc', '--convective-coefficient', type=float, default=h,
@@ -87,14 +87,14 @@ x_min, x_max = args.x_min, args.x_max
 y_min, y_max = args.y_min, args.y_max
 t_min, t_max = args.t_min, args.t_max
 nu = args.viscosity
-k = args.diffusivity
+alpha = args.diffusivity
 Pr = args.prandtl
 Y_f = args.fuel_consumption
 H_R = args.heat_energy
 h = args.convective_coefficient
 A = args.pre_exponential_coefficient
 T_act = args.activation_temperature
-Y_thr = args.fuel_threshold
+Y_D = args.fuel_threshold
 T_hot = args.hot_temperature
 S_top = args.source_top
 S_bot = args.source_bottom
@@ -103,7 +103,7 @@ T_max = args.max_temperature
 parameter_file = args.parameter_file
 if args.save_path is None:
     save_path = output_dir + sim_name + "/"
-    # save_path = create_simulation_folder(sim_name)
+    create_simulation_folder(save_path)
 else:
     save_path = args.save_path
 

@@ -1,9 +1,10 @@
 import time
 import numpy as np
+from datetime import timedelta
 from derivatives import compute_gradient, compute_laplacian, compute_first_derivative_upwind, compute_first_derivative
 from poisson import solve_pressure
 from turbulence import turbulence
-from utils import K, H, Km, hv, source, sink, kT, kTp #, Yft, S_T, AT
+from utils import f, S, k, kT, K, H#, Km, hv, source, sink, #, Yft, S_T, AT
 from plots import plot_2D
 
 OUTPUT_LOG = "Time step: {:=6d}, Simulation time: {:.2f} s"
@@ -17,14 +18,14 @@ def grad_pressure(p: np.ndarray, params: dict) -> np.ndarray:
 
     Parameters
     ----------
-    p : numpy.ndarray (Ny, Nx)
+    p : numpy.ndarray (Ny, Nx-1)
         Pressure field.
     params : dict
         Dictionary containing the interval sizes `dx` and `dy`.
 
     Returns
     -------
-    numpy.ndarray (2, Ny, Nx)
+    numpy.ndarray (2, Ny, Nx-1)
         Gradient of pressure.
     """
     # Get interval size
@@ -33,148 +34,89 @@ def grad_pressure(p: np.ndarray, params: dict) -> np.ndarray:
     grad_p = compute_gradient(p, dx, dy, (False, True))
     return grad_p
 
-def Phi(t, C, params):
-    dx = params['dx']
-    dy = params['dy']
+def Phi(t: float, C: np.ndarray, params: dict) -> np.ndarray:
+    """
+    Computes the right-hand side of the partial differential equations (PDEs) for the 2D wildfire model.
+    The PDEs are given by:
+
+    Velocity:
+    .. math::
+        \dfrac{\partial \mathbf{u}}{\partial t} = \nu \nabla^2 \mathbf{u} - (\mathbf{u}\cdot\nabla) \mathbf{u} + \mathbf{f}
+
+    Temperature:
+    .. math::
+        \dfrac{\partial T}{\partial t} = \dfrac{\partial k(T)}{\partial T}||\nabla T||^2 + k(T)\nabla^2 T - (\mathbf{u}\cdot\nabla T) + S(T, Y)
+
+    Combustion model:
+    .. math::
+        \dfrac{\partial Y}{\partial t} = -Y_f K(T) H(T) Y
+
+    where \mathbf{u} is the velocity vector, \nu is the kinematic viscosity, \mathbf{f} is the external force vector,
+    T is the temperature, Y is the fuel mass fraction, k(T) is the thermal conductivity, S(T, Y) is the source term
+    for the temperature equation, Y_f is the fuel mass fraction of the wood, K(T) is the reaction rate coefficient,
+    and H(T) is the heating value of the wood.
+
+    Parameters
+    ----------
+    t : float
+        Current time.
+    C : array_like (4, Ny, Nx-1)
+        Array of current values for the velocity components, temperature, and fuel mass fraction.
+    params : dict
+        Dictionary of parameters for the model.
+
+    Returns
+    -------
+    numpy.ndarray (4, Ny, Nx-1)
+        Array of the right-hand side values for the PDEs.
+
+    Notes
+    -----
+    This function computes the right-hand side of the PDEs for the 2D wildfire model, which are used to update the
+    velocity components, temperature, and fuel mass fraction at each time step. The PDEs are solved using a finite
+    difference method.
+    """
+    dx, dy = params['dx'], params['dy']
     nu = params['nu']
-    rho = params['rho']
-    k = params['k']
-    #P = params['p']
-    C_p = params['C_p']
-    F = params['F']
-    g = params['g']
-    T_inf = params['T_inf']
-    A = params['A']
-    T_act = params['T_act']
-    # E_A = params['E_A']
-    # R = params['R']
-    H_R = params['H_R']
-    h = params['h']
-    T_pc = params['T_pc']
-    C_D = params['C_D']
-    a_v = params['a_v']
-    Y_thr = params['Y_thr']
     Y_f = params['Y_f']
     turb = params['turbulence']
     conservative = params['conservative']
-    S_top = params['S_top']
-    S_bot = params['S_bot']
-    T_mask = params['T_mask'] # Temperature fixed source
-    T_hot = params['T_hot'] # Temperature fixed source
-    T_0 = params['T_0'] # Temperature fixed source
-    sigma = params['sigma']
-    delta = params['delta']
-    debug = params['debug']
-    source_filter = params['source_filter']
-    radiation = params['radiation']
-    include_source = params['include_source']
-    sutherland_law = params['sutherland_law']
-
     # Get variables
     u, v, T, Y = C
-    
     # Forces
-    F_x, F_y = F # 'External' forces
-    g_x, g_y = g # Gravity
-    # Drag force
-    mod_U = np.sqrt(u ** 2 + v ** 2)
-    # Y_mask = (Y > Y_thr).astype(int) # Valid only for solid fuel
-    Y_mask = Y * Y_thr # Valid only for solid fuel
-    F_d_x = C_D * a_v * mod_U * u * Y_mask
-    F_d_y = C_D * a_v * mod_U * v * Y_mask
-    
-    # All forces
-    F_x = F_x - g_x * (T - T_inf) / T - F_d_x 
-    F_y = F_y - g_y * (T - T_inf) / T - F_d_y
-    # F_x = F_x - g_x * ((T - T_inf) + (T - T_inf) ** 2) / T - F_d_x
-    # F_y = F_y - g_y * ((T - T_inf) + (T - T_inf) ** 2) / T - F_d_y
-    
-
+    F_x, F_y = f((u, v), T, Y)
     # Derivatives #
-    # First derivatives 
-    if conservative:
-        # Conservative form for convection
+    # First partial derivatives 
+    if conservative: # Conservative form for convection        
         uux = compute_first_derivative(u * u, dx, 1, (False, True)) # (u_{i+1, j}^2 - u_{i-1, j}^2) / (2 * dx)
         vuy = compute_first_derivative(u * v, dy, 0, (False, True)) # (u_{i, j+1} * v_{i, j+1} - u_{i, j-1} * v_{i, j-1}) / (2 * dy)
-        uvx = compute_first_derivative(v * u, dx, 1, (False, True))# (v_{i+1, j} * u_{i+1, j} - v_{i-1, j} * u_{i-1, j}) / (2 * dx)
+        uvx = compute_first_derivative(v * u, dx, 1, (False, True)) # (v_{i+1, j} * u_{i+1, j} - v_{i-1, j} * u_{i-1, j}) / (2 * dx)
         vvy = compute_first_derivative(v * v, dy, 0, (False, True)) # (v_{i, j+1}^2 - v_{i, j-1}^2) / (2 * dy)
-    else:
-        # Non-conservative form for convection
+    else: # Non-conservative form for convection        
         uux = compute_first_derivative_upwind(u, u, dx, 1) 
         vuy = compute_first_derivative_upwind(v, u, dy, 0, periodic=False)
         uvx = compute_first_derivative_upwind(u, v, dx, 1)
         vvy = compute_first_derivative_upwind(v, v, dy, 0, periodic=False)
     Tx, Ty = compute_gradient(T, dx, dy, (False, True))
-
-    # Compute Laplacian
+    # Second partial derivatives, compute Laplacian
     lap_u = compute_laplacian(u, dx, dy, (False, True))
     lap_v = compute_laplacian(v, dx, dy, (False, True))
     lap_T = compute_laplacian(T, dx, dy, (False, True))
-
     # Turbulence
     sgs_x = sgs_y = sgs_T = 0
     if turb:
         sgs_x, sgs_y, sgs_T = turbulence(u, v, T, params)
-
-    # Temperature source term
-    S = 0 # No source
-    if include_source:
-        S1 = source(T, Y)
-        S2 = sink(T)
-        if source_filter:
-            S1[S1 >= S_top] = S_bot
-        S = S1 + S2
-        
-        #S = S_T(S)
-
-    # S = Y * 200 * S3(T, T_pc) -  h * (T - T_inf) / (rho * C_p)
-    # S = 0
-    if debug:
-        # dt = params['dt']
-        # if t % (dt * 100) == 0:
-        # print(t, dt * 100)
-        print("-" * 30)
-        # print("A:", A)
-        # print("h:", h)
-        # print("S_top:", S_top)
-        # print("S_bot:", S_bot)
-        # print("K:", np.min(Ke), np.max(Ke))
-        # print("S:", np.min(S), np.max(S))
-        # print("S1:", np.min(S1), np.max(S1))
-        # print("S2:", np.min(S2), np.max(S2))
-        # print("Tx:", np.min(Tx), np.max(Tx))
-        # print("Ty:", np.min(Ty), np.max(Ty))
-        # print("Txx:", np.min(Txx), np.max(Txx))
-        # print("Tyy:", np.min(Tyy), np.max(Tyy))
-        # lapT = k * (Txx + Tyy)
-        # print("lapT", np.min(lapT), np.max(lapT))
-        # print("sgs_T", np.min(sgs_T), np.max(sgs_T))
-        # print("S - sgs_T", np.min(S - sgs_T), np.max(S - sgs_T))
-        print("K(T) * H(T)", np.min(K(T) * H(T)) , np.max(K(T) * H(T)))
-        print("-" * 30)
-
-    # PDE
-    # Velocity
-    U_ = nu * lap_u + F_x - sgs_x - (uux + vuy) 
-    V_ = nu * lap_v + F_y - sgs_y - (uvx + vvy)
-    # U_ = nu * lap_u + F_x - ((uux + vuy) + sgs_x)
-    # V_ = nu * lap_v + F_y - ((uvx + vvy) + sgs_y)
-    # Temperature
-    # Radiation
-    if radiation:
-        T_ = 12 * sigma * delta * T ** 2 * (Tx ** 2 + Ty ** 2) + (k + 4 * sigma * delta * T ** 3) * lap_T - (u * Tx  + v * Ty) + S - sgs_T
-    elif sutherland_law:
-        T_ = kTp(T) * (Tx ** 2 + Ty ** 2) + kT(T) * lap_T - (u * Tx  + v * Ty) + S - sgs_T 
-    else:
-        T_ = k * lap_T - (u * Tx  + v * Ty) + S - sgs_T 
-
-    # Combustion model
+    # PDE RHS
+    # Velocity: \nu \nabla^2 \mathb{u} - (\mathbf{u}\cdot\nabla) \mathbf{u} + \mathbf{f}
+    u_ = nu * lap_u + F_x - sgs_x - (uux + vuy) 
+    v_ = nu * lap_v + F_y - sgs_y - (uvx + vvy)
+    # Temperature: \dfrac{\partial k(T)}{\partial T}||\nabla T||^2 + k(T)\nabla^2 T - (\mathbf{u}\cdot\nabla T) + S(T, Y) 
+    T_ = kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T - (u * Tx  + v * Ty) + S(T, Y) - sgs_T 
+    # Combustion model: -Y_f K(T) H(T) Y
     Y_ = -Y_f * K(T) * H(T) * Y 
-
     # Boundary conditions
-    U_, V_, T_, Y_ = boundary_conditions(U_, V_, T_, Y_, params)
-
-    return np.array([U_, V_, T_, Y_])
+    u_, v_, T_, Y_ = boundary_conditions(u_, v_, T_, Y_, params)
+    return np.array([u_, v_, T_, Y_])
 
 def boundary_conditions(u: np.ndarray, v: np.ndarray, T: np.ndarray, Y: np.ndarray, params: dict) -> np.ndarray:
     """
@@ -182,11 +124,11 @@ def boundary_conditions(u: np.ndarray, v: np.ndarray, T: np.ndarray, Y: np.ndarr
 
     Parameters
     ----------
-    u : np.ndarray (Ny, Nx)
+    u : numpy.ndarray (Ny, Nx-1)
         Velocity in the x direction.
-    v : np.ndarray (Ny, Nx)
+    v : numpy.ndarray (Ny, Nx-1)
         Velocity in the y direction.
-    T : np.ndarray (Ny, Nx)
+    T : numpy.ndarray (Ny, Nx-1)
         Temperature.
     Y : np.ndarray (Ny, Nx)
         Mass fraction of fuel.
@@ -205,7 +147,7 @@ def boundary_conditions(u: np.ndarray, v: np.ndarray, T: np.ndarray, Y: np.ndarr
 
     Returns
     -------
-    np.ndarray (Ny, Nx)
+    numpy.ndarray (4, Ny, Nx-1)
         Array containing the input variables with the applied boundary conditions.
     """
     T_inf = params['T_inf']
@@ -267,7 +209,7 @@ def solve_tn(t_n: float, y_n: np.ndarray, dt: float, method: callable, params: d
     ----------
     t_n : float
         Current time.
-    y_n : np.ndarray (4, Ny, Nx)
+    y_n : numpy.ndarray (4, Ny, Nx-1)
         Array with the current solution.
     dt : float
         Time step.
@@ -278,9 +220,9 @@ def solve_tn(t_n: float, y_n: np.ndarray, dt: float, method: callable, params: d
 
     Returns
     -------
-    y_np1 : np.ndarray (4, Ny, Nx)
+    y_np1 : np.ndarray (4, Ny, Nx-1)
         Array with the solution at the next time step.
-    p : np.ndarray (Ny, Nx)
+    p : np.ndarray (Ny, Nx-1)
         Array with the pressure solution.
 
     Notes
@@ -400,41 +342,68 @@ def data_post_processing(z: np.ndarray, p: np.ndarray) -> tuple[np.ndarray, np.n
     p = np.concatenate((p, p[:, :, 0].reshape(p.shape[0], p.shape[1], 1)), axis=2)
     return u, v, T, Y, p
 
-def solve_pde(z_0, params):
+def solve_pde(z_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Solves a partial differential equation (PDE) using the specified method.
+
+    Parameters
+    ----------
+    z_0 : numpy.ndarray (4, Ny, Nx-1)
+        Initial conditions for the PDE.
+    params : dict
+        Dictionary containing the parameters for the PDE solver. The dictionary
+        should contain the following keys:
+        - 'Nx': Number of grid points in the x direction.
+        - 'Ny': Number of grid points in the y direction.
+        - 'Nt': Number of time steps.
+        - 'dx': Grid spacing in the x direction.
+        - 'dy': Grid spacing in the y direction.
+        - 'dt': Time step size.
+        - 'NT': Number of time steps to save.
+        - 't': Array of time values.
+        - 'method': Method to use for solving the PDE. Must be one of 'euler' or 'RK4'.
+        - 'save_path': Path to save the log file.
+
+    Returns
+    -------
+    tuple
+        A tuple containing the solution to the PDE and the corresponding pressure field.
+    """
     Nx, Ny, Nt = params['Nx'], params['Ny'], params['Nt']
     dx, dy, dt = params['dx'], params['dy'], params['dt']
-    # print(T_hot)
     NT = params['NT']
     t = params['t']
     method = params['method']
-    methods = {
-        'euler': euler,
-        'RK4': RK4
-    }
-    if NT == 1:
+    methods = {'euler': euler, 'RK4': RK4}
+    log_file = open(params['save_path'] + "log.txt", "w")
+    solver_time_start = time.time()
+    if NT == 1: # Save all time steps
         # Approximation
         z = np.zeros((Nt, z_0.shape[0], Ny, Nx - 1)) 
         p = np.zeros((Nt, Ny, Nx - 1))
         z[0] = z_0
         for n in range(Nt - 1):
             # Simulation 
-            #print("Time step:", n)
-            #print("Simulation time:", t[n], " s")
-            print(OUTPUT_LOG.format(n, t[n]))
-            time_start = time.time()
-            # z[n+1], p[n+1] = methods[method](t[n], z[n], dt, params)
+            step_time_start = time.time()
             z[n+1], p[n+1] = solve_tn(t[n], z[n], dt, methods[method], params)
-            Ut, Vt = z[n+1, :2].copy()
-            # if t[n] <= 5:
-            #     z[n+1, 2] = T_0 * T_mask + z[n+1, 2] * (1 - T_mask)
-            time_end = time.time()
-            elapsed_time = (time_end - time_start)
-            print("CFL: {:.6f}".format(dt * (np.max(np.abs(Ut)) / dx + np.max(np.abs(Vt)) / dy)))
-            print("Temperature: Min = {:.2f} K, Max {:.2f} K".format(np.min(z[n+1, 2]), np.max(z[n+1, 2])))
-            print("Fuel: Min = {:.2f}, Max {:.2f}".format(np.min(z[n+1, 3]), np.max(z[n+1, 3])))
+            step_time_end = time.time()
+            elapsed_time = (step_time_end - step_time_start)
+            # Print log
+            CFL = dt * (np.max(np.abs(z[n+1, 0])) / dx + np.max(np.abs(z[n+1, 1])) / dy)
+            T_min, T_max = np.min(z[n+1, 2]), np.max(z[n+1, 2])
+            Y_min, Y_max = np.min(z[n+1, 3]), np.max(z[n+1, 3])
+            print(OUTPUT_LOG.format(n, t[n]))
+            print("CFL: {:.6f}".format(CFL))
+            print("Temperature: Min = {:.2f} K, Max {:.2f} K".format(T_min, T_max))
+            print("Fuel: Min = {:.2f}, Max {:.2f}".format(Y_min, Y_max))
             print("Step time: {:.6f} s".format(elapsed_time))
-        
-    else:
+            # Save log to file
+            print(OUTPUT_LOG.format(n, t[n]), file=log_file)
+            print("CFL: {:.6f}".format(CFL), file=log_file)
+            print("Temperature: Min = {:.2f} K, Max {:.2f} K".format(T_min, T_max), file=log_file)
+            print("Fuel: Min = {:.2f}, Max {:.2f}".format(Y_min, Y_max), file=log_file)
+            print("Step time: {:.6f} s".format(elapsed_time), file=log_file)
+    else: # Save every NT steps
         # Approximation
         z = np.zeros((Nt // NT + 1, z_0.shape[0], Ny, Nx - 1)) 
         p  = np.zeros((Nt // NT + 1, Ny, Nx - 1))
@@ -443,31 +412,31 @@ def solve_pde(z_0, params):
         p_tmp = p[0].copy()
         for n in range(Nt - 1):
             # Simulation 
-            time_start = time.time()
-            # z_tmp, p_tmp = methods[method](t[n], z_tmp, dt, params)
+            step_time_start = time.time()
             z_tmp, p_tmp = solve_tn(t[n], z_tmp, dt, methods[method], params)
-            if n % NT == 0:
-                # print("Time step:", n)
-                # print("Simulation time:", t[n], " s")
-                print(OUTPUT_LOG.format(n, t[n]))
+            step_time_end = time.time()
+            step_elapsed_time = (step_time_end - step_time_start)
+            if n % NT == 0 or n == (Nt - 2): # Save every NT steps and last step
                 z[n // NT + 1], p[n // NT + 1] = z_tmp, p_tmp
-                time_end = time.time()
-                Ut, Vt = z_tmp[:2].copy()
-                elapsed_time = (time_end - time_start)
-                print("CFL: {:.6f}".format(dt * (np.max(np.abs(Ut)) / dx + np.max(np.abs(Vt)) / dy)))
-                print("Temperature: Min = {:.2f} K, Max {:.2f} K".format(np.min(z_tmp[2]), np.max(z_tmp[2])))
-                print("Fuel: Min = {:.2f}, Max {:.2f}".format(np.min(z_tmp[3]), np.max(z_tmp[3])))
-                # print(np.unique(z_tmp[3]))
-                print("Step time: {:f} s".format(elapsed_time))
-        # Last approximation
-        z[-1] = z_tmp
-        p[-1] = p_tmp
-        # Last time step
-        print(OUTPUT_LOG.format(Nt - 1, t[Nt - 1]))
-        time_end = time.time()
-        Ut, Vt = z_tmp[:2].copy()
-        elapsed_time = (time_end - time_start)
-        print("CFL: {:.6f}".format(dt * (np.max(np.abs(Ut)) / dx + np.max(np.abs(Vt)) / dy)))
-        print("Step time: {:f} s".format(elapsed_time))
-
+                # Print log
+                CFL = dt * (np.max(np.abs(z_tmp[0])) / dx + np.max(np.abs(z_tmp[1])) / dy)  # Compute CFL
+                T_min, T_max = np.min(z_tmp[2]), np.max(z_tmp[2])
+                Y_min, Y_max = np.min(z_tmp[3]), np.max(z_tmp[3]) 
+                print(OUTPUT_LOG.format(n, t[n]))            
+                print("CFL: {:.6f}".format(CFL))
+                print("Temperature: Min = {:.2f} K, Max {:.2f} K".format(T_min, T_max))
+                print("Fuel: Min = {:.2f}, Max {:.2f}".format(Y_min, Y_max))
+                print("Step time: {:f} s".format(step_elapsed_time))
+                # Print to log file
+                print(OUTPUT_LOG.format(n, t[n]), file=log_file)
+                print("CFL: {:.6f}".format(CFL), file=log_file)
+                print("Temperature: Min = {:.2f} K, Max {:.2f} K".format(T_min, T_max), file=log_file)
+                print("Fuel: Min = {:.2f}, Max {:.2f}".format(Y_min, Y_max), file=log_file)
+                print("Step time: {:f} s".format(step_elapsed_time), file=log_file)
+    solver_time_end = time.time()
+    solver_time = (solver_time_end - solver_time_start)
+    print("\nSolver time: ", str(timedelta(seconds=round(solver_time))), "\n")
+    print("\nSolver time: ", str(timedelta(seconds=round(solver_time))), "\n", file=log_file)
+    # Close log file
+    log_file.close()
     return data_post_processing(z, p)

@@ -1,12 +1,9 @@
-import time
-# import datetime
 import numpy as np
-from datetime import timedelta
 from arguments import * # Include default parameters + command line arguments
 from utils import domain
 from initial_conditions import u0, v0, T0, Y0, p0, F, topo, shape#, T_mask
 from ibm import topography_nodes, topography_distance
-from pde import solve_pde, OUTPUT_LOG
+from pde import solve_pde
 from inout import create_simulation_folder, save_approximation, save_parameters
 from plots import plot_initial_conditions, plot_2D, plot_1D
 from logs import log_params
@@ -86,7 +83,7 @@ def main():
         'k': k, 'C_p': C_p, 
         'delta': delta, 'sigma': sigma, # Radiation
         # Fuel 
-        'A': A, 'T_act': T_act, 'T_pc': T_pc, 'H_R': H_R, 'h': h, 'Y_thr': Y_thr, 'Y_f': Y_f,
+        'A': A, 'T_act': T_act, 'T_pc': T_pc, 'H_R': H_R, 'h': h, 'Y_D': Y_D, 'Y_f': Y_f,
         # Boundary conditions just in y (because it's periodic on x)
         'bc_on_y': dirichlet_y_bc,    
         # IBM
@@ -124,7 +121,7 @@ def main():
         'u_z_0': u_z_0,
         'd': d,
         'u_ast': u_ast,
-        'kappa': kappa,
+        'kappa': k,
         'u_r': u_r,
         'y_r': y_r,
         'alpha': alpha,
@@ -146,25 +143,18 @@ def main():
         'fuel_height': fuel_height,
         # Sutherland's law
         'sutherland_law': sutherland_law,
-        'S_T_0': S_T_0,
-        'S_k_0': S_k_0,
-        'S_k': S_k,
+        'S_T_0': S_T_0, 'S_k_0': S_k_0, 'S_k': S_k,
         'bound': bound,
-        'T_min': T_min,
-        'T_max': T_max,
-        'Y_min': Y_min,
-        'Y_max': Y_max,
+        'T_min': T_min, 'T_max': T_max,
+        'Y_min': Y_min, 'Y_max': Y_max,
         'periodic_axes': periodic_axes,
+        'save_path': save_path,
     }
     # Show parameters
     log_params(params)
     # Solve PDE
     z_0 = np.array([U_0, V_0, T_0, Y_0])
-    time_start = time.time()
     u, v, T, Y, p  = solve_pde(z_0, params)
-    time_end = time.time()
-    solve_time = (time_end - time_start)
-    print("Solver time: ", str(timedelta(seconds=round(solve_time))), "\n")
     # Create simulation folder
     # if save_path is None:
     #     save_path_ = create_simulation_folder(sim_name)
@@ -173,8 +163,6 @@ def main():
     log_params(params, save_path)
     # Save outputs
     save_approximation(save_path, x, y, t[::NT], u, v, T, Y, p)
-    # Remove Soruce temperature!
-    # del args['ST']
     save_parameters(save_path, params)
     print("Simulation name:", sim_name) # To easily get the name of the simulation for visualization
 
