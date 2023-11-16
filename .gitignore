@@ -136,7 +136,7 @@ src/2d/output/
 src/2d/input/
 src/2d/others/
 src/2d/gpu/
-src/3d/*
+src/3d/output/
 
 # Script
 src/*/*.sh
