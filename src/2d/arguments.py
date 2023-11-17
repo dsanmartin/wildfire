@@ -57,8 +57,10 @@ parser.add_argument('-Ny', '--y-nodes', type=int, default=Ny,
     help="Number of nodes in y. Default: {}".format(Ny))
 parser.add_argument('-Nt', '--t-nodes', type=int, default=Nt,
     help="Number of nodes in t. Default: {}".format(Nt))
+parser.add_argument('-topo', '--topography-shape', type=str, default=topography_shape,
+    help="Topography shape. Default: {}".format(topography_shape))
 # Others parameters for debugging #
-parser.add_argument('-d', '--debug', type=int, default=0,
+parser.add_argument('-debug', '--debug', type=int, default=0,
     help="Debug. 1 for debugging. Default: {}".format(0))
 parser.add_argument('-sic', '--show-initial-condition', type=int, default=0,
     help="Show (plot) initial conditions. 1 for plot. Default: {}".format(0))
@@ -100,10 +102,12 @@ S_top = args.source_top
 S_bot = args.source_bottom
 T_min = args.min_temperature
 T_max = args.max_temperature
+topography_shape = args.topography_shape
 parameter_file = args.parameter_file
 if args.save_path is None:
     save_path = output_dir + sim_name + "/"
-    create_simulation_folder(save_path)
+    if debug == False:
+        create_simulation_folder(save_path)
 else:
     save_path = args.save_path
 
@@ -122,3 +126,4 @@ if parameter_file is not None:
     Ny = config.getint("numerics", "Ny")
     Nt = config.getint("numerics", "Nt")
     NT = config.getint("numerics", "NT")
+    topography_shape = config.get("topography", "shape")

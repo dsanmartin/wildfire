@@ -3,8 +3,8 @@
 import numpy as np
 from topography import flat, hill
 from utils import create_plate, create_half_gaussian
-from arguments import T_hot # Parameters from command line
-from parameters import T_inf, u_ast, k, d, u_z_0, u_r, y_r, alpha_u, initial_u_type, topography_shape, fuel_height, T0_shape, T0_x_start, T0_x_end, T0_y_start, T0_y_end, T0_x_center, T0_width, T0_height
+from arguments import T_hot, topography_shape # Parameters from command line
+from parameters import T_inf, u_ast, k, d, u_z_0, u_r, y_r, alpha_u, initial_u_type, fuel_height, T0_shape, T0_x_start, T0_x_end, T0_y_start, T0_y_end, T0_x_center, T0_width, T0_height
 
 def load_initial_condition(data_path: str) -> callable:
     data = np.load(data_path)
@@ -24,7 +24,10 @@ u0 = lambda x, y: initial_u(x, y)   #+ np.random.rand(*x.shape) * 0.5
 v0 = lambda x, y: x * 0 
 
 # Initial fuel $Y(x,y,0)$ #
-topo = flat if topography_shape == 'flat' else hill
+if topography_shape == 'flat':
+    topo = flat
+elif topography_shape == 'hill':
+    topo = hill
 Y0 = lambda x, y: (y <= (topo(x) + fuel_height)).astype(int) # 1 if y <= topo(x) + fuel_height else 0
 
 # Initial temperature $T(x,y,0)$ #

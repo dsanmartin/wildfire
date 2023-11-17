@@ -33,18 +33,9 @@ def main():
         V_0[dead_nodes] = 0
         T_0[dead_nodes] = T_inf
         Y_0[dead_nodes] = 1
-        # Y_0 = Y_0 + (Ym) <= topo(Xm) + 2 * dy
     if show_ic:
-        # test = shape(Xm, Ym)
         S_0 = np.sqrt(U_0**2 + V_0**2)
         plot_initial_conditions(Xm, Ym, U_0, V_0, S_0, T_0, Y_0, plot_lims=[[0, 200], [0, 20]])
-        # mask = (Ym >= 1.9) & (Ym <= 2.1)
-        # print(U_0[mask])
-        # plot_1D(Xm[0], T_0[0])
-        # print(T_0.min(), T_0.max())
-        # plot_2D(Xm, Ym, T_0)
-        # plot_2D(Xm, Ym, T_0)
-        # plot_2D(Xm, Ym, T_0[np.array(T_mask)])
     if debug:
         return False
     # Dirichlet boundary conditions
@@ -95,15 +86,6 @@ def main():
         'T_0': T_0,
         't_source': t_source,
         'T_source': T_0,
-        # 'T_mask': plate(Xm, Ym),
-        # 'ST': ST,
-        # 'u_y_min': u_y_min,
-        # 'u_y_max': u_y_max,
-        # 'v_y_min': v_y_min,
-        # 'v_y_max': v_y_max,
-        # 'p_y_max': p_y_max,
-        # 'Y_y_min': Y_y_min,
-        # 'Y_y_max': Y_y_max,
         'u0': U_0,
         'v0': V_0,
         'T0': T_0,

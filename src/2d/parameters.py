@@ -6,7 +6,7 @@ x_min, x_max = -500, 700 # Distance interval [x_min, x_max] in m
 y_min, y_max = 0, 20 # Distance interval [y_min, y_max] in m
 t_min, t_max = 0, 140 # Time interval [t_min, t_max] in s
 # Numerical grid
-Nx, Ny, Nt = 512, 256, 30001 # Number of nodes per axis
+Nx, Ny, Nt = 512, 256, 50001 # Number of nodes per axis
 NT = 100 # Number of samples to store. The simulation stores each NT timesteps
 
 # Time numerical method

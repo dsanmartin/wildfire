@@ -108,8 +108,17 @@ def Phi(t: float, C: np.ndarray, params: dict) -> np.ndarray:
         sgs_x, sgs_y, sgs_T = turbulence(u, v, T, params)
     # PDE RHS
     # Velocity: \nu \nabla^2 \mathb{u} - (\mathbf{u}\cdot\nabla) \mathbf{u} + \mathbf{f}
-    u_ = nu * lap_u + F_x - sgs_x - (uux + vuy) 
-    v_ = nu * lap_v + F_y - sgs_y - (uvx + vvy)
+    # u_ = nu * lap_u + F_x - sgs_x - (uux + vuy) 
+    # v_ = nu * lap_v + F_y - sgs_y - (uvx + vvy)
+    u_ = nu * lap_u - (uux + vuy) + F_x - sgs_x 
+    v_ = nu * lap_v - (uvx + vvy) + F_y - sgs_y 
+    # u_, v_ = u_1, u_2
+    # u1 = np.sum([nu * lap_u, - uux, - vuy, F_x, - sgs_x], axis=0)
+    # v1 = np.sum([nu * lap_v, - uvx, - vvy, F_y, - sgs_y], axis=0)
+    # u2 = np.sum([nu * lap_u, F_x, - sgs_x, - uux, - vuy], axis=0)
+    # v2 = np.sum([nu * lap_v, F_y, - sgs_y, - uvx, - vvy], axis=0)
+    # print("u", np.linalg.norm(u_1 - u1), np.linalg.norm(u_2 - u2))
+    # print("v", np.linalg.norm(v_1 - v1), np.linalg.norm(v_2 - v2))
     # Temperature: \dfrac{\partial k(T)}{\partial T}||\nabla T||^2 + k(T)\nabla^2 T - (\mathbf{u}\cdot\nabla T) + S(T, Y) 
     T_ = kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T - (u * Tx  + v * Ty) + S(T, Y) - sgs_T 
     # Combustion model: -Y_f K(T) H(T) Y
