@@ -220,7 +220,7 @@ def plot_scalar_field(fig: plt.Figure, ax: plt.Axes, x: np.ndarray, y: np.ndarra
     return None
 
 def plot_vector_field(ax: plt.Axes, x: np.ndarray, y: np.ndarray, u: np.ndarray, v: np.ndarray, 
-        streamplot: bool = True, qs: int = 1, density: float = 1.2, linewidth: float = .5, arrowsize: float = .3, color: str = 'k') -> None:
+        streamplot: bool = True, qs: int = 1, density: float = .6, linewidth: float = .5, arrowsize: float = .3, color: str = 'k') -> None:
     """
     Plot a vector field on a given axis.
 
@@ -260,7 +260,7 @@ def plot_vector_field(ax: plt.Axes, x: np.ndarray, y: np.ndarray, u: np.ndarray,
     return None
 
 def plot(n: int, t: np.ndarray, x: np.ndarray, y: np.ndarray, plots: dict, plot_lims: list, 
-        title: bool = True, filename: str = None, dpi: int = 200, streamplot: bool = True, qs: int = 1) -> None:
+        title: bool = True, filename: str = None, dpi: int = 200, streamplot: bool = True, qs: int = 1, density: float = 1) -> None:
     """
     Plot simulation data for time step `n`.
 
@@ -333,7 +333,7 @@ def plot(n: int, t: np.ndarray, x: np.ndarray, y: np.ndarray, plots: dict, plot_
         )
         # Plot velocity
         plot_vector_field(
-            axes[i], x, y, plots['modU']['data'][1][n], plots['modU']['data'][2][n], streamplot=streamplot, qs=qs
+            axes[i], x, y, plots['modU']['data'][1][n], plots['modU']['data'][2][n], streamplot=streamplot, qs=qs, density=density
         )
         i += 1
 
@@ -381,7 +381,7 @@ def plot(n: int, t: np.ndarray, x: np.ndarray, y: np.ndarray, plots: dict, plot_
         )
         # Plot pressure gradient
         plot_vector_field(
-            axes[i], x, y, plots['p']['data'][1][0][n], plots['p']['data'][1][1][n], streamplot=streamplot, qs=qs
+            axes[i], x, y, plots['p']['data'][1][0][n], plots['p']['data'][1][1][n], streamplot=streamplot, qs=qs, density=density
         )
         i += 1
     
