@@ -10,12 +10,13 @@ xmax=200;
 ymin=0;
 ymax=20;
 show='video';
+plots="u,v,modU,curlU";
 n_max=10001;
 if [ -z "${output_dir}" ]; then
     output_dir=$input_dir;
 fi
 # Create animation
-python -u src/2d/create_animation.py -i ${input_dir} -o ${output_dir} -s ${show} -xmin ${xmin} -xmax ${xmax} -ymin ${ymin} -ymax ${ymax} -tn ${n_max} > ${output_dir}animation.log &
+python -u src/2d/create_animation.py -i ${input_dir} -o ${output_dir} -s ${show} -xmin ${xmin} -xmax ${xmax} -ymin ${ymin} -ymax ${ymax} -tn ${n_max} -p ${plots} > ${output_dir}animation.log &
 if [ "${log}" = "log" ]; then
     sleep .5
     tail -f ${output_dir}animation.log
