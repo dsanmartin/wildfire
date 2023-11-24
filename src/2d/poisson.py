@@ -2,7 +2,7 @@ import numpy as np
 from numba import jit
 from derivatives import compute_first_derivative_half_step
 
-@jit
+@jit(nopython=True)
 def thomas_algorithm(A: tuple[np.ndarray], f: np.ndarray) -> np.ndarray:
     """
     Solve a tridiagonal linear system Ax = f using the Thomas algorithm.

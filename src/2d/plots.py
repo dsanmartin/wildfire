@@ -20,8 +20,6 @@ if shutil.which('latex'):
         #"font.sans-serif": "Helvetica",
         "font.size": 16,
     })
-else:
-    print("LaTeX not installed! Using default font.")
 
 def get_variable(data: dict, variable: str, tn: int = None) -> tuple:
     """
@@ -100,10 +98,13 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
         }
     if 'T' in plots:
         T, T_min, T_max = get_variable(data, 'T', tn)
+        T_mean = (T_min + T_max) / 2
         data_plots['T'] = {
             'data': T,
-            'bounds': [T_min - 100 * 0, T_max + 100],
+            'bounds': [T_min - 100 * 0, T_max + 100 * 0],
             'ticks': np.array(np.ceil(np.linspace(T_min, T_max, 5, dtype=int) / 100.0) * 100, dtype=int)
+            # 'ticks': [300, 475, 650, 825, 1000]
+            # 'ticks': np.round(np.linspace(T_min, T_max, 5))
         }
     if 'Y' in plots:
         Y, Y_min, Y_max = get_variable(data, 'Y', tn)

@@ -4,8 +4,7 @@ from datetime import timedelta
 from derivatives import compute_gradient, compute_laplacian, compute_first_derivative_upwind, compute_first_derivative
 from poisson import solve_pressure
 from turbulence import turbulence
-from utils import f, S, k, kT, K, H#, Km, hv, source, sink, #, Yft, S_T, AT
-from plots import plot_2D
+from utils import f, S, k, kT, K, H
 
 OUTPUT_LOG = "Time step: {:=6d}, Simulation time: {:.2f} s"
 
@@ -401,7 +400,7 @@ def solve_pde(z_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]:
             CFL = dt * (np.max(np.abs(z[n+1, 0])) / dx + np.max(np.abs(z[n+1, 1])) / dy)
             T_min, T_max = np.min(z[n+1, 2]), np.max(z[n+1, 2])
             Y_min, Y_max = np.min(z[n+1, 3]), np.max(z[n+1, 3])
-            print(OUTPUT_LOG.format(n, t[n]))
+            print(OUTPUT_LOG.format(n+1, t[n]))
             print("CFL: {:.6f}".format(CFL))
             print("Temperature: Min = {:.2f} K, Max {:.2f} K".format(T_min, T_max))
             print("Fuel: Min = {:.2f}, Max {:.2f}".format(Y_min, Y_max))
@@ -431,11 +430,15 @@ def solve_pde(z_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]:
                 CFL = dt * (np.max(np.abs(z_tmp[0])) / dx + np.max(np.abs(z_tmp[1])) / dy)  # Compute CFL
                 T_min, T_max = np.min(z_tmp[2]), np.max(z_tmp[2])
                 Y_min, Y_max = np.min(z_tmp[3]), np.max(z_tmp[3]) 
-                print(OUTPUT_LOG.format(n, t[n]))            
+                print(OUTPUT_LOG.format(n+1, t[n]))            
                 print("CFL: {:.6f}".format(CFL))
                 print("Temperature: Min = {:.2f} K, Max {:.2f} K".format(T_min, T_max))
                 print("Fuel: Min = {:.2f}, Max {:.2f}".format(Y_min, Y_max))
                 print("Step time: {:f} s".format(step_elapsed_time))
+                x = params['x']
+                whe = np.where(z_tmp[2] == T_max)
+                x_front = x[whe[1][0]]
+                print("x front:", x_front)
                 # Print to log file
                 print(OUTPUT_LOG.format(n, t[n]), file=log_file)
                 print("CFL: {:.6f}".format(CFL), file=log_file)

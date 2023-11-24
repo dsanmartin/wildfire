@@ -10,7 +10,7 @@ xmax=200;
 ymin=0;
 ymax=20;
 show='video';
-plots="u,v,modU,curlU";
+plots="modU,T,Y";
 n_max=10001;
 if [ -z "${output_dir}" ]; then
     output_dir=$input_dir;

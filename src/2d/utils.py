@@ -1,6 +1,6 @@
 import numpy as np
-from arguments import T_act, A, H_R, h, alpha, S_top, S_bot, k # Parameters from command line
-from parameters import T_pc, T_inf, g, Y_D, n_arrhenius, h_rad, C_p, rho, a_v, S_T_0, S_k_0, S_k, sigma, delta, sutherland_law, radiation, include_source, source_filter # Default parameters
+from arguments import T_act, A, H_R, h, alpha, S_top, S_bot, k, Y_D # Parameters from command line
+from parameters import T_pc, T_inf, g, n_arrhenius, h_rad, C_p, rho, a_v, S_T_0, S_k_0, S_k, sigma, delta, sutherland_law, radiation, include_source, source_filter # Default parameters
 
 # A lot of useful functions #
 G = lambda x, y, x0, y0, sx, sy, A: A * np.exp(-((x - x0) ** 2 / sx ** 2 + (y - y0) ** 2 / sy ** 2)) # Gaussian function
@@ -126,8 +126,8 @@ def f(U, T, Y):
     g_x, g_y = g
     mod_U = np.sqrt(u ** 2 + v ** 2)
     return [
-        - g_x * (T - T_inf) / T - a_v * mod_U * u * Y * Y_D,
-        - g_y * (T - T_inf) / T - a_v * mod_U * v * Y * Y_D
+        - g_x * (T - T_inf) / T - Y_D * a_v * Y * mod_U * u,
+        - g_y * (T - T_inf) / T - Y_D * a_v * Y * mod_U * v
     ]
 
 def S(T, Y):

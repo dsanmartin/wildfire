@@ -18,7 +18,7 @@ parser.add_argument('-Pr', '--prandtl', type=float, default=Pr,
     help="Prandtl number parameter. Default: {}".format(Pr))
 parser.add_argument('-Yf', '--fuel-consumption', type=float, default=Y_f,
     help="Fuel consumption parameter. Default: {}".format(Y_f))
-parser.add_argument('-Yt', '--fuel-threshold', type=float, default=Y_D,
+parser.add_argument('-YD', '--fuel-threshold', type=float, default=Y_D,
     help="Solid fuel threshold force. Default: {}".format(Y_D))
 parser.add_argument('-HR', '--heat-energy', type=float, default=H_R,
     help="Heat energy per unit of mass parameter. Default: {}".format(H_R))
@@ -114,7 +114,7 @@ else:
 # Overwrite default values with parameter file
 if parameter_file is not None:
     config = configparser.ConfigParser()
-    config.optionxform=str
+    config.optionxform = str
     config.read(parameter_file)
     x_min = config.getfloat("domain", "x_min")
     x_max = config.getfloat("domain", "x_max")
@@ -126,4 +126,9 @@ if parameter_file is not None:
     Ny = config.getint("numerics", "Ny")
     Nt = config.getint("numerics", "Nt")
     NT = config.getint("numerics", "NT")
-    topography_shape = config.get("topography", "shape")
+    if config.has_section("topography"):
+        if config.has_option("topography", "shape"):
+            topography_shape = config.get("topography", "shape")
+    if config.has_section("fuel"):
+        if config.has_option("fuel", "Y_D"):
+            Y_D = config.getfloat("fuel", "Y_D")
