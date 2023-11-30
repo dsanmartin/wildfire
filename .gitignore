@@ -132,6 +132,7 @@ dmypy.json
 # Extra folders
 .vscode/
 data/
+src/2d/
 src/2d/output/
 src/2d/input/
 src/2d/others/

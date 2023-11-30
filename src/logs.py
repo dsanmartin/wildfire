@@ -1,8 +1,8 @@
 import sys
 from utils import non_dimensional_numbers
-from inout import create_simulation_folder
+from input_output import create_simulation_folder
 
-def log_params(params: dict, dir_path: str = None) -> None:
+def log_params(params: dict, save: bool = False) -> None:
     """
     Log simulation parameters to stdout or file.
 
@@ -17,6 +17,8 @@ def log_params(params: dict, dir_path: str = None) -> None:
     -------
     None
     """
+    # Directory path
+    dir_path = params['save_path']
     # Get data
     x_min, x_max = params['x'][0], params['x'][-1]
     y_min, y_max = params['y'][0], params['y'][-1]
@@ -40,9 +42,9 @@ def log_params(params: dict, dir_path: str = None) -> None:
     u_r, y_r, alpha = params['u_r'], params['y_r'], params['alpha']
     T0_shape = params['T0_shape']
     T0_x_start, T0_x_end, T0_y_start, T0_y_end = params['T0_x_start'], params['T0_x_end'], params['T0_y_start'], params['T0_y_end']
-    T0_x_center, T0_width, T0_height = params['T0_x_center'], params['T0_width'], params['T0_height']
+    T0_x_center, T0_length, T0_height = params['T0_x_center'], params['T0_length'], params['T0_height']
     topography_shape = params['topography_shape']
-    hill_center, hill_height, hill_width = params['hill_center'], params['hill_height'], params['hill_width']
+    hill_center, hill_height, hill_length = params['hill_center'], params['hill_height'], params['hill_length']
     fuel_height = params['fuel_height']
     sutherland_law = params['sutherland_law']
     S_T_0, S_k_0, S_k = params['S_T_0'], params['S_k_0'], params['S_k']
@@ -54,11 +56,11 @@ def log_params(params: dict, dir_path: str = None) -> None:
     Re, Gr, Ra, Sr, Ste, St, Ze = non_dimensional_numbers(params)
 
     
-    if dir_path is None: # Print to stdout or file
-        f = sys.stdout
-    else: # Print to file
+    if save: # Print to file
         create_simulation_folder(dir_path) # Create simulation folder if it doesn't exist
         f = open(dir_path + 'parameters.txt', 'w')
+    else: # Print to stdout or file 
+        f = sys.stdout
 
     print("Simulation name:", sim_name, file=f)
     print("Domain: [%.4f, %.4f] x [%.4f, %.4f] x [%.4f, %.4f]" % (x_min, x_max, y_min, y_max, t_min, t_max), file=f)
@@ -77,10 +79,10 @@ def log_params(params: dict, dir_path: str = None) -> None:
         print("  u_r: %.4f, y_r: %.4f, alpha: %.4f" % (u_r, y_r, alpha), file=f)
     print("Initial temperature shape: %s" % T0_shape, file=f)
     print("  x: [%.4f, %.4f], y: [%.4f, %.4f]" % (T0_x_start, T0_x_end, T0_y_start, T0_y_end), file=f)
-    print("  x center: %.4f, width: %.4f, height: %.4f" % (T0_x_center, T0_width, T0_height), file=f)
+    print("  x center: %.4f, length: %.4f, height: %.4f" % (T0_x_center, T0_length, T0_height), file=f)
     print("Topography shape: %s" % topography_shape, file=f)
     if topography_shape == 'hill':
-        print("    Center: %.4f, Height: %.4f, Width: %.4f" % (hill_center, hill_height, hill_width), file=f)
+        print("    Center: %.4f, Height: %.4f, Width: %.4f" % (hill_center, hill_height, hill_length), file=f)
     print("Fuel height: %.4f" % fuel_height, file=f)
     print("Include source: %r" % include_source, file=f)
     print("Source filter: %r" % source_filter, file=f)
@@ -105,7 +107,49 @@ def log_params(params: dict, dir_path: str = None) -> None:
     print("Stanton: %.4f" % St, file=f)
     print("Zeldovich: %.4f\n" % Ze, file=f)
 
-    if dir_path is not None:
+    if save:
         f.close()
 
+    return None
+
+def log_time_step(log_file: any, n: int, t: float, CFL: float, T_min: float, T_max: float, Y_min: float, Y_max: float, elapsed_time: float) -> None:
+    """
+    Log the time step information.
+
+    Parameters
+    ----------
+    log_file : file-like object
+        The file to which the log will be saved.
+    n : int
+        The time step number.
+    t : float
+        The simulation time.
+    CFL : float
+        The CFL number.
+    T_min : float
+        The minimum temperature.
+    T_max : float
+        The maximum temperature.
+    Y_min : float
+        The minimum fuel value.
+    Y_max : float
+        The maximum fuel value.
+    elapsed_time : float
+        The time taken for the time step.
+
+    Returns
+    -------
+    None
+    """
+    print("Time step: {:=6d}, Simulation time: {:.2f} s".format(n, t))
+    print("CFL: {:.6f}".format(CFL))
+    print("Temperature: Min = {:.2f} K, Max {:.2f} K".format(T_min, T_max))
+    print("Fuel: Min = {:.2f}, Max {:.2f}".format(Y_min, Y_max))
+    print("Step time: {:.6f} s".format(elapsed_time))
+    # Save log to file
+    print("Time step: {:=6d}, Simulation time: {:.2f} s".format(n, t), file=log_file)
+    print("CFL: {:.6f}".format(CFL), file=log_file)
+    print("Temperature: Min = {:.2f} K, Max {:.2f} K".format(T_min, T_max), file=log_file)
+    print("Fuel: Min = {:.2f}, Max {:.2f}".format(Y_min, Y_max), file=log_file)
+    print("Step time: {:.6f} s".format(elapsed_time), file=log_file)
     return None

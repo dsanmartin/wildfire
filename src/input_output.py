@@ -2,9 +2,6 @@ import os
 import pickle
 import numpy as np
 
-# Default output directory
-OUTPUT_DIR = './output/'
-
 def create_simulation_folder(save_path: str) -> None:
     """
     Create a folder for saving simulation outputs.
@@ -20,68 +17,63 @@ def create_simulation_folder(save_path: str) -> None:
         Path to the folder where outputs will be saved.
     """
     # Create output save path
-    # save_path = OUTPUT_DIR + sim_name + '/'
     if not os.path.exists(save_path): # Create folder if it doesn't exist
         os.makedirs(save_path)
     # return save_path # Return save path for outputs
     return None
 
-def save_approximation(save_path: str, x: np.ndarray, y: np.ndarray, t: np.ndarray, u: np.ndarray, v: np.ndarray, T: np.ndarray, Y: np.ndarray, p: np.ndarray) -> None:
+def save_approximation(parameters: dict, data: dict) -> None:
     """
     Save the approximation data to a file in npz format.
 
     Parameters
     ----------
-    save_path : str
-        The path where the data will be saved.
-    x : numpy.ndarray (Nx,) or (Ny, Nx)
-        The x-coordinates of the grid.
-    y : numpy.ndarray (Ny,) or (Ny, Nx)
-        The y-coordinates of the grid.
-    t : numpy.ndarray (Nt,)
-        The time steps of the simulation.
-    u : numpy.ndarray (Nt, Ny, Nx)
-        The velocity in the x-direction.
-    v : numpy.ndarray (Nt, Ny, Nx)
-        The velocity in the y-direction.
-    T : numpy.ndarray (Nt, Ny, Nx)
-        The temperature field.
-    Y : numpy.ndarray (Nt, Ny, Nx, Ns)
-        The species mass fractions.
-    p : numpy.ndarray (Nt, Ny, Nx)
-        The pressure field.
+    parameters : dict
+        A dictionary containing the parameters of the model.
+    data : dict
+        A dictionary containing the approximation data.
 
     Returns
     -------
     None
     """
+    # Get save path
+    save_path = parameters['save_path']
     # Create folder for saving simulation outputs
     create_simulation_folder(save_path)
     # Save approximation data
     filename = save_path + 'data.npz'
-    np.savez(filename, u=u, v=v, T=T, Y=Y, p=p, x=x, y=y, t=t)
+    if len(data) == 5:
+        x, y, t = parameters['x'], parameters['y'], parameters['t']
+        NT = parameters['NT'] # Subsampling rate
+        u, v, T, Y, p = data['u'], data['v'], data['T'], data['Y'], data['p']
+        np.savez(filename, u=u, v=v, T=T, Y=Y, p=p, x=x, y=y, t=t[::NT])
+    elif len(data) == 6:
+        x, y, z, t = parameters['x'], parameters['y'], parameters['z'], parameters['t']
+        u, v, w, T, Y, p = data['u'], data['v'], data['w'], data['T'], data['Y'], data['p']
+        np.savez(filename, u=u, v=v, w=w, T=T, Y=Y, p=p, x=x, y=y, z=z, t=t)
     return None
 
-def save_parameters(save_path: str, params: dict) -> None:
+def save_parameters(parameters: dict) -> None:
     """
     Save parameters to a pickle file.
 
     Parameters
     ----------
-    save_path : str
-        The path to the directory where the parameters file will be saved.
-    params : dict
+    parameters : dict
         A dictionary containing the parameters to be saved.
 
     Returns
     -------
     None
     """
+    # Get save path
+    save_path = parameters['save_path']
     # Create folder for saving simulation outputs
     create_simulation_folder(save_path)
     # Create filename
     filename = save_path + 'parameters.pkl'
     # Save parameters
     with open(filename, 'wb') as f:
-        pickle.dump(params, f)
+        pickle.dump(parameters, f)
     return None

@@ -108,6 +108,40 @@ def topography_nodes(x, y, f, dx, dy):
     # Return nodes
     return cut_nodes, dead_nodes
 
+def topography_nodes_3D(x, y, z, f, dx, dy, dz):
+    """Topography for IBM
+
+    Parameters
+    ----------
+    x : array (Nx)
+        x-coordinates of the mesh
+    y : array (Ny)
+        y-coordinates of the mesh
+    z : array (Nz)
+        z-coordinates of the mesh
+    f : callable
+        Topography
+    dx : float
+        x-spacing of the mesh
+    dy : float
+        y-spacing of the mesh
+    dx : float
+        z-spacing of the mesh
+
+    Returns
+    -------
+    array (Ny, Nx, Nz)
+        Topography with IBM
+    """
+    # Get topography
+    topo = (z >= (f(x, y) - dz)) & (z <= f(x, y))    
+    dead = z < f(x, y) - dz
+    # Get dead and cut nodes
+    cut_nodes = np.where(topo == True)
+    dead_nodes = np.where(dead == True)
+    # Return nodes
+    return cut_nodes, dead_nodes
+
 
 def building_circle(x, y, x_lims, y_lims, dx, dy):
     Nx, Ny = x.shape[0], y.shape[0]
@@ -165,3 +199,5 @@ def building(x, y, x_lims, y_lims, dx, dy):
 def topography_distance(x, y, f):
     return y - f(x)
 
+def topography_distance_3D(x, y, z, f):
+    return z - f(x, y)

@@ -1,19 +1,14 @@
 """This file handles the default parameters of the model
 """
 
-# Domain [x_min, x_max] \times [y_min, y_max] \times [t_min, t_max] 
-x_min, x_max = -500, 700 # Distance interval [x_min, x_max] in m 
-y_min, y_max = -500, 700 # Distance interval [y_min, y_max] in m
-z_min, z_max = 0, 20 # Distance interval [y_min, y_max] in m
-t_min, t_max = 0, 140 # Time interval [t_min, t_max] in s
-# Numerical grid
-Nx, Ny, Nz, Nt = 512, 512, 256, 10001 # Number of nodes per axis
-NT = 100 # Number of samples to store. The simulation stores each NT timesteps
-
-# Testing
-t_min, t_max = 0, .1 # Time interval [t_min, t_max] in s
-Nx, Ny, Nz, Nt = 64, 64, 32, 11 # Number of nodes per axis
-NT = 1 # Number of samples to store. The simulation stores each NT timesteps
+## Domain [x_min, x_max] \times [y_min, y_max] \times [t_min, t_max] 
+# x_min, x_max = -500, 700 # Distance interval [x_min, x_max] in m 
+# y_min, y_max = 0, 20 # Distance interval [y_min, y_max] in m
+# z_min, z_max = 0, 20 # Distance interval [z_min, z_max] in m
+# t_min, t_max = 0, 140 # Time interval [t_min, t_max] in s
+# # Numerical grid
+# Nx, Ny, Nz, Nt = 512, 256, 256, 50001 # Number of nodes per axis
+# NT = 100 # Number of samples to store. The simulation stores each NT timesteps
 
 # Time numerical method
 method = 'RK4'
@@ -65,7 +60,7 @@ E_A = 150e3 # Activation energy in J mol^{-1} or kg m^2 s^{-2} mol^{-1}. E_A = 2
 T_act = E_A / R # Activation temperature in K 
 h = 1.147#3.3#18 # Convection coefficient in W m^{-2} K^{-1} or kg s^{-3} K^{-1}  (Air: 0.5-1000), (15.9 - 18.2, Maragkos 2021)
 h_rad = 0*1e-7 #
-Y_D = 0.025 #.25 #.25 #.9 # Threshold to add solid fuel force
+Y_D = 0.04 #.25 #.25 #.9 # Threshold to add solid fuel force
 Y_f = 1e2 # Extra parameter to control the fuel consumption rate
 Y_f = 100
 T_hot = T_inf + 500 #500 #600 #450 #Temperature of fire in K
@@ -91,7 +86,7 @@ initial_u_type = 'power law' # 'power law' or 'log'
 u_z_0 = 0.05 # Surface roughness in m
 d = 0 #0.1 # Zero-plane displacement in m
 u_ast = .1#.5 # .1 Friction velocity in ms^{-1}
-kappa = 0.41 # Von Karman constant in 1
+k = 0.41 # Von Karman constant in 1
 # Power law (used by FDS)
 u_r = 4.8 # Reference speed in ms^{-1}
 z_r = 2 # Reference height in m
@@ -99,16 +94,14 @@ alpha_u = 1 / 7 # Empirical constant in 1
 
 # Temperature 
 # Shape
-T0_shape = 'half gaussian' # 'plate' or 'half gaussian'
+T0_shape = 'gaussian' # 'plate' or 'gaussian'
 # Location
 # 'Width' of initial fire source in m
 T0_x_start = 0
 T0_x_end = T0_x_start + 6 #4#2 # PLATE -> x_start + 3.3 (FDS)
-# T0_x_start = (x_max + x_min) / 2 - 2.5
-# T0_x_end = (x_max + x_min) / 2 + 2.5
 T0_x_center = (T0_x_start + T0_x_end) / 2
 T0_length = (T0_x_end - T0_x_start)
-T0_y_start = (y_max + y_min) / 2 - 3
+T0_y_start = 0
 T0_y_end = T0_y_start + 6 #
 T0_y_center = (T0_y_start + T0_y_end) / 2
 T0_width = (T0_y_end - T0_y_start)
@@ -124,10 +117,9 @@ fuel_height = .51 #.5 # Height of fuel in m
 topography_shape = 'flat' # 'flat' or 'hill'
 hill_center_x = 100 / 2 # Center of hill in m
 hill_center_y = 100 / 2 # Center of hill in m
-hill_length = 50 # Length of hill in m
-hill_width = 50 # Width of hill in m
+hill_length = 20 # Length of hill in m
+hill_width = 20 # Width of hill in m
 hill_height = 2.5 # Height of hill in m
-
 
 ### Immerse boundary method parameterns ###
 u_dead_nodes = 0
@@ -136,11 +128,21 @@ w_dead_nodes = 0
 T_dead_nodes = T_inf
 Y_dead_nodes = 1
 
+dead_nodes_values = [
+    u_dead_nodes, 
+    v_dead_nodes, 
+    w_dead_nodes, 
+    T_dead_nodes, 
+    Y_dead_nodes
+]
+
 # Sutherland's law parameters
 S_T_0 = 273 # Reference temperature in K
 S_k_0 = 0.024 # Thermal conductivity in W m^{-1} K^{-1} or kg m s^{-3} K ^{-1}  (Air: 0.024)
 S_k = 194 # Sutherland's constant in K
 
+spatial_dims = 2
+
 periodic_axes = (False, True)
 
-output_dir = './output/'
+output_dir = './data/output/'
