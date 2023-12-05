@@ -1,7 +1,7 @@
 import os
 import imageio
 import argparse
-from plots import plot, load_data_for_plots
+from plots import load_data_for_plots, plot_2D
 import warnings
 warnings.filterwarnings("ignore") # To remove warnings from contourf using NaNs
 
@@ -18,6 +18,8 @@ parser.add_argument('-xmin', '--x-min', type=float, default=0, help="Left bounda
 parser.add_argument('-xmax', '--x-max', type=float, default=200, help="Right boundary of domain in x.")
 parser.add_argument('-ymin', '--y-min', type=float, default=0, help="Bottom boundary of domain in y.")
 parser.add_argument('-ymax', '--y-max', type=float, default=20, help="Top boundary of domain in y.")
+parser.add_argument('-zmin', '--z-min', type=float, default=-1, help="Bottom boundary of domain in z.")
+parser.add_argument('-zmax', '--z-max', type=float, default=-1, help="Top boundary of domain in z.")
 args = parser.parse_args()
 
 # Default values
@@ -36,7 +38,7 @@ if output_dir == "":
     output_dir = input_dir
 if output_dir[-1] != "/":
     output_dir += "/"
-data_path = input_dir + "/data.npz"
+data_path = input_dir + "data.npz"
 parameters_path = input_dir + "/parameters.pkl"
 U_comp = ['modU', 'divU', 'curlU'] # Computation
 dpi = 200
@@ -51,15 +53,26 @@ if show != "plot":
     dpi = 400
 
 # Load data
-x, y, t, data_plots = load_data_for_plots(data_path, parameters_path, plots, tn=None)
+domain, data_plots = load_data_for_plots(data_path, parameters_path, plots, tn=None)
+if len(domain) == 3:
+    x, y, t = domain
+    z = None
+elif len(domain) == 4:
+    x, y, z, t = domain
 
 # Computational domain
-x_min, x_max = x[0], x[-1]
-y_min, y_max = y[0], y[-1]
+x_min, x_max = x.min(), x.max()
+y_min, y_max = y.min(), y.max()
 # Plot domain. Overwrite if specified in arguments
 x_min, x_max = args.x_min, args.x_max
 y_min, y_max = args.y_min, args.y_max
 plot_lims = [x_min, x_max, y_min, y_max]
+if z is not None:
+    z_min, z_max = args.z_min, args.z_max
+    if z_min == z_max == -1:
+        z_min, z_max = z.min(), z.max()
+    plot_lims.append(z_min)
+    plot_lims.append(z_max)
 
 # Filenames for output
 filenames = []
@@ -73,7 +86,7 @@ for n in range(0, Nt, ts):
         print("Creating figure %d/%d" % (n+1, Nt))
         filename = output_dir + str(n) + ext 
         filenames.append(filename)
-    plot(n, t, x, y, data_plots, plot_lims, title=True, filename=filename, dpi=dpi)
+    plot_2D(n, domain, data_plots, plot_lims, title=True, filename=filename, dpi=dpi)
 
 # Build video or GIF
 if show not in ["plot", "pdf"]:

@@ -192,6 +192,7 @@ def data_post_processing(z: np.ndarray, p: np.ndarray) -> dict:
         }
     elif ndims == 5: # 3D case
         u_, v_, w_, T_, Y_ = z[:, 0], z[:, 1], z[:, 2], z[:, 3], z[:, 4]
+        p_ = p.copy()
         # Get dimensions
         Nt, Ny, Nx, Nz = u_.shape
         u = np.zeros((Nt, Ny+1, Nx+1, Nz))
@@ -199,24 +200,39 @@ def data_post_processing(z: np.ndarray, p: np.ndarray) -> dict:
         w = np.zeros((Nt, Ny+1, Nx+1, Nz))
         T = np.zeros((Nt, Ny+1, Nx+1, Nz))
         Y = np.zeros((Nt, Ny+1, Nx+1, Nz))
+        p = np.zeros((Nt, Ny+1, Nx+1, Nz))
         # Copy data
-        u[:, -1, :-1, :] = u_[:, 0, :, :]
+        u[:,:-1,:-1,:] = u_
+        u[:,-1,:-1, :] = u_[:, 0, :, :]
         u[:, :, -1, :] = u[:, :, 0, :]
-        v[:, -1, :-1, :] = v_[:, 0, :, :]
+        v[:,:-1,:-1,:] = v_
+        v[:,-1, :-1,:] = v_[:, 0, :, :]
         v[:, :, -1, :] = v[:, :, 0, :]
-        w[:, -1, :-1, :] = w_[:, 0, :, :]
+        w[:,:-1,:-1,:] = w_
+        w[:,-1, :-1,:] = w_[:, 0, :, :]
         w[:, :, -1, :] = w[:, :, 0, :]
-        T[:, -1, :-1, :] = T_[:, 0, :, :]
+        T[:,:-1,:-1,:] = T_
+        T[:,-1, :-1,:] = T_[:, 0, :, :]
         T[:, :, -1, :] = T[:, :, 0, :]
-        Y[:, -1, :-1, :] = Y_[:, 0, :, :]
+        Y[:,:-1,:-1,:] = Y_
+        Y[:,-1, :-1,:] = Y_[:, 0, :, :]
         Y[:, :, -1, :] = Y[:, :, 0, :]
+        p[:,:-1,:-1,:] = p_
+        p[:, -1, :-1, :] = p_[:, 0, :, :]
+        p[:, :, -1, :] = p[:, :, 0, :]
         data = {
             'u': u,
             'v': v,
             'w': w,
             'T': T,
             'Y': Y,
-            'p': p
+            'p': p,
+            'u_': u_,
+            'v_': v_,
+            'w_': w_,
+            'T_': T_,
+            'Y_': Y_,
+            'p_': p_
         }
     return data
 
@@ -623,7 +639,7 @@ def solve_pde_2D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
             T_min, T_max = np.min(z[n+1, 2]), np.max(z[n+1, 2])
             Y_min, Y_max = np.min(z[n+1, 3]), np.max(z[n+1, 3])
             # Show/print log
-            log_time_step(log_file, n+1, t[n], CFL, T_min, T_max, Y_min, Y_max, elapsed_time)
+            log_time_step(log_file, n+1, t[n+1], CFL, T_min, T_max, Y_min, Y_max, elapsed_time)
     else: # Save every NT steps
         # Approximation
         z = np.zeros((Nt // NT + 1, r_0.shape[0], Ny, Nx - 1)) 
@@ -643,7 +659,7 @@ def solve_pde_2D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
                 CFL = dt * (np.max(np.abs(z_tmp[0])) / dx + np.max(np.abs(z_tmp[1])) / dy)  # Compute CFL
                 T_min, T_max = np.min(z_tmp[2]), np.max(z_tmp[2])
                 Y_min, Y_max = np.min(z_tmp[3]), np.max(z_tmp[3]) 
-                log_time_step(log_file, n+1, t[n], CFL, T_min, T_max, Y_min, Y_max, step_elapsed_time)
+                log_time_step(log_file, n+1, t[n+1], CFL, T_min, T_max, Y_min, Y_max, step_elapsed_time)
     solver_time_end = time.time()
     solver_time = (solver_time_end - solver_time_start)
     print("\nSolver time: ", str(timedelta(seconds=round(solver_time))), "\n")
@@ -704,7 +720,7 @@ def solve_pde_3D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
             CFL = dt * (np.max(np.abs(z[n+1, 0])) / dx + np.max(np.abs(z[n+1, 1])) / dy + np.max(np.abs(z[n+1, 2])) / dz)  # Compute CFL
             T_min, T_max = np.min(z[n+1, 3]), np.max(z[n+1, 3])
             Y_min, Y_max = np.min(z[n+1, 4]), np.max(z[n+1, 4])
-            log_time_step(log_file, n+1, t[n], CFL, T_min, T_max, Y_min, Y_max, elapsed_time)
+            log_time_step(log_file, n+1, t[n+1], CFL, T_min, T_max, Y_min, Y_max, elapsed_time)
     else: # Save every NT steps
         # Approximation
         z = np.zeros((Nt // NT + 1, r_0.shape[0], Ny - 1, Nx - 1, Nz)) 
@@ -724,7 +740,7 @@ def solve_pde_3D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
                 CFL = dt * (np.max(np.abs(z_tmp[0])) / dx + np.max(np.abs(z_tmp[1])) / dy + np.max(np.abs(z_tmp[2])) / dz)  # Compute CFL
                 T_min, T_max = np.min(z_tmp[3]), np.max(z_tmp[3])
                 Y_min, Y_max = np.min(z_tmp[4]), np.max(z_tmp[4]) 
-                log_time_step(log_file, n+1, t[n], CFL, T_min, T_max, Y_min, Y_max, step_elapsed_time)
+                log_time_step(log_file, n+1, t[n+1], CFL, T_min, T_max, Y_min, Y_max, step_elapsed_time)
     solver_time_end = time.time()
     solver_time = (solver_time_end - solver_time_start)
     print("\nSolver time: ", str(timedelta(seconds=round(solver_time))), "\n")

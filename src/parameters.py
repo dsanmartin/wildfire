@@ -101,8 +101,8 @@ T0_x_start = 0
 T0_x_end = T0_x_start + 6 #4#2 # PLATE -> x_start + 3.3 (FDS)
 T0_x_center = (T0_x_start + T0_x_end) / 2
 T0_length = (T0_x_end - T0_x_start)
-T0_y_start = 0
-T0_y_end = T0_y_start + 6 #
+T0_y_start = 80
+T0_y_end = 120 #T0_y_start + 6 #
 T0_y_center = (T0_y_start + T0_y_end) / 2
 T0_width = (T0_y_end - T0_y_start)
 # 'Height' of initial fire source in m

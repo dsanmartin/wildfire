@@ -6,7 +6,7 @@ from ibm import topography_nodes, topography_nodes_3D, topography_distance, topo
 from pde import solve_pde_2D, solve_pde_3D
 from logs import log_params
 from input_output import save_approximation, save_parameters
-from plots import plot_initial_conditions
+from plots import plot_initial_conditions, plot_initial_conditions_3D
 
 class Wildfire:
 
@@ -56,7 +56,7 @@ class Wildfire:
             S_0 = np.sqrt(U_0 ** 2 + V_0 ** 2)
             plot_initial_conditions(Xm, Ym, U_0, V_0, S_0, T_0, Y_0, plot_lims=[[0, 200], [0, 20]])
         if self.parameters['debug']:  
-            return False
+            raise SystemExit()
         # We assume Dirichlet boundary conditions on the beginning
         dirichlet_y_bc = np.array([
             [U_0[0], U_0[-1]],
@@ -123,9 +123,18 @@ class Wildfire:
             Y_0[dead_nodes] = self.parameters['dead_nodes_values'][4]
         if self.parameters['show_ic']:
             S_0 = np.sqrt(U_0 ** 2 + V_0 ** 2 + W_0 ** 2)
-            plot_initial_conditions(Xm, Ym, U_0, V_0, S_0, T_0, Y_0, plot_lims=[[0, 200], [0, 20]])
+            # T_mask = T_0 > 300
+            # Xp = Xm[T_mask]
+            # Yp = Ym[T_mask]
+            # Zp = Zm[T_mask]
+            # Tp = T_0[T_mask]
+            # plot_initial_conditions_3D(Xp, Yp, Zp, U_0, V_0, W_0, S_0, Tp, Y_0, plot_lims=[[0, 200], [0, 200], [0, 20]])
+            # plot_initial_conditions_3D(Xm, Ym, Zm, U_0, V_0, W_0, S_0, T_0, Y_0, plot_lims=[[0, 200], [0, 200], [0, 20]])
+            y_j = Ny // 2 
+            plot_initial_conditions_3D(Xm[y_j], Ym[y_j], Zm[y_j], U_0[y_j], V_0[y_j], W_0[y_j], S_0[y_j], T_0[y_j], Y_0[y_j], plot_lims=[[0, 200], [0, 200], [0, 20]])
+            # plot_initial_conditions(Xm[:,:,Nz//2], Ym[:,:,Nz//2], U_0[:,:,Nz//2], V_0[:,:,Nz//2], S_0[:,:,Nz//2], T_0[:,:,Nz//2], Y_0[:,:,Nz//2], plot_lims=[[0, 200], [0, 20]])
         if self.parameters['debug']: 
-            return False
+            raise SystemExit()
         # We assume Dirichlet boundary conditions on the beginning
         dirichlet_z_bc = np.array([
             [U_0[:,:,0], U_0[:,:,-1]],

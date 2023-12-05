@@ -132,13 +132,13 @@ dmypy.json
 # Extra folders
 .vscode/
 data/
-src/2d/
-src/2d/output/
-src/2d/input/
-src/2d/others/
-src/2d/gpu/
-src/3d/output/
+others/
+docs/
 
 # Script
 src/*/*.sh
 !src/2d/run.sh
+
+# Sphinx
+.readthedocs.yaml
+pyproject.toml

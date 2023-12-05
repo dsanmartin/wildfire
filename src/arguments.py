@@ -152,7 +152,9 @@ if config.has_section("topography"):
 if config.has_section("fuel"):
     if config.has_option("fuel", "Y_D"):
         Y_D = config.getfloat("fuel", "Y_D")
-
+if config.has_section("temperature"):
+    if config.has_option("temperature", "T_hot"):
+        T_hot = config.getfloat("temperature", "T_hot")
 
 parameters = {
     # Fluid
@@ -188,7 +190,7 @@ parameters = {
     'u_ast': u_ast,
     'kappa': k,
     'u_r': u_r,
-    'y_r': z_r,
+    'z_r': z_r,
     'alpha': alpha,
     # Temperature
     'T0_shape': T0_shape,

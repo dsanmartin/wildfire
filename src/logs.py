@@ -25,7 +25,11 @@ def log_params(params: dict, save: bool = False) -> None:
     t_min, t_max = params['t'][0], params['t'][-1]
     Nx, Ny, Nt, NT = params['Nx'],params['Ny'], params['Nt'], params['NT']
     dx, dy, dt = params['dx'], params['dy'], params['dt']
-    U_0, V_0, T_0 = params['u0'], params['v0'], params['T0']
+    # U_0, V_0, T_0 = params['u0'], params['v0'], params['T0']
+    if 'z' in params:
+        z_min, z_max = params['z'][0], params['z'][-1]
+        Nz = params['Nz']
+        dz = params['dz']
     sim_name = params['sim_name']
     method = params['method']
     rho, T_hot, T_inf, T_pc = params['rho'], params['T_hot'], params['T_inf'], params['T_pc']
@@ -39,7 +43,7 @@ def log_params(params: dict, save: bool = False) -> None:
     include_source = params['include_source']
     initial_u_type = params['initial_u_type']
     u_z_0, d, u_ast, kappa = params['u_z_0'], params['d'], params['u_ast'], params['kappa']
-    u_r, y_r, alpha = params['u_r'], params['y_r'], params['alpha']
+    u_r, z_r, alpha = params['u_r'], params['z_r'], params['alpha']
     T0_shape = params['T0_shape']
     T0_x_start, T0_x_end, T0_y_start, T0_y_end = params['T0_x_start'], params['T0_x_end'], params['T0_y_start'], params['T0_y_end']
     T0_x_center, T0_length, T0_height = params['T0_x_center'], params['T0_length'], params['T0_height']
@@ -63,12 +67,17 @@ def log_params(params: dict, save: bool = False) -> None:
         f = sys.stdout
 
     print("Simulation name:", sim_name, file=f)
-    print("Domain: [%.4f, %.4f] x [%.4f, %.4f] x [%.4f, %.4f]" % (x_min, x_max, y_min, y_max, t_min, t_max), file=f)
-    print("Grid size: Nx: %d, Ny: %d, Nt: %d" % (Nx, Ny, Nt), file=f)
-    print("dx: %.4f, dy: %.4f, dt: %.4f" % (dx, dy, dt), file=f)
+    if 'z' in params:
+        print("Domain: [%.4f, %.4f] x [%.4f, %.4f] x [%.4f, %.4f] x [%.4f, %.4f]" % (x_min, x_max, y_min, y_max, z_min, z_max, t_min, t_max), file=f)
+        print("Grid size: Nx: %d, Ny: %d, Nz: %d, Nt: %d" % (Nx, Ny, Nz, Nt), file=f)
+        print("dx: %.4f, dy: %.4f, dz: %.4f, dt: %.4f" % (dx, dy, dz, dt), file=f)
+    else:
+        print("Domain: [%.4f, %.4f] x [%.4f, %.4f] x [%.4f, %.4f]" % (x_min, x_max, y_min, y_max, t_min, t_max), file=f)
+        print("Grid size: Nx: %d, Ny: %d, Nt: %d" % (Nx, Ny, Nt), file=f)
+        print("dx: %.4f, dy: %.4f, dt: %.4f" % (dx, dy, dt), file=f)
     print("Time integration: %s" % method, file=f)
     print("Time samples: %d" % NT, file=f)
-    print("nu: %.2e, g: (%.4f, %.4f)" % (nu, g[0], g[1]), file=f)
+    print("nu: %.2e, g: (%.4f, %.4f, %.4f)" % (nu, *g), file=f)
     print("k: %.2e, C_p: %.4f, T_inf: %.4f, T_hot: %.4f" % (k, C_p, T_inf, T_hot), file=f)
     print("rho: %.4f, T_pc: %.4f, A: %.4f, T_act: %.4f" % (rho, T_pc, A, T_act), file=f)
     print("H_R: %.4f, h: %.4f, a_v: %.4f, Y_D: %.4f, Y_f: %.4f" % (H_R, h, a_v, Y_D, Y_f), file=f)
@@ -76,7 +85,7 @@ def log_params(params: dict, save: bool = False) -> None:
     if initial_u_type == 'log':
         print("z_0: %.4f, d: %.4f, u_ast: %.4f, kappa: %.4f" % (u_z_0, d, u_ast, kappa), file=f)
     else:
-        print("  u_r: %.4f, y_r: %.4f, alpha: %.4f" % (u_r, y_r, alpha), file=f)
+        print("  u_r: %.4f, z_r: %.4f, alpha: %.4f" % (u_r, z_r, alpha), file=f)
     print("Initial temperature shape: %s" % T0_shape, file=f)
     print("  x: [%.4f, %.4f], y: [%.4f, %.4f]" % (T0_x_start, T0_x_end, T0_y_start, T0_y_end), file=f)
     print("  x center: %.4f, length: %.4f, height: %.4f" % (T0_x_center, T0_length, T0_height), file=f)

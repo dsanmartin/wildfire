@@ -76,7 +76,12 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
     # Get the spacing
     dx = x[1] - x[0]
     dy = y[1] - y[0]
-    x, y = np.meshgrid(x, y) # Create meshgrid for plotting
+    # Create meshgrid for plotting
+    # x, y = np.meshgrid(x, y) 
+    if 'z' in data:
+        z = data['z']
+        dz = z[1] - z[0]
+        # x, y, z = np.meshgrid(x, y, z) # Create meshgrid for plotting
     t = t[:tn] if tn is not None else t
     # Add each variable 'phi' to the data_plots dictionary
     # The format is {'phi': {'data': [phi, ...], 'bounds': [phi_min, phi_max], 'ticks': phi_ticks}, ...}
@@ -95,6 +100,13 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
             'data': v,
             'bounds': [v_min - 1, v_max + 1],
             'ticks': np.round(np.linspace(v_min, v_max, 5), 1)
+        }
+    if 'w' in plots:
+        w, w_min, w_max = get_variable(data, 'w', tn)
+        data_plots['w'] = {
+            'data': w,
+            'bounds': [w_min - 1, w_max + 1],
+            'ticks': np.round(np.linspace(w_min, w_max, 5), 1)
         }
     if 'T' in plots:
         T, T_min, T_max = get_variable(data, 'T', tn)
@@ -133,14 +145,22 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
         u, _, _ = get_variable(data, 'u', tn)
         v, _, _ = get_variable(data, 'v', tn)
         U = np.array([u, v])
-
+        if 'z' in data:
+            w, _, _ = get_variable(data, 'w', tn)
+            U = np.array([u, v, w])
+        
     # Add vector field computations
     if 'modU' in plots:
         # Compute speed
-        modU = np.sqrt(u**2 + v**2)
+        if 'z' in data:
+            modU = np.sqrt(u**2 + v**2 + w**2)
+            data_ = [modU, u, v, w]
+        else:
+            modU = np.sqrt(u**2 + v**2)
+            data_ = [modU, u, v]
         modU_min, modU_max = modU.min(), modU.max()
         data_plots['modU'] = {
-            'data': [modU, u, v],
+            'data': data_,
             'bounds': [modU_min - 1, modU_max + 1],
             'ticks': np.round(np.linspace(modU_min, modU_max, 5), 1)
         }
@@ -160,7 +180,11 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
             'bounds': [curlU_min - 1, curlU_max + 1],
             'ticks': np.round(np.linspace(curlU_min, curlU_max, 5), 1)
         }
-    return x, y, t, data_plots
+    if 'z' in data:
+        domain = (x, y, z, t)
+    else:
+        domain = (x, y, t)
+    return domain, data_plots
 
 def plot_scalar_field(fig: plt.Figure, ax: plt.Axes, x: np.ndarray, y: np.ndarray, z: np.ndarray, cmap: plt.cm, 
         z_bounds: list, ticks: list, title: str = None, label: str = None, alpha: float = 1, plot_type: str = 'imshow') -> None:
@@ -220,6 +244,31 @@ def plot_scalar_field(fig: plt.Figure, ax: plt.Axes, x: np.ndarray, y: np.ndarra
             fig.colorbar(m, ax=ax, ticks=ticks, label=label)
     return None
 
+def plot_scalar_field_3D(fig: plt.Figure, ax: plt.Axes, x: np.ndarray, y: np.ndarray, z: np.ndarray, f: np.ndarray, cmap: plt.cm, 
+        f_bounds: list, ticks: list, title: str = None, label: str = None, alpha: float = 1, plot_type: str = 'imshow') -> None:
+    # X, Y, Z = np.meshgrid(x, y, z)
+    f_min, f_max = f_bounds
+    # levels = np.linspace(f_min, f_max, 100)  #(z_min,z_max,number of contour),
+    X, Y, Z = x, y, z
+    # f_min, f_max = f.min(), f.max()
+    # print(f_min, f_max)
+    # label = 'Temperature'
+    # m = plt.cm.ScalarMappable(cmap=cmap)
+    # m.set_array(f)
+    # m.set_clim(f_min, f_max)
+    # # Creating plot
+    m = ax.scatter(X, Y, Z, c=f, alpha=0.5, marker='o', cmap=cmap)
+    fig.colorbar(m, ax=ax, ticks=ticks, label=label)
+    # print(x.shape, y.shape, z.shape, f.shape)
+    # ax.plot_surface(x[0, :, 0], y[:, 0, 0], f[:, :, 1], cmap=cmap, vmin=f_min, vmax=f_max, alpha=alpha)
+    # ax.contourf3D(x[0, :, 0], y[:, 0, 0], f[:, :, 1], cmap=cmap, vmin=f_bounds[0], vmax=f_bounds[1], alpha=alpha)#, levels=levels)
+    # ax.contourf(x[:,:,0], y[:,:,0], f[:,:,2], 1+levels, cmap=cmap, vmin=f_bounds[0], vmax=f_bounds[1], alpha=.75)#, levels=[0, 1])
+    # ax.imshow(f[:,:,0], cmap=cmap, extent=[x.min(), x.max(), y.min(), y.max()], origin='lower', interpolation='bilinear', vmin=f_min, vmax=f_max, alpha=alpha)
+    # ax.plot_surface(x[0, :, 0], z[0, 0, :], f[f.shape[1] // 2, :, :], cmap=cmap, vmin=f_bounds[0], vmax=f_bounds[1], alpha=alpha)
+
+
+    return None
+
 def plot_vector_field(ax: plt.Axes, x: np.ndarray, y: np.ndarray, u: np.ndarray, v: np.ndarray, 
         streamplot: bool = True, qs: int = 1, density: float = .6, linewidth: float = .5, arrowsize: float = .3, color: str = 'k') -> None:
     """
@@ -260,7 +309,53 @@ def plot_vector_field(ax: plt.Axes, x: np.ndarray, y: np.ndarray, u: np.ndarray,
         ax.quiver(x[::qs,::qs], y[::qs,::qs], u[::qs,::qs], v[::qs,::qs], scale=1, scale_units='xy', color=color)
     return None
 
-def plot(n: int, t: np.ndarray, x: np.ndarray, y: np.ndarray, plots: dict, plot_lims: list, 
+def plot_vector_field_3D(ax: plt.Axes, x: np.ndarray, y: np.ndarray, z: np.ndarray, u: np.ndarray, v: np.ndarray, w: np.ndarray,
+        streamplot: bool = False, qs: int = 1, density: float = .6, linewidth: float = .5, arrowsize: float = .3, color: str = 'k') -> None:
+    """
+    Plot a vector field on a given axis.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The axis on which to plot the vector field.
+    x : numpy.ndarray
+        The x-coordinates of the grid points.
+    y : numpy.ndarray
+        The y-coordinates of the grid points.
+    u : numpy.ndarray
+        The x-components of the vector field.
+    v : numpy.ndarray
+        The y-components of the vector field.
+    streamplot : bool, optional
+        If True, plot the vector field using a streamplot. Otherwise, plot using a quiver plot.
+    qs : int, optional
+        The stride of the quiver plot. Only used if `streamplot` is False.
+    density : float, optional
+        Controls the closeness of streamlines in a streamplot. Only used if `streamplot` is True.
+    linewidth : float, optional
+        The linewidth of the streamlines in a streamplot. Only used if `streamplot` is True.
+    arrowsize : float, optional
+        The size of the arrows in a streamplot or quiver plot. Default is .3.
+    color : str, optional
+        The color of the streamlines or arrows. Default is 'k' (black).
+
+    Returns
+    -------
+    None
+    """
+    if streamplot: 
+        ax.streamplot(x, y, u, v, density=density, linewidth=linewidth, arrowsize=arrowsize, color=color)
+    else: 
+        X = x[::qs,::qs,::qs]
+        Y = y[::qs,::qs,::qs]
+        Z = z[::qs,::qs,::qs]
+        U = u[::qs,::qs,::qs]
+        V = v[::qs,::qs,::qs]
+        W = w[::qs,::qs,::qs]
+        ax.quiver(X, Y, Z, U, V, W, color=color, normalize=True, length=1)
+    return None
+
+def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, 
         title: bool = True, filename: str = None, dpi: int = 200, streamplot: bool = True, qs: int = 1, density: float = 1) -> None:
     """
     Plot simulation data for time step `n`.
@@ -269,19 +364,16 @@ def plot(n: int, t: np.ndarray, x: np.ndarray, y: np.ndarray, plots: dict, plot_
     ----------
     n : int
         Index of the time step to plot.
-    t : numpy.ndarray (Nt)
-        Time value of the time step to plot.
-    x : numpy.ndarray (Nx) or (Ny, Nx)
-        1D or 2D array with the x-coordinates of the grid.
-    y : numpy.ndarray
-        1D or 2D array with the y-coordinates of the grid.
+    domain: tuple
+        Tuple with the domain (x, y, t) or (x, y, z, t).
+        Each element is a numpy.ndarray with the coordinates of the domain.
     plots : dict
         Dictionary with the data to plot. The keys are the names of the variables to plot and the values are dictionaries with the following keys:
         - 'data': numpy.ndarray with the data to plot.
         - 'bounds': list with the minimum and maximum values of the data.
         - 'ticks': list with the tick values of the colorbar.
     plot_lims : list
-        Tuple with the limits of the variable 'phi' (phi_min, phi_max).
+        List with plot's limits. [x_min, x_max, y_min, y_max] or [x_min, x_max, y_min, y_max, z_min, z_max].
     title : bool, optional
         Whether to add a title to the plot. Default is True. Title is the time value of the time step.
     filename : str, optional
@@ -298,91 +390,147 @@ def plot(n: int, t: np.ndarray, x: np.ndarray, y: np.ndarray, plots: dict, plot_
     None
     """
     n_plots = len(plots)
-    x_min, x_max, y_min, y_max = plot_lims
+    
     fig, axes = plt.subplots(n_plots, 1, sharex=True, figsize=(12, n_plots * 2))#, dpi=dpi)
+    if len(domain) == 3:
+        x_min, x_max, y_min, y_max = plot_lims
+        x, y, t = domain
+        v_min, v_max = y_min, y_max
+        plot_title = r'Simulation at $t=%.1f$ s' % (t[n])
+    elif len(domain) == 4:
+        x_min, x_max, y_min, y_max, z_min, z_max = plot_lims
+        x, y, z, t = domain
+        v_min, v_max = z_min, z_max
+        y_j = y.shape[0] // 2 # Show vertical slice at the middle
+        plot_title = r'Simulation at $y=%.1f$ m and $t=%.1f$ s' % (y[y_j], t[n])
+        y = z # Plot in z-axis
+
+    # Just to keep the indexing 
+    if n_plots == 1: 
+        axes = [axes]
+
+    # Set axes limits and labels
     axes[-1].set_xlabel(hvariable)
     axes[-1].set_xlim(x_min, x_max)
     for i in range(len(axes)):
         axes[i].set_ylabel(vvariable)
-        axes[i].set_ylim(y_min, y_max)
+        axes[i].set_ylim(v_min, v_max)
 
     if title:
-        fig.suptitle(r'Simulation at $t=%.1f$ s' % (t[n]))
+        fig.suptitle(plot_title)
         fig.subplots_adjust(top=0.88)
 
     i = 0
 
-    if "u" in plots:
+    if "u" in plots: # Plot velocity component u
+        u = plots['u']['data'][n]
+        if len(domain) == 4:
+            u = u[y_j].T
         plot_scalar_field(
-            fig, axes[i], x, y, plots['u']['data'][n], plt.cm.viridis, 
+            fig, axes[i], x, y, u, plt.cm.viridis, 
             plots['u']['bounds'], plots['u']['ticks'], r'Velocity component  $u$', r'm s$^{-1}$'
         )
         i += 1
 
-    if "v" in plots:
+    if "v" in plots: # Plot velocity component v
+        v = plots['v']['data'][n]
+        if len(domain) == 4:
+            v = v[y_j].T
         plot_scalar_field(
-            fig, axes[i], x, y, plots['v']['data'][n], plt.cm.viridis, 
+            fig, axes[i], x, y, v, plt.cm.viridis, 
             plots['v']['bounds'], plots['v']['ticks'], r'Velocity component  $v$', r'm s$^{-1}$'
         )
         i += 1
-
-    if "modU" in plots:
-        # Plot speed
+    
+    if "w" in plots: # Plot velocity component w
+        w = plots['w']['data'][n]
+        if len(domain) == 4:
+            w = w[y_j].T
         plot_scalar_field(
-            fig, axes[i], x, y, plots['modU']['data'][0][n], plt.cm.viridis, 
+            fig, axes[i], x, y, w, plt.cm.viridis, 
+            plots['w']['bounds'], plots['w']['ticks'], r'Velocity component  $w$', r'm s$^{-1}$'
+        )
+        i += 1
+
+    if "modU" in plots: # Plot speed
+        modU = plots['modU']['data'][0][n]
+        u, v = plots['modU']['data'][1][n], plots['modU']['data'][2][n]
+        if len(domain) == 4:
+            modU = modU[y_j].T
+            w = plots['modU']['data'][3][n]
+            u = u[y_j].T
+            v = v[y_j].T
+            w = w[y_j].T
+            v = w
+        plot_scalar_field(
+            fig, axes[i], x, y, modU, plt.cm.viridis, 
             plots['modU']['bounds'], plots['modU']['ticks'], r'Velocity $\mathbf{u}$, Speed $||\mathbf{u}||_2$', r'm s$^{-1}$', .8
         )
         # Plot velocity
         plot_vector_field(
-            axes[i], x, y, plots['modU']['data'][1][n], plots['modU']['data'][2][n], streamplot=streamplot, qs=qs, density=density
+            axes[i], x, y, u, v, streamplot=streamplot, qs=qs, density=density
         )
         i += 1
 
-    if "divU" in plots:
-        # Plot divergence
+    if "divU" in plots: # Plot divergence
+        divU = plots['divU']['data'][n]
+        if len(domain) == 4:
+            divU = divU[y_j].T        
         plot_scalar_field(
-            fig, axes[i], x, y, plots['divU']['data'][n], plt.cm.viridis, 
+            fig, axes[i], x, y, divU, plt.cm.viridis, 
             plots['divU']['bounds'], plots['divU']['ticks'], r'Divergence $\nabla\cdot\mathbf{u}$', r's$^{-1}$'
         )
         i += 1
 
-    if "curlU" in plots:
-        # Plot curl
+    if "curlU" in plots: # Plot curl
+        curlU = plots['curlU']['data'][n]
+        if len(domain) == 4:
+            curlU = curlU[y_j].T        
         plot_scalar_field(
-            fig, axes[i], x, y, plots['curlU']['data'][n], plt.cm.viridis, 
+            fig, axes[i], x, y, curlU, plt.cm.viridis, 
             plots['curlU']['bounds'], plots['curlU']['ticks'], r'Vorticity $\nabla\times\mathbf{u}$', r's$^{-1}$'
         )
         i += 1
 
-    if "T" in plots:
-        # Plot temperature
+    if "T" in plots: # Plot temperature
+        T = plots['T']['data'][n]
+        if len(domain) == 4:
+            T = T[y_j].T
         plot_scalar_field(
-            fig, axes[i], x, y, plots['T']['data'][n], plt.cm.jet, 
+            fig, axes[i], x, y, T, plt.cm.jet, 
             plots['T']['bounds'], plots['T']['ticks'], r'Temperature $T$', r'K'
         )
         i += 1
     
-    if "Y" in plots:
-        # Plot fuel
+    if "Y" in plots: # Plot fuel and terrain (IBM nodes)
+        Y = plots['Y']['data'][0][n]
+        terrain = plots['Y']['data'][1]
+        if len(domain) == 4:
+            Y = Y[y_j].T
+            terrain = terrain[y_j].T
         plot_scalar_field(
-            fig, axes[i], x, y, plots['Y']['data'][0][n], plt.cm.Oranges, 
+            fig, axes[i], x, y, Y, plt.cm.Oranges, 
             plots['Y']['bounds'], plots['Y']['ticks'], r'Fuel $Y$', r'\%'
         )
-        # Plot terrain (IBM nodes)
         plot_scalar_field(
-            fig, axes[i], x, y, plots['Y']['data'][1], ListedColormap(['black']), [0, 1], None, None, None
+            fig, axes[i], x, y, terrain, ListedColormap(['black']), [0, 1], None, None, None
         )
         i += 1
 
-    if "p" in plots:
-        # Plot pressure
+    if "p" in plots: # Plot pressure and pressure gradient
+        p = plots['p']['data'][0][n]
+        px = plots['p']['data'][1][0][n]
+        py = plots['p']['data'][1][1][n]
+        if len(domain) == 4:
+            p = p[y_j].T
+            px = px[y_j].T
+            py = py[y_j].T
         plot_scalar_field(
-            fig, axes[i], x, y, plots['p']['data'][0][n], plt.cm.viridis, 
+            fig, axes[i], x, y, p, plt.cm.viridis, 
             plots['p']['bounds'], plots['p']['ticks'], r'Pressure $p$', r"kg m$^{-1}s^{-2}$", .8
         )
-        # Plot pressure gradient
         plot_vector_field(
-            axes[i], x, y, plots['p']['data'][1][0][n], plots['p']['data'][1][1][n], streamplot=streamplot, qs=qs, density=density
+            axes[i], x, y, px, py, streamplot=streamplot, qs=qs, density=density
         )
         i += 1
     
@@ -460,6 +608,104 @@ def plot_initial_conditions(x: np.ndarray, y: np.ndarray, u: np.ndarray, v: np.n
     plt.show()
     return None
 
+def plot_initial_conditions_3D(x: np.ndarray, y: np.ndarray, z: np.ndarray, u: np.ndarray, v: np.ndarray, w: np.ndarray,
+        s: np.ndarray, T: np.ndarray, Y: np.ndarray, plot_lims: list = None) -> None:
+    """
+    Plots the initial conditions of a wildfire simulation.
+
+    Parameters
+    ----------
+    x : numpy.ndarray (Ny, Nx) 
+        Array of x-coordinates.
+    y : numpy.ndarray (Ny, Nx) 
+        Array of y-coordinates.
+    u : numpy.ndarray (Ny, Nx) 
+        Array of velocity component u.
+    v : numpy.ndarray (Ny, Nx)
+        Array of velocity component v.
+    s : numpy.ndarray (Ny, Nx)
+        Array of speed.
+    T : numpy.ndarray (Ny, Nx)
+        Array of temperature.
+    Y : numpy.ndarray (Ny, Nx)
+        Array of fuel.
+    plot_lims : list, optional
+        List containing the limits of the plot, in the form [[xmin, xmax], [ymin, ymax]], by default None.
+
+    Returns
+    -------
+    None
+    """
+    """
+    fig, axes = plt.subplots(2, 1, figsize=(12, 8), subplot_kw=dict(projection='3d'))
+    # axes.set_aspect('equal')
+    # for i in range(len(axes)):
+    #     # axes[i].set_box_aspect(aspect=(1, 1, .1))
+    #     axes[i].set_xlim3d(plot_lims[0])
+    #     axes[i].set_ylim3d(plot_lims[1])
+    #     axes[i].set_zlim3d(plot_lims[2])
+
+    T_mask = T > 300
+    Xp = x[T_mask]
+    Yp = y[T_mask]
+    Zp = z[T_mask]
+    Tp = T[T_mask]
+    plot_scalar_field_3D(fig, axes[0], Xp, Yp, Zp, Tp, plt.cm.jet, 
+        [T.min(), T.max()], None, r'Temperature $T$', r'K') 
+    
+    # Plot velocity 
+    plot_vector_field_3D(axes[1], x, y, z, u, v, w, streamplot=False, qs=4, density=1)
+    # Plot speed
+    # plot_scalar_field_3D(fig, axes[1], x, y, z, s, plt.cm.viridis, [s.min(), s.max()], None, r'Speed $\|\mathbf{u}\|$', r'm s$^{-1}$')
+    
+    # Set limits
+    
+    # axes[0].set_xlim(plot_lims[0])
+    # axes[0].set_ylim(plot_lims[1])
+    # axes[1].set_ylim(plot_lims[2])
+    # axes[1].set_xlim(plot_lims[0])
+    """
+    fig, axes = plt.subplots(6, 1, sharex=True, figsize=(12, 10))
+
+    # Axis labels
+    axes[-1].set_xlabel('x')
+    for i in range(len(axes)):
+        axes[i].set_ylabel('z')
+
+    # Set limits if given
+    if plot_lims is not None:
+        for i in range(len(axes)):
+            axes[i].set_xlim(plot_lims[0])
+            axes[i].set_ylim(plot_lims[2])
+
+    # Plot speed
+    plot_scalar_field(fig, axes[0], x, z, s.T, plt.cm.viridis, 
+        [s.min(), s.max()], None, r'Speed $\|\mathbf{u}\|$', r'm s$^{-1}$') 
+    
+    # Plot velocity u component
+    plot_scalar_field(fig, axes[1], x, z, u.T, plt.cm.viridis,
+        [u.min(), u.max()], None, r'Velocity component $u$', r'm s$^{-1}$')
+    
+    # Plot velocity v component
+    plot_scalar_field(fig, axes[2], x, z, v.T, plt.cm.viridis,
+        [v.min(), v.max()], None, r'Velocity component $v$', r'm s$^{-1}$')
+    
+    # Plot velocity w component
+    plot_scalar_field(fig, axes[3], x, z, w.T, plt.cm.viridis,
+        [w.min(), w.max()], None, r'Velocity component $w$', r'm s$^{-1}$')
+    
+    # Plot temperature
+    plot_scalar_field(fig, axes[4], x, z, T.T, plt.cm.jet,
+        [T.min(), T.max()], None, r'Temperature $T$', r'K')
+    
+    # Plot fuel
+    plot_scalar_field(fig, axes[5], x, z, Y.T, plt.cm.Oranges,
+        [Y.min(), Y.max()], None, r'Fuel $Y$', r'\%')
+
+    fig.tight_layout() # Adjust spacing between subplots
+    plt.show()
+    return None
+
 def plot_grid_ibm(x, y, topo, cut_nodes, dead_nodes):
     # AA = np.zeros_like(Xm)
     # AA[cut_nodes[0], cut_nodes[1]] = 1
@@ -481,7 +727,7 @@ def plot_1D(x, y):
     plt.grid(True)
     plt.show()
 
-def plot_2D(x, y, z, cmap=plt.cm.jet):
+def plot_2D_old(x, y, z, cmap=plt.cm.jet):
     plt.figure(figsize=(12, 6))
     plt.contourf(x, y, z, cmap=cmap)
     plt.colorbar()
