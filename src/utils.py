@@ -19,6 +19,7 @@ sutherland = lambda T: S_k_0 * (T / S_T_0) ** 1.5 * (S_T_0 + S_k) / (T + S_k) / 
 sutherland_T = lambda T: 1.5 * S_k_0 * (S_T_0 + S_k) / T ** 1.5 * (T ** .5 * (T + S_k) - T ** 1.5) / (T + S_k) ** 2 / (rho * C_p) # Sutherland's law derivative
 stefan_radiation = lambda T: 4 * sigma * delta * T ** 3 / (rho * C_p) # Stefan-Boltzmann law
 stefan_radiation_T = lambda T: 12 * sigma * delta * T ** 2 / (rho * C_p) # Stefan-Boltzmann law derivative
+gamma = lambda r, s, dz, Nx, Ny: - (2 + (2 * np.pi * dz) ** 2 * ((r / Nx) ** 2 + (s / Ny) ** 2))
 # # Convective heat transfer coefficient
 if h < 0:
     hv = lambda v: np.piecewise(v, [v < 2, v >= 2], [

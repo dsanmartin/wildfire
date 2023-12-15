@@ -111,7 +111,7 @@ T0_z_end = 1 # PLATE -> .25
 T0_height = (T0_z_end - T0_z_start)
 
 # Fuel
-fuel_height = .51 #.5 # Height of fuel in m
+Y_h = .51 #.5 # Height of fuel in m
 
 # Topography
 topography_shape = 'flat' # 'flat' or 'hill'

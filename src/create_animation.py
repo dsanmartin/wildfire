@@ -20,6 +20,7 @@ parser.add_argument('-ymin', '--y-min', type=float, default=0, help="Bottom boun
 parser.add_argument('-ymax', '--y-max', type=float, default=20, help="Top boundary of domain in y.")
 parser.add_argument('-zmin', '--z-min', type=float, default=-1, help="Bottom boundary of domain in z.")
 parser.add_argument('-zmax', '--z-max', type=float, default=-1, help="Top boundary of domain in z.")
+parser.add_argument('-v', '--visualization', type=str, default='vertical', help="Slice to show. Options: 'vertical', 'horizontal' or 'longitudinal'. Default: 'vertical'.")
 args = parser.parse_args()
 
 # Default values
@@ -28,6 +29,7 @@ plots = args.plots.split(',') #"modU T p"
 input_dir = args.input
 output_dir = args.output
 show = args.show # plot, video or gif
+visualization = args.visualization # vertical, horizontal or longitudinal
 streamplot = True
 qs = 1 # Quiver samples
 ts = args.time_sample # Time samples
@@ -71,8 +73,7 @@ if z is not None:
     z_min, z_max = args.z_min, args.z_max
     if z_min == z_max == -1:
         z_min, z_max = z.min(), z.max()
-    plot_lims.append(z_min)
-    plot_lims.append(z_max)
+    plot_lims = [x_min, x_max, y_min, 200, z_min, z_max]
 
 # Filenames for output
 filenames = []
@@ -86,7 +87,7 @@ for n in range(0, Nt, ts):
         print("Creating figure %d/%d" % (n+1, Nt))
         filename = output_dir + str(n) + ext 
         filenames.append(filename)
-    plot_2D(n, domain, data_plots, plot_lims, title=True, filename=filename, dpi=dpi)
+    plot_2D(n, domain, data_plots, plot_lims, visualization=visualization, title=True, filename=filename, dpi=dpi)
 
 # Build video or GIF
 if show not in ["plot", "pdf"]:

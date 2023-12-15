@@ -227,12 +227,6 @@ def data_post_processing(z: np.ndarray, p: np.ndarray) -> dict:
             'T': T,
             'Y': Y,
             'p': p,
-            'u_': u_,
-            'v_': v_,
-            'w_': w_,
-            'T_': T_,
-            'Y_': Y_,
-            'p_': p_
         }
     return data
 

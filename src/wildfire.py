@@ -4,6 +4,7 @@ from utils import domain_2D, domain_3D
 from initial_conditions import U0, T0, Y0, p0, F, topo
 from ibm import topography_nodes, topography_nodes_3D, topography_distance, topography_distance_3D
 from pde import solve_pde_2D, solve_pde_3D
+from poisson import pre_computation
 from logs import log_params
 from input_output import save_approximation, save_parameters
 from plots import plot_initial_conditions, plot_initial_conditions_3D
@@ -144,6 +145,8 @@ class Wildfire:
             [Y_0[:,:,0], Y_0[:,:,-1]],
             [P_0[:,:,0], P_0[:,:,-1]]
         ])
+        # Get Poisson problem indices
+        indices = pre_computation(Nx, Ny, dz, x_max, y_max)
         # Add parameters to the dictionary
         self.parameters['x'] = x
         self.parameters['y'] = y
@@ -170,6 +173,16 @@ class Wildfire:
         self.parameters['bc_on_z'] = dirichlet_z_bc
         self.parameters['cut_nodes'] = cut_nodes
         self.parameters['dead_nodes'] = dead_nodes
+        self.parameters['indices'] = indices
+        # for gamma in indices:
+        #     print("gamma:", gamma)
+        #     print("r:", indices[gamma]['r'])
+        #     print("s:", indices[gamma]['s'])
+        # for i in range(len(indices)):
+        #     print("gamma:", indices[i][0])
+        #     print("r:", indices[i][1])
+        #     print("s:", indices[i][2])
+        # print(asd)
         # self.parameters['dead_nodes_values'] = dead_nodes_values
         self.parameters['Y_top'] = topo_distance
         if self.parameters['t_source'] > 0:

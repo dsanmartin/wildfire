@@ -49,7 +49,7 @@ def log_params(params: dict, save: bool = False) -> None:
     T0_x_center, T0_length, T0_height = params['T0_x_center'], params['T0_length'], params['T0_height']
     topography_shape = params['topography_shape']
     hill_center, hill_height, hill_length = params['hill_center'], params['hill_height'], params['hill_length']
-    fuel_height = params['fuel_height']
+    Y_h = params['Y_h']
     sutherland_law = params['sutherland_law']
     S_T_0, S_k_0, S_k = params['S_T_0'], params['S_k_0'], params['S_k']
     bound = params['bound']
@@ -59,7 +59,6 @@ def log_params(params: dict, save: bool = False) -> None:
     # Non dimensional numbers calculation
     Re, Gr, Ra, Sr, Ste, St, Ze = non_dimensional_numbers(params)
 
-    
     if save: # Print to file
         create_simulation_folder(dir_path) # Create simulation folder if it doesn't exist
         f = open(dir_path + 'parameters.txt', 'w')
@@ -92,7 +91,7 @@ def log_params(params: dict, save: bool = False) -> None:
     print("Topography shape: %s" % topography_shape, file=f)
     if topography_shape == 'hill':
         print("    Center: %.4f, Height: %.4f, Width: %.4f" % (hill_center, hill_height, hill_length), file=f)
-    print("Fuel height: %.4f" % fuel_height, file=f)
+    print("Fuel height: %.4f" % Y_h, file=f)
     print("Include source: %r" % include_source, file=f)
     print("Source filter: %r" % source_filter, file=f)
     if source_filter:

@@ -48,14 +48,12 @@ def save_approximation(parameters: dict, data: dict) -> None:
         u, v, T, Y, p = data['u'], data['v'], data['T'], data['Y'], data['p']
         NT = parameters['NT'] # Subsampling rate
         np.savez(filename, u=u, v=v, T=T, Y=Y, p=p, x=x, y=y, t=t[::NT])
-    # elif len(data) == 6:
-    else:
+    elif len(data) == 6:
         x, y, z, t = parameters['x'], parameters['y'], parameters['z'], parameters['t']
         u, v, w, T, Y, p = data['u'], data['v'], data['w'], data['T'], data['Y'], data['p']
-        u_, v_, w_, T_, Y_, p_ = data['u_'], data['v_'], data['w_'], data['T_'], data['Y_'], data['p_']
         NT = parameters['NT'] # Subsampling rate
         # np.savez(filename, u=u, v=v, w=w, T=T, Y=Y, p=p, x=x, y=y, z=z, t=t[::NT])
-        np.savez(filename, u=u, v=v, w=w, T=T, Y=Y, p=p, x=x, y=y, z=z, t=t[::NT], u_=u_, v_=v_, w_=w_, T_=T_, Y_=Y_, p_=p_)
+        np.savez(filename, u=u, v=v, w=w, T=T, Y=Y, p=p, x=x, y=y, z=z, t=t[::NT])
     return None
 
 def save_parameters(parameters: dict) -> None:

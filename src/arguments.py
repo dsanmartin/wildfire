@@ -152,9 +152,14 @@ if config.has_section("topography"):
 if config.has_section("fuel"):
     if config.has_option("fuel", "Y_D"):
         Y_D = config.getfloat("fuel", "Y_D")
+    if config.has_option("fuel", "Y_h"):
+        Y_h = config.getfloat("fuel", "Y_h")
 if config.has_section("temperature"):
     if config.has_option("temperature", "T_hot"):
         T_hot = config.getfloat("temperature", "T_hot")
+if config.has_section("parameters"):
+    if config.has_option("parameters", "h"):
+        h = config.getfloat("parameters", "h")
 
 parameters = {
     # Fluid
@@ -207,7 +212,7 @@ parameters = {
     'hill_height': hill_height,
     'hill_length': hill_length,
     # Fuel
-    'fuel_height': fuel_height,
+    'Y_h': Y_h,
     # Sutherland's law
     'sutherland_law': sutherland_law,
     'S_T_0': S_T_0, 'S_k_0': S_k_0, 'S_k': S_k,
