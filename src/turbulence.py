@@ -1,9 +1,13 @@
 import numpy as np
 from derivatives import compute_first_derivative, compute_second_derivative, compute_gradient
+# from numba import jit
 
 # Wall damping functions
 f_w1 = lambda z, u_tau, nu: 1 - np.exp(-z * u_tau / 25 / nu)
 f_w2 = lambda z, u_tau, nu: (1 - np.exp(-(z * u_tau / 25 / nu) ** 3)) ** 0.5
+# @jit(nopython=True)
+# def f_w1(z, u_tau, nu):
+#     return 1 - np.exp(-z * u_tau / 25 / nu)
 
 def turbulence_2D(U: tuple[np.ndarray, np.ndarray] , T: np.ndarray, args: dict) -> np.ndarray:
     """
@@ -88,7 +92,9 @@ def turbulence_2D(U: tuple[np.ndarray, np.ndarray] , T: np.ndarray, args: dict) 
 
     return np.array([sgs_x, sgs_y, sgs_T])
 
-def turbulence_3D(U: tuple[np.ndarray, np.ndarray, np.ndarray], T: np.ndarray, params: dict) -> np.ndarray:
+# def turbulence_3D(U: tuple[np.ndarray, np.ndarray, np.ndarray], T: np.ndarray, params: dict) -> np.ndarray:
+# @jit(nopython=True)
+def turbulence_3D(U: tuple[np.ndarray, np.ndarray, np.ndarray], T: np.ndarray, hs: tuple, C_s: float, Pr: float, nu: float, Zm: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Compute the subgrid-scale (SGS) stresses and thermal energy for a turbulent flow.
 
@@ -124,12 +130,13 @@ def turbulence_3D(U: tuple[np.ndarray, np.ndarray, np.ndarray], T: np.ndarray, p
 
     """
     u, v, w = U
-    dx, dy, dz = params['dx'], params['dy'], params['dz']
-    C_s = params['C_s'] 
-    Pr = params['Pr']
-    rho = params['rho']
-    Zm = params['Zm']
-    nu = params['nu']
+    # dx, dy, dz = params['dx'], params['dy'], params['dz']
+    # C_s = params['C_s'] 
+    # Pr = params['Pr']
+    # rho = params['rho']
+    # Zm = params['Zm']
+    # nu = params['nu']
+    dx, dy, dz = hs
     Delta = (dx * dy * dz) ** (1 / 3)
 
     # Compute derivatives #
@@ -221,6 +228,7 @@ def turbulence_3D(U: tuple[np.ndarray, np.ndarray, np.ndarray], T: np.ndarray, p
     sgs_T = -l ** 2 / Pr * (sgs_T_no_damp * fw ** 2 + sgs_T_damp) # SGS thermal energy
 
     return np.array([sgs_x, sgs_y, sgs_z, sgs_T])
+    # return sgs_x, sgs_y, sgs_z, sgs_T
 
 def turbulence(U: tuple, T: np.ndarray, args: dict) -> np.ndarray:
     """
@@ -262,6 +270,6 @@ def turbulence(U: tuple, T: np.ndarray, args: dict) -> np.ndarray:
     if ncomp == 2:
         return turbulence_2D(U, T, args)
     elif ncomp == 3:
-        return turbulence_3D(U, T, args)
+        return turbulence_3D(U, T, (args['dx'], args['dy'], args['dz']), args['C_s'], args['Pr'], args['nu'], args['Zm'])
     else:
         raise ValueError("Invalid shape for U. Expected 2 or 3 components. Got {}".format(ncomp))

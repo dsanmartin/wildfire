@@ -40,7 +40,7 @@ def grad_pressure(p: np.ndarray, params: dict) -> np.ndarray:
         hs = (params['dx'], params['dy'], params['dz'])
         periodic = (True, True, False)
     # Compute grad(p)
-    grad_p = compute_gradient(p, hs, periodic)
+    grad_p = np.array(compute_gradient(p, hs, periodic))
     return grad_p
 
 def solve_tn(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, boundary_conditions: callable, method: callable, params: dict) -> tuple[np.ndarray, np.ndarray]:
@@ -394,9 +394,9 @@ def Phi_3D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
         sgs_x, sgs_y, sgs_z, sgs_T = turbulence((u, v, w), T, params)
     # PDE RHS
     # Velocity: \nu \nabla^2 \mathb{u} - (\mathbf{u}\cdot\nabla) \mathbf{u} + \mathbf{f}
-    u_ = nu * lap_u + F_x - sgs_x - (uux + vuy + wuz) 
-    v_ = nu * lap_v + F_y - sgs_y - (uvx + vvy + wvz)
-    w_ = nu * lap_w + F_z - sgs_z - (uwx + vwy + wwz)
+    u_ = nu * lap_u - (uux + vuy + wuz) + F_x - sgs_x 
+    v_ = nu * lap_v - (uvx + vvy + wvz) + F_y - sgs_y 
+    w_ = nu * lap_w - (uwx + vwy + wwz) + F_z - sgs_z 
     # Temperature: \dfrac{\partial k(T)}{\partial T}||\nabla T||^2 + k(T)\nabla^2 T - (\mathbf{u}\cdot\nabla T) + S(T, Y) 
     T_ = kT(T) * (Tx ** 2 + Ty ** 2 + Tz ** 2) + k(T) * lap_T - (u * Tx  + v * Ty + w * Tz) + S(T, Y) - sgs_T 
     # Combustion model: -Y_f K(T) H(T) Y

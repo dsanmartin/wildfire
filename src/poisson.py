@@ -318,7 +318,7 @@ def parallel_process(gamma, r, s, Nz, dz, F_k, P_kNz):
     sol = solve_triangular_systems_thomas(l, u, c, F_k[s, r, :])
     return sol, r, s
 
-@jit(nopython=False)
+@jit(nopython=True)
 def parallel_process_numba(gammas, rs, ss, Nz, dz, F_k, P_kNz, P_k):
     for i in prange(len(gammas)):
         gamma = gammas[i]
@@ -339,7 +339,7 @@ def parallel_process_numba(gammas, rs, ss, Nz, dz, F_k, P_kNz, P_k):
             F_k[s, r, -1] -=  P_kNz[s, r] / dz ** 2 
             P_k[s, r, :] = solve_triangular_systems_thomas(l, u, c, F_k[s, r, :])
 
-def fftfd_3D_parallel(f: np.ndarray, params: dict, solver: callable = thomas_algorithm) -> np.ndarray:
+def fftfd_3D_pre(f: np.ndarray, params: dict, solver: callable = thomas_algorithm) -> np.ndarray:
     """
     Compute the 3D Poisson equation using the FFT2D-FD method.
     FFT2D for x-direction, y-direction and central differences for z-direction.
@@ -511,8 +511,8 @@ def solve_pressure_3D(u: np.ndarray, v: np.ndarray, w: np.ndarray, params: dict)
     # Compute f
     f = rho / dt * (ux + vy + wz)
     # Solve using FFT-FD
-    # p = fftfd_3D(f, params)
-    p = fftfd_3D_parallel(f, params)
+    p = fftfd_3D(f, params)
+    # p = fftfd_3D_pre(f, params)
     return p
 
 def solve_pressure(U, params):

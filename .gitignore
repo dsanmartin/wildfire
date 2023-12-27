@@ -134,10 +134,10 @@ dmypy.json
 data/
 others/
 docs/
+src_gpu/
 
 # Script
-src/*/*.sh
-!src/2d/run.sh
+scripts/run_gpu.sh
 
 # Sphinx
 .readthedocs.yaml

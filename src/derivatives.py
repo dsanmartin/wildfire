@@ -1,6 +1,46 @@
 import numpy as np
+from numba import jit
+
+# @jit(nopython=True)
+def get_nodes(phi: np.ndarray, n: int, axis: int) -> tuple[np.ndarray, np.ndarray]:
+    # phi_ipn = np.zeros_like(phi)
+    # phi_imn = np.zeros_like(phi)
+    # if axis == 0:
+    #     phi_ipn[:-1] = phi[1:]
+    #     phi_ipn[-1] = phi[0]
+    #     phi_imn[1:] = phi[:-1]
+    #     phi_imn[0] = phi[-1]
+    #     if n == 2:
+    #         phi_ipn[:-2] = phi[2:]
+    #         phi_ipn[-2:] = phi[:2]
+    #         phi_imn[2:] = phi[:-2]
+    #         phi_imn[:2] = phi[-2:]
+    # elif axis == 1:
+    #     phi_ipn[:,:-1] = phi[:,1:]
+    #     phi_ipn[:,-1] = phi[:,0]
+    #     phi_imn[:,1:] = phi[:,:-1]
+    #     phi_imn[:,0] = phi[:,-1]
+    #     if n == 2:
+    #         phi_ipn[:,:-2] = phi[:,2:]
+    #         phi_ipn[:,-2:] = phi[:,:2]
+    #         phi_imn[:,2:] = phi[:,:-2]
+    #         phi_imn[:,:2] = phi[:,-2:]
+    # elif axis == 2:
+    #     phi_ipn[:,:,:-1] = phi[:,:,1:]
+    #     phi_ipn[:,:,-1] = phi[:,:,0]
+    #     phi_imn[:,:,1:] = phi[:,:,:-1]
+    #     phi_imn[:,:,0] = phi[:,:,-1]
+    #     if n == 2:
+    #         phi_ipn[:,:,:-2] = phi[:,:,2:]
+    #         phi_ipn[:,:,-2:] = phi[:,:,:2]
+    #         phi_imn[:,:,2:] = phi[:,:,:-2]
+    #         phi_imn[:,:,:2] = phi[:,:,-2:]
+    phi_ipn = np.roll(phi,-n, axis=axis)
+    phi_imn = np.roll(phi, n, axis=axis)
+    return phi_imn, phi_ipn
 
 ### Derivatives for PDE solver ###
+# @jit(nopython=True)
 def compute_first_derivative(phi: np.ndarray, h: float, axis: int, periodic: bool = True, type: str = 'central') -> np.ndarray:
     """
     Compute the first derivative of a scalar field along a given axis.
@@ -28,8 +68,20 @@ def compute_first_derivative(phi: np.ndarray, h: float, axis: int, periodic: boo
         First derivative of `phi` along `axis`.
     """
     # Get nodes
-    phi_ip1 = np.roll(phi,-1, axis=axis) # phi_{i+1}
-    phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
+    # if roll:
+    # phi_ip1 = np.roll(phi,-1, axis=axis) # phi_{i+1}
+    # phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
+    # else: # Using numpy slicing
+    # if axis == 0:
+    #     phi_ip1 = np.concatenate((phi[1:], phi[0]), axis=0)
+    #     phi_im1 = np.concatenate((phi[-1], phi[:-1]), axis=0)
+    # elif axis == 1:
+    #     phi_ip1 = np.concatenate((phi[:,1:], phi[:,0]), axis=1)
+    #     phi_im1 = np.concatenate((phi[:,-1], phi[:,:-1]), axis=1)
+    # elif axis == 2:
+    #     phi_ip1 = np.concatenate((phi[:,:,1:], phi[:,:,0]), axis=2)
+    #     phi_im1 = np.concatenate((phi[:,:,-1], phi[:,:,:-1]), axis=2)
+    phi_im1, phi_ip1 = get_nodes(phi, 1, axis)
     # Compute derivative
     if type == 'forward':
         phi_h = (phi_ip1 - phi) / h # Forward difference
@@ -63,6 +115,7 @@ def compute_first_derivative(phi: np.ndarray, h: float, axis: int, periodic: boo
                 phi_h[:,:,-1] = (3 * phi[:,:,-1] - 4 * phi[:,:,-2] + phi[:,:,-3]) / (2 * h)
     return phi_h
 
+# @jit(nopython=True)
 def compute_first_derivative_upwind(a: np.ndarray, phi: np.ndarray, h: float, axis: int, order: int = 2, periodic: bool = True) -> np.ndarray:
     """
     Compute the first derivative of a scalar field along a given axis.
@@ -94,14 +147,16 @@ def compute_first_derivative_upwind(a: np.ndarray, phi: np.ndarray, h: float, ax
     a_plu = np.maximum(a, 0)
     a_min = np.minimum(a, 0)
     # Get nodes
-    phi_ip1 = np.roll(phi,-1, axis=axis) # phi_{i+1}
-    phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
+    # phi_ip1 = np.roll(phi,-1, axis=axis) # phi_{i+1}
+    # phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
+    phi_im1, phi_ip1 = get_nodes(phi, 1, axis)
     if order == 1: # First order
         phi_hm = compute_first_derivative(phi, h, axis, periodic=periodic, type='backward') # Backward
         phi_hp = compute_first_derivative(phi, h, axis, periodic=periodic, type='forward') # Forward
     elif order == 2: # Second order
-        phi_ip2 = np.roll(phi,-2, axis=axis) # phi_{i+2}
-        phi_im2 = np.roll(phi, 2, axis=axis) # phi_{i-2}
+        # phi_ip2 = np.roll(phi,-2, axis=axis) # phi_{i+2}
+        # phi_im2 = np.roll(phi, 2, axis=axis) # phi_{i-2}
+        phi_im2, phi_ip2 = get_nodes(phi, 2, axis)
         phi_hm = (3 * phi - 4 * phi_im1 + phi_im2) / (2 * h) # Backward
         phi_hp = (-phi_ip2 + 4 * phi_ip1 - 3 * phi) / (2 * h) # Forward
         if periodic == False: 
@@ -124,6 +179,7 @@ def compute_first_derivative_upwind(a: np.ndarray, phi: np.ndarray, h: float, ax
     phi_h = a_plu * phi_hm + a_min * phi_hp
     return phi_h
 
+# @jit(nopython=True)
 def compute_first_derivative_half_step(phi: np.ndarray, h: float, axis: int, periodic: bool = True) -> np.ndarray:
     """
     Computes the derivative of a scalar field `phi` along a given `axis` using a central difference scheme.
@@ -148,8 +204,9 @@ def compute_first_derivative_half_step(phi: np.ndarray, h: float, axis: int, per
     numpy.ndarray
         The derivative of `phi` along the specified `axis` at half-integer positions.
     """
-    phi_ip1 = np.roll(phi,-1, axis=axis) # phi_{i+1}
-    phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
+    # phi_ip1 = np.roll(phi,-1, axis=axis) # phi_{i+1}
+    # phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
+    phi_im1, phi_ip1 = get_nodes(phi, 1, axis)
     phi_iphj = 0.5 * (phi_ip1 + phi) # phi_{i+1/2}
     phi_imhj = 0.5 * (phi_im1 + phi) # phi_{i-1/2}
     phi_h = (phi_iphj - phi_imhj) / h # Central difference
@@ -165,6 +222,7 @@ def compute_first_derivative_half_step(phi: np.ndarray, h: float, axis: int, per
             phi_h[:,:,-1] = (3 * phi[:,:,-1] - 4 * phi[:,:,-2] + phi[:,:,-3]) / (2 * h)
     return phi_h
 
+# @jit(nopython=True)
 def compute_second_derivative(phi: np.ndarray, h: float, axis: int, periodic: bool = True) -> np.ndarray:
     """
     Compute the second derivative of a scalar field along a given axis.
@@ -189,8 +247,9 @@ def compute_second_derivative(phi: np.ndarray, h: float, axis: int, periodic: bo
         Second derivative of `phi` along `axis`.
     """
     # Get nodes
-    phi_ip1 = np.roll(phi,-1, axis=axis) # phi_{i+1}
-    phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
+    # phi_ip1 = np.roll(phi,-1, axis=axis) # phi_{i+1}
+    # phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
+    phi_im1, phi_ip1 = get_nodes(phi, 1, axis)
     # Second derivative
     phi_hh = (phi_ip1 - 2 * phi + phi_im1) / h ** 2
     if periodic == False: # Fix boundary using second-order forward/backward difference - O(h^2)
@@ -205,6 +264,7 @@ def compute_second_derivative(phi: np.ndarray, h: float, axis: int, periodic: bo
             phi_hh[:,:,-1] = (2 * phi[:,:,-1] - 5 * phi[:,:,-2] + 4 * phi[:,:,-3] - phi[:,:,-4]) / h ** 2
     return phi_hh
 
+# @jit(nopython=True)
 def compute_gradient_2D(phi: np.ndarray, dx: float, dy: float, periodic_axes: tuple[bool, bool]) -> np.ndarray:
     """
     Compute the gradient of a 2D scalar field.
@@ -235,7 +295,8 @@ def compute_gradient_2D(phi: np.ndarray, dx: float, dy: float, periodic_axes: tu
     gradient = np.array([dphi_x, dphi_y]) # 2D in space case
     return gradient
 
-def compute_gradient_3D(phi: np.ndarray, dx: float, dy: float, dz: float, periodic_axes: tuple[bool, bool, bool]) -> np.ndarray:
+# @jit(nopython=True)
+def compute_gradient_3D(phi: np.ndarray, dx: float, dy: float, dz: float, periodic_axes: tuple[bool, bool, bool]) -> tuple:
     """
     Compute the gradient of a 3D scalar field.
 
@@ -265,9 +326,11 @@ def compute_gradient_3D(phi: np.ndarray, dx: float, dy: float, dz: float, period
     dphi_x = compute_first_derivative(phi, dx, axis=1, periodic=periodic_axes[0]) # dphi/dx
     dphi_y = compute_first_derivative(phi, dy, axis=0, periodic=periodic_axes[1]) # dphi/dy
     dphi_z = compute_first_derivative(phi, dz, axis=2, periodic=periodic_axes[2]) # dphi/dz
-    gradient = np.array([dphi_x, dphi_y, dphi_z]) # 3D in space case
-    return gradient
+    #gradient = np.array([dphi_x, dphi_y, dphi_z]) # 3D in space case
+    # return gradient
+    return dphi_x, dphi_y, dphi_z
 
+# @jit(nopython=True)
 def compute_gradient(phi: np.ndarray, hs: tuple, periodic_axes: tuple) -> np.ndarray:
     """
     Compute the gradient of a 2D or 3D scalar field.
@@ -295,6 +358,7 @@ def compute_gradient(phi: np.ndarray, hs: tuple, periodic_axes: tuple) -> np.nda
     elif ndims == 3:
         return compute_gradient_3D(phi, hs[0], hs[1], hs[2], periodic_axes)
 
+# @jit(nopython=True)
 def compute_laplacian_2D(phi: np.ndarray, dx: float, dy: float, periodic_axes: tuple) -> np.ndarray:
     """
     Compute the Laplacian of a scalar field.
@@ -325,6 +389,7 @@ def compute_laplacian_2D(phi: np.ndarray, dx: float, dy: float, periodic_axes: t
     laplacian = phi_xx + phi_yy
     return laplacian
 
+# @jit(nopython=True)
 def compute_laplacian_3D(phi: np.ndarray, dx: float, dy: float, dz: float, periodic_axes: tuple) -> np.ndarray:
     """
     Compute the Laplacian of a 3D scalar field.
@@ -358,6 +423,7 @@ def compute_laplacian_3D(phi: np.ndarray, dx: float, dy: float, dz: float, perio
     laplacian = phi_xx + phi_yy + phi_zz
     return laplacian
 
+# @jit(nopython=True)
 def compute_laplacian(phi: np.ndarray, hs: tuple, periodic_axes: tuple) -> np.ndarray:
     """
     Compute the Laplacian of a 2D or 3D scalar field.
