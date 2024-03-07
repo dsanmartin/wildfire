@@ -273,6 +273,10 @@ def fftfd_3D(f: np.ndarray, params: dict, solver: callable = thomas_algorithm) -
     ky = 2 * np.pi * ss * dz / y_max
     # Compute FFT in x direction (column-wise)
     F_k = np.fft.fft2(F, axes=(0, 1))
+    # for r in range(1, params['Nx'] - 1):
+    #     for s in range(1, params['Ny'] - 1):
+    #         for k in range(1, Nz - 1):
+    #             print("F_out[%d,%d,%d] = %.14f + %.14fi" % (r, s, k, np.real(F_k[s, r, k]), np.imag(F_k[s, r, k])))
     # To store pressure in Fourier space
     P_k = np.zeros_like(F_k)
     # Compute FFT in the last row (top boundary condition)
@@ -295,6 +299,18 @@ def fftfd_3D(f: np.ndarray, params: dict, solver: callable = thomas_algorithm) -
             b[0] = -1 / dz
             # Solve system A P_k = F_k
             P_k[s, r, :] = solver(a, b, c, F_k[s, r, :])
+            # print("r = {}, s = {}".format(r, s))
+            # for k in range(Nz - 1):
+            #     print("k:", k)
+            #     print("f_in: {}".format(F_k[s, r, k]))
+            #     if k < Nz -2 :
+            #         print("a: {}".format(a[k]))
+            #     print("b: {}".format(b[k]))
+            #     if k < Nz - 2 :
+            #         print("c: {}".format(c[k]))
+            #     print("d: {}".format(F_k[s, r, k]))
+            #     print("p: {}".format(P_k[s, r, k]))
+            #     print("\n")
     # numba_process_loop(kx, ky, Nx, Ny, Nz, dz, F_k, P_kNz, P_k, solver)
     # Compute IFFT in x direction (column-wise) to restore pressure
     p = np.real(np.fft.ifft2(P_k, axes=(0, 1)))
@@ -505,11 +521,24 @@ def solve_pressure_3D(u: np.ndarray, v: np.ndarray, w: np.ndarray, params: dict)
     rho = params['rho']
     dx, dy, dz, dt = params['dx'], params['dy'], params['dz'], params['dt']
     # Compute ux, vy and wz using half step to avoid odd-even decoupling
-    ux = compute_first_derivative_half_step(u, dx, 1) 
+    ux = compute_first_derivative_half_step(u, dx, 1)
     vy = compute_first_derivative_half_step(v, dy, 0)
     wz = compute_first_derivative_half_step(w, dz, 2, periodic=False)
     # Compute f
     f = rho / dt * (ux + vy + wz)
+    # for i in range(1, params['Nx'] - 2):
+    #     for j in range(1, params['Ny'] - 2):
+    #         for k in range(1, params['Nz'] - 1):
+                # if (ux[i, j, k] > 0):
+                # print("u[{},{},{}] = {}".format(i, j, k, u[j, i, k]))
+                # print("u_ip1jk = {}, u_im1jk = {}".format(u[j, i+1, k], u[j, i-1, k]))
+                # print("ux[{},{},{}] = {}".format(i, j, k, ux[j, i, k]))
+                # print("v[{},{},{}] = {}".format(i, j, k, v[j, i, k]))
+                # print("v_ijp1k = {}, v_ijm1k = {}".format(v[j+1, i, k], v[j-1, i, k]))
+                # print("vy[{},{},{}] = {}".format(i, j, k, vy[j, i, k]))
+                # print("w[{},{},{}] = {}".format(i, j, k, w[j, i, k]))
+                # print("w_ijkp1 = {}, w_ijkm1 = {}".format(w[j, i, k+1], w[j, i, k-1]))
+                # print("wz[{},{},{}] = {}".format(i, j, k, wz[j, i, k]))
     # Solve using FFT-FD
     p = fftfd_3D(f, params)
     # p = fftfd_3D_pre(f, params)

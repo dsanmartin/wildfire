@@ -397,6 +397,11 @@ def Phi_3D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     u_ = nu * lap_u - (uux + vuy + wuz) + F_x - sgs_x 
     v_ = nu * lap_v - (uvx + vvy + wvz) + F_y - sgs_y 
     w_ = nu * lap_w - (uwx + vwy + wwz) + F_z - sgs_z 
+    # for i in range(1, params['Nx'] - 1):
+    #     for j in range(1, params['Ny'] - 1):
+    #         for kk in range(1, params['Nz']):
+    #             # if (ux[i, j, k] > 0):
+    #             print("u[{},{},{}] = {}".format(i, j, kk, u_[i, j, kk]))
     # Temperature: \dfrac{\partial k(T)}{\partial T}||\nabla T||^2 + k(T)\nabla^2 T - (\mathbf{u}\cdot\nabla T) + S(T, Y) 
     T_ = kT(T) * (Tx ** 2 + Ty ** 2 + Tz ** 2) + k(T) * lap_T - (u * Tx  + v * Ty + w * Tz) + S(T, Y) - sgs_T 
     # Combustion model: -Y_f K(T) H(T) Y

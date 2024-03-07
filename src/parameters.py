@@ -32,7 +32,7 @@ k = 0.024 # Thermal conductivity in W m^{-1} K^{-1} or kg m s^{-3} K ^{-1}  (Air
 k = 0.02476 # Thermal conductivity in W m^{-1} K^{-1} or kg m s^{-3} K ^{-1}  (Air: 0.02476 at 15 °C, NASA - Cengel 2018)
 alpha = 2.07e-5 # Thermal diffusivity in m^2 s^{-1} (Air: 2.07e-5) 
 alpha = 2.009e-5 # Thermal diffusivity in m^2 s^{-1} (Air: 2.009e-5 at 15 °C - NASA)
-alpha = k / (rho * C_p) # Thermal diffusivity in m^2 s^{-1}
+# alpha = k / (rho * C_p) # Thermal diffusivity in m^2 s^{-1}
 delta = 1 # Optical path length in m
 
 # Fluid equations parameters

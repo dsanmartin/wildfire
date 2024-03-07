@@ -12,7 +12,7 @@ parser.add_argument('-n', '--name', type=str, default=datetime.now().strftime("%
     help="Numerical simulation name. Default: Current datetime with format 'YYYYMMDDhhmmss'")
 parser.add_argument('-path', '--save-path', type=str, default=None,
     help="Numerical simulation save path. Default: None")
-parser.add_argument('-k', '--diffusivity', type=float, default=alpha,
+parser.add_argument('-alpha', '--diffusivity', type=float, default=alpha,
     help="Thermal diffusivity parameter. Default: {}".format(alpha))
 parser.add_argument('-nu', '--viscosity', type=float, default=nu,
     help="Kinematic viscosity parameter. Default: {}".format(nu))
@@ -116,6 +116,7 @@ T_min = args.min_temperature
 T_max = args.max_temperature
 topography_shape = args.topography_shape
 parameter_file = args.parameters_file
+spatial_dims = 2
 
 if args.save_path is None:
     save_path = output_dir + sim_name + "/"
@@ -138,6 +139,8 @@ Nx = config.getint("numerics", "Nx")
 Ny = config.getint("numerics", "Ny")
 Nt = config.getint("numerics", "Nt")
 NT = config.getint("numerics", "NT")
+if config.has_option("numerics", "time_method"):
+    method = config.get("numerics", "time_method")
 if config.has_option("domain", "z_min"):
     z_min = config.getfloat("domain", "z_min")
 if config.has_option("domain", "z_max"):
@@ -157,11 +160,24 @@ if config.has_section("fuel"):
 if config.has_section("temperature"):
     if config.has_option("temperature", "T_hot"):
         T_hot = config.getfloat("temperature", "T_hot")
+    if config.has_option("temperature", "T0_x_start") and config.has_option("temperature", "T0_x_end"):
+        T0_x_start = config.getfloat("temperature", "T0_x_start")
+        T0_x_end = config.getfloat("temperature", "T0_x_end")
+        T0_x_center = (T0_x_start + T0_x_end) / 2
+        T0_length = (T0_x_end - T0_x_start)
+    if config.has_option("temperature", "T0_y_start") and config.has_option("temperature", "T0_y_end"):
+        T0_y_start = config.getfloat("temperature", "T0_y_start")
+        T0_y_end = config.getfloat("temperature", "T0_y_end")
+        T0_y_center = (T0_y_start + T0_y_end) / 2
+        T0_width = (T0_y_end - T0_y_start)
 if config.has_section("parameters"):
     if config.has_option("parameters", "h"):
         h = config.getfloat("parameters", "h")
 
 parameters = {
+    # Domain
+    'x': (x_min, x_max), 'y': (y_min, y_max), 't': (t_min, t_max),
+    'Nx': Nx, 'Ny': Ny, 'Nt': Nt, 'NT': NT,
     # Fluid
     'nu': nu, 'rho': rho, 'g': g, 'T_inf': T_inf, 
     'Pr': Pr, 'C_s': C_s, # Turbulence
@@ -171,7 +187,7 @@ parameters = {
     'radiation': radiation,
     'include_source': include_source,
     # Temperature
-    'k': k, 'C_p': C_p, 
+    'k': k, 'C_p': C_p, 'alpha': alpha, # Thermal
     'delta': delta, 'sigma': sigma, # Radiation
     # Fuel 
     'A': A, 'T_act': T_act, 'T_pc': T_pc, 'H_R': H_R, 'h': h, 'Y_D': Y_D, 'Y_f': Y_f,
@@ -196,7 +212,7 @@ parameters = {
     'kappa': k,
     'u_r': u_r,
     'z_r': z_r,
-    'alpha': alpha,
+    'alpha_u': alpha_u,
     # Temperature
     'T0_shape': T0_shape,
     'T0_x_start': T0_x_start,
@@ -226,3 +242,12 @@ parameters = {
     'sim_name': sim_name,
     'save_path': save_path,
 }
+
+if spatial_dims == 3:
+    parameters['z'] = (z_min, z_max)
+    parameters['Nz'] = Nz
+    parameters['T0_z_start'] = T0_z_start
+    parameters['T0_z_end'] = T0_z_end
+    parameters['T0_height'] = T0_height
+    parameters['T0_y_center'] = T0_y_center
+    parameters['T0_width'] = T0_width

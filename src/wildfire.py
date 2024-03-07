@@ -146,7 +146,8 @@ class Wildfire:
             [P_0[:,:,0], P_0[:,:,-1]]
         ])
         # Get Poisson problem indices
-        indices = pre_computation(Nx, Ny, dz, x_max, y_max)
+        # indices = pre_computation(Nx, Ny, dz, x_max, y_max)
+        indices = None
         # Add parameters to the dictionary
         self.parameters['x'] = x
         self.parameters['y'] = y

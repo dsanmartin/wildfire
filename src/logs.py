@@ -26,14 +26,10 @@ def log_params(params: dict, save: bool = False) -> None:
     Nx, Ny, Nt, NT = params['Nx'],params['Ny'], params['Nt'], params['NT']
     dx, dy, dt = params['dx'], params['dy'], params['dt']
     # U_0, V_0, T_0 = params['u0'], params['v0'], params['T0']
-    if 'z' in params:
-        z_min, z_max = params['z'][0], params['z'][-1]
-        Nz = params['Nz']
-        dz = params['dz']
     sim_name = params['sim_name']
     method = params['method']
     rho, T_hot, T_inf, T_pc = params['rho'], params['T_hot'], params['T_inf'], params['T_pc']
-    nu, k, Pr, g = params['nu'], params['k'], params['Pr'], params['g']
+    nu, k, alpha, Pr, g = params['nu'], params['k'], params['alpha'], params['Pr'], params['g']
     A, T_act, H_R, h, a_v = params['A'], params['T_act'], params['H_R'], params['h'], params['a_v']
     Y_f, Y_D, C_p = params['Y_f'], params['Y_D'], params['C_p']
     turb, conser = params['turbulence'], params['conservative']
@@ -43,7 +39,7 @@ def log_params(params: dict, save: bool = False) -> None:
     include_source = params['include_source']
     initial_u_type = params['initial_u_type']
     u_z_0, d, u_ast, kappa = params['u_z_0'], params['d'], params['u_ast'], params['kappa']
-    u_r, z_r, alpha = params['u_r'], params['z_r'], params['alpha']
+    u_r, z_r, alpha_u = params['u_r'], params['z_r'], params['alpha_u']
     T0_shape = params['T0_shape']
     T0_x_start, T0_x_end, T0_y_start, T0_y_end = params['T0_x_start'], params['T0_x_end'], params['T0_y_start'], params['T0_y_end']
     T0_x_center, T0_length, T0_height = params['T0_x_center'], params['T0_length'], params['T0_height']
@@ -55,6 +51,14 @@ def log_params(params: dict, save: bool = False) -> None:
     bound = params['bound']
     T_min, T_max = params['T_min'], params['T_max']
     Y_min, Y_max = params['Y_min'], params['Y_max']
+    if 'z' in params:
+        z_min, z_max = params['z'][0], params['z'][-1]
+        Nz = params['Nz']
+        dz = params['dz']
+        T0_z_start, T0_z_end = params['T0_z_start'], params['T0_z_end']
+        T0_height = params['T0_height']
+        T0_y_center = params['T0_y_center']
+        T0_width = params['T0_width']
 
     # Non dimensional numbers calculation
     Re, Gr, Ra, Sr, Ste, St, Ze = non_dimensional_numbers(params)
@@ -77,17 +81,21 @@ def log_params(params: dict, save: bool = False) -> None:
     print("Time integration: %s" % method, file=f)
     print("Time samples: %d" % NT, file=f)
     print("nu: %.2e, g: (%.4f, %.4f, %.4f)" % (nu, *g), file=f)
-    print("k: %.2e, C_p: %.4f, T_inf: %.4f, T_hot: %.4f" % (k, C_p, T_inf, T_hot), file=f)
+    print("alpha: %.2e, C_p: %.4f, T_inf: %.4f, T_hot: %.4f" % (alpha, C_p, T_inf, T_hot), file=f)
     print("rho: %.4f, T_pc: %.4f, A: %.4f, T_act: %.4f" % (rho, T_pc, A, T_act), file=f)
     print("H_R: %.4f, h: %.4f, a_v: %.4f, Y_D: %.4f, Y_f: %.4f" % (H_R, h, a_v, Y_D, Y_f), file=f)
     print("Initial u type: %s" % initial_u_type, file=f)
     if initial_u_type == 'log':
         print("z_0: %.4f, d: %.4f, u_ast: %.4f, kappa: %.4f" % (u_z_0, d, u_ast, kappa), file=f)
     else:
-        print("  u_r: %.4f, z_r: %.4f, alpha: %.4f" % (u_r, z_r, alpha), file=f)
+        print("  u_r: %.4f, z_r: %.4f, alpha_u: %.4f" % (u_r, z_r, alpha_u), file=f)
     print("Initial temperature shape: %s" % T0_shape, file=f)
-    print("  x: [%.4f, %.4f], y: [%.4f, %.4f]" % (T0_x_start, T0_x_end, T0_y_start, T0_y_end), file=f)
-    print("  x center: %.4f, length: %.4f, height: %.4f" % (T0_x_center, T0_length, T0_height), file=f)
+    if 'z' in params:
+        print("  x: [%.4f, %.4f], y: [%.4f, %.4f], z: [%.4f, %.4f]" % (T0_x_start, T0_x_end, T0_y_start, T0_y_end, T0_z_start, T0_z_end), file=f)
+        print("  Center: [%.4f, %.4f, 0.0], length: %.4f, width: %.4f, height: %.4f" % (T0_x_center, T0_y_center, T0_length, T0_width, T0_height), file=f)
+    else:
+        print("  x: [%.4f, %.4f], y: [%.4f, %.4f]" % (T0_x_start, T0_x_end, T0_y_start, T0_y_end), file=f)
+        print("  x center: %.4f, length: %.4f, height: %.4f" % (T0_x_center, T0_length, T0_height), file=f)
     print("Topography shape: %s" % topography_shape, file=f)
     if topography_shape == 'hill':
         print("    Center: %.4f, Height: %.4f, Width: %.4f" % (hill_center, hill_height, hill_length), file=f)

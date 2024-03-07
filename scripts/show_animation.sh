@@ -40,4 +40,4 @@ if [ -z "${ymax}" ]; then
     ymax=20;
 fi
 # Create animation
-python src/create_animation.py -i ${input_dir} -ts ${ts} -tn ${tn} -xmin ${xmin} -xmax ${xmax} -ymin ${ymin} -ymax ${ymax} -p "modU,T,Y";
+python src/create_animation.py -i ${input_dir} -ts ${ts} -tn ${tn} -xmin ${xmin} -xmax ${xmax} -ymin ${ymin} -ymax ${ymax} -p "u,v,T";
