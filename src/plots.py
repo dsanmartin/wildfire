@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.colors import ListedColormap
+import matplotlib.ticker as tkr
 from derivatives import compute_gradient_plots, compute_curl_plots, compute_divergence_plots
 
 U_comp = ['modU', 'divU', 'curlU'] # Computation over velocity field
@@ -118,6 +119,11 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
         }
     if 'Y' in plots:
         Y, Y_min, Y_max = get_variable(data, 'Y', tn)
+        # Fix boundaries for Y
+        Y[0, 0, :, :] = 0
+        Y[0,-1, :, :] = 0
+        Y[0, :, 0, :] = 0
+        Y[0, :,-1, :] = 0 
         # Get IBM nodes
         dead_nodes = parameters['dead_nodes']
         terrain = np.zeros_like(Y[0])
@@ -237,9 +243,9 @@ def plot_scalar_field(fig: plt.Figure, ax: plt.Axes, x: np.ndarray, y: np.ndarra
         if plot_type == 'imshow':
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="1%", pad=0.1)
-            fig.colorbar(m, ax=ax, cax=cax, ticks=ticks, label=label) # fraction=0.046, pad=0.04)
+            fig.colorbar(m, ax=ax, cax=cax, ticks=ticks, label=label, format=tkr.FormatStrFormatter('%.1f')) # fraction=0.046, pad=0.04)
         else:
-            fig.colorbar(m, ax=ax, ticks=ticks, label=label)
+            fig.colorbar(m, ax=ax, ticks=ticks, label=label, format=tkr.FormatStrFormatter('%.1f'))
     return None
 
 def plot_scalar_field_3D(fig: plt.Figure, ax: plt.Axes, x: np.ndarray, y: np.ndarray, z: np.ndarray, f: np.ndarray, cmap: plt.cm, 
@@ -304,7 +310,8 @@ def plot_vector_field(ax: plt.Axes, x: np.ndarray, y: np.ndarray, u: np.ndarray,
     if streamplot: 
         ax.streamplot(x, y, u, v, density=density, linewidth=linewidth, arrowsize=arrowsize, color=color)
     else: 
-        ax.quiver(x[::qs,::qs], y[::qs,::qs], u[::qs,::qs], v[::qs,::qs], scale=1, scale_units='xy', color=color)
+        # ax.quiver(x[::qs,::qs], y[::qs,::qs], u[::qs,::qs], v[::qs,::qs], scale=1, scale_units='xy', color=color)
+        ax.quiver(x[::qs], y[::qs], u[::qs,::qs], v[::qs,::qs], angles='xy', scale_units='xy', color=color)
     return None
 
 def plot_vector_field_3D(ax: plt.Axes, x: np.ndarray, y: np.ndarray, z: np.ndarray, u: np.ndarray, v: np.ndarray, w: np.ndarray,
@@ -354,7 +361,8 @@ def plot_vector_field_3D(ax: plt.Axes, x: np.ndarray, y: np.ndarray, z: np.ndarr
     return None
 
 def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: str = 'vertical',
-        title: bool = True, filename: str = None, dpi: int = 200, streamplot: bool = True, qs: int = 1, density: float = 1) -> None:
+        title: bool = True, filename: str = None, dpi: int = 200, streamplot: bool = True, qs: int = 1, 
+        density: float = 1, bounds: bool = True, ticks: bool = True, slices: list = None) -> None:
     """
     Plot simulation data for time step `n`.
 
@@ -412,10 +420,14 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
     elif len(domain) == 4:
         x_min, x_max, y_min, y_max, z_min, z_max = plot_lims
         x, y, z, t = domain
+        if slices is not None:
+            x_i, y_j, z_k = slices
+        else:
+            x_i, y_j, z_k = x.shape[0] // 2, y.shape[0] // 2, 1
         if visualization == 'vertical':
             h_min, h_max = x_min, x_max
             v_min, v_max = z_min, z_max
-            y_j = y.shape[0] // 2 # Show vertical slice at the middle
+            # y_j = y.shape[0] // 2 # Show vertical slice at the middle
             plot_title = r'Simulation at $y=%.1f$ m and $t=%.1f$ s' % (y[y_j], t[n])
             h_variable = 'x'
             v_variable = 'z'
@@ -423,18 +435,19 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
         elif visualization == 'horizontal':
             h_min, h_max = x_min, x_max
             v_min, v_max = y_min, y_max
-            z_j = 3 #z.shape[0] // 2 # Show horizontal slice at the middle
-            plot_title = r'Simulation at $z=%.1f$ m and $t=%.1f$ s' % (z[z_j], t[n])
+            # z_k = 1 #z.shape[0] // 2 # Show horizontal slice at the middle
+            plot_title = r'Simulation at $z=%.1f$ m and $t=%.1f$ s' % (z[z_k], t[n])
             h_variable = 'x'
             v_variable = 'y'
         elif visualization == 'longitudinal':
             h_min, h_max = y_min, y_max
             v_min, v_max = z_min, z_max
-            x_i = x.shape[0] // 2
+            # x_i = 
             plot_title = r'Simulation at $x=%.1f$ m and $t=%.1f$ s' % (x[x_i], t[n])
             h_variable = 'y'
             v_variable = 'z'
             x = y
+            y = z
 
 
     # Just to keep the indexing 
@@ -443,22 +456,24 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
 
     # Set axes limits and labels
     if visualization == 'horizontal':
-        axes[-1].set_ylabel(r'${}$ (m)'.format(v_variable))
-        axes[-1].set_ylim(v_min, v_max)
+        axes[0].set_ylabel(r'${}$ (m)'.format(v_variable))
+        axes[0].set_ylim(v_min, v_max)
         for i in range(len(axes)):            
             axes[i].set_xlabel(r'${}$ (m)'.format(h_variable))
-            axes[i].set_xlim(h_min, h_max)
-            
+            axes[i].set_xlim(h_min, h_max)     
     elif visualization == 'vertical':
         axes[-1].set_xlabel(r'${}$ (m)'.format(h_variable))
         axes[-1].set_xlim(h_min, h_max)
         for i in range(len(axes)):
             axes[i].set_ylabel(r'${}$ (m)'.format(v_variable))
             axes[i].set_ylim(v_min, v_max)
+    elif visualization == 'longitudinal':
+        axes[-1].set_xlabel(r'${}$ (m)'.format(h_variable))
+        axes[-1].set_xlim(h_min, h_max)
+        for i in range(len(axes)):
+            axes[i].set_ylabel(r'${}$ (m)'.format(v_variable))
+            axes[i].set_ylim(v_min, v_max)
     
-    
-        
-
     if title:
         fig.suptitle(plot_title)
         fig.subplots_adjust(top=0.88)
@@ -471,12 +486,20 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
             if visualization == 'vertical':
                 u = u[y_j].T
             elif visualization == 'horizontal':
-                u = u[:,:,z_j]
+                u = u[:,:,z_k]
             elif visualization == 'longitudinal':
                 u = u[:,x_i,:].T
+        if bounds:
+            u_bounds = plots['u']['bounds']
+        else:
+            u_bounds = [u.min(), u.max()]
+        if ticks:
+            u_ticks = plots['u']['ticks']
+        else:
+            u_ticks = None
         plot_scalar_field(
             fig, axes[i], x, y, u, plt.cm.viridis, 
-            plots['u']['bounds'], plots['u']['ticks'], r'Velocity component  $u$', r'm s$^{-1}$'
+            u_bounds, u_ticks, r'Velocity component  $u$', r'm s$^{-1}$'
         )
         i += 1
 
@@ -486,12 +509,20 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
             if visualization == 'vertical':
                 v = v[y_j].T
             elif visualization == 'horizontal':
-                v = v[:,:,z_j]
+                v = v[:,:,z_k]
             elif visualization == 'longitudinal':
                 v = v[:,x_i,:].T
+        if bounds:
+            v_bounds = plots['v']['bounds']
+        else:
+            v_bounds = [v.min(), v.max()]
+        if ticks:
+            v_ticks = plots['v']['ticks']
+        else:
+            v_ticks = None
         plot_scalar_field(
             fig, axes[i], x, y, v, plt.cm.viridis, 
-            plots['v']['bounds'], plots['v']['ticks'], r'Velocity component  $v$', r'm s$^{-1}$'
+            v_bounds, v_ticks, r'Velocity component  $v$', r'm s$^{-1}$'
         )
         i += 1
     
@@ -501,12 +532,20 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
             if visualization == 'vertical':
                 w = w[y_j].T
             elif visualization == 'horizontal':
-                w = w[:,:,z_j]
+                w = w[:,:,z_k]
             elif visualization == 'longitudinal':
                 w = w[:,x_i,:].T
+        if bounds:
+            w_bounds = plots['w']['bounds']
+        else:
+            w_bounds = [w.min(), w.max()]
+        if ticks:
+            w_ticks = plots['w']['ticks']
+        else:
+            w_ticks = None
         plot_scalar_field(
             fig, axes[i], x, y, w, plt.cm.viridis, 
-            plots['w']['bounds'], plots['w']['ticks'], r'Velocity component  $w$', r'm s$^{-1}$'
+            w_bounds, w_ticks, r'Velocity component  $w$', r'm s$^{-1}$'
         )
         i += 1
 
@@ -521,18 +560,27 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
                 w = w[y_j].T
                 v = w
             elif visualization == 'horizontal':
-                modU = modU[:,:,z_j]
-                u = u[:,:,z_j]
-                w = w[:,:,z_j]
-                v = w
+                modU = modU[:,:,z_k]
+                u = u[:,:,z_k]
+                v = v[:,:,z_k]
+                # v = w
             elif visualization == 'longitudinal':
                 modU = modU[:,x_i,:].T
-                u = u[:,x_i,:].T
                 v = v[:,x_i,:].T
+                w = w[:,x_i,:].T
                 u = v
+                v = w
+        if bounds:
+            modU_bounds = plots['modU']['bounds']
+        else:
+            modU_bounds = [modU.min(), modU.max()]
+        if ticks:
+            modU_ticks = plots['modU']['ticks']
+        else:
+            modU_ticks = None
         plot_scalar_field(
             fig, axes[i], x, y, modU, plt.cm.viridis, 
-            plots['modU']['bounds'], plots['modU']['ticks'], r'Velocity $\mathbf{u}$, Speed $||\mathbf{u}||_2$', r'm s$^{-1}$', .8
+            modU_bounds, modU_ticks, r'Velocity $\mathbf{u}$, Speed $||\mathbf{u}||_2$', r'm s$^{-1}$', .8
         )
         # Plot velocity
         plot_vector_field(
@@ -546,12 +594,20 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
             if visualization == 'vertical':
                 divU = divU[y_j].T  
             elif visualization == 'horizontal':
-                divU = divU[:,:,z_j]
+                divU = divU[:,:,z_k]
             elif visualization == 'longitudinal':
-                divU = divU[:,x_i,:].T      
+                divU = divU[:,x_i,:].T   
+        if bounds:
+            divU_bounds = plots['divU']['bounds']
+        else:
+            divU_bounds = [divU.min(), divU.max()]   
+        if ticks:
+            divU_ticks = plots['divU']['ticks']
+        else:
+            divU_ticks = None
         plot_scalar_field(
             fig, axes[i], x, y, divU, plt.cm.viridis, 
-            plots['divU']['bounds'], plots['divU']['ticks'], r'Divergence $\nabla\cdot\mathbf{u}$', r's$^{-1}$'
+            divU_bounds, divU_ticks, r'Divergence $\nabla\cdot\mathbf{u}$', r's$^{-1}$'
         )
         i += 1
 
@@ -561,12 +617,20 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
             if visualization == 'vertical':
                 curlU = curlU[y_j].T
             elif visualization == 'horizontal':
-                curlU = curlU[:,:,z_j]
+                curlU = curlU[:,:,z_k]
             elif visualization == 'longitudinal':
-                curlU = curlU[:,x_i,:].T       
+                curlU = curlU[:,x_i,:].T 
+        if bounds:
+            curlU_bounds = plots['curlU']['bounds']
+        else:
+            curlU_bounds = [curlU.min(), curlU.max()] 
+        if ticks:
+            curlU_ticks = plots['curlU']['ticks']
+        else:
+            curlU_ticks = None     
         plot_scalar_field(
             fig, axes[i], x, y, curlU, plt.cm.viridis, 
-            plots['curlU']['bounds'], plots['curlU']['ticks'], r'Vorticity $\nabla\times\mathbf{u}$', r's$^{-1}$'
+            curlU_bounds, curlU_ticks, r'Vorticity $\nabla\times\mathbf{u}$', r's$^{-1}$'
         )
         i += 1
 
@@ -576,12 +640,20 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
             if visualization == 'vertical':
                 T = T[y_j].T
             elif visualization == 'horizontal':
-                T = T[:,:,z_j]
+                T = T[:,:,z_k]
             elif visualization == 'longitudinal':
                 T = T[:,x_i,:].T
+        if bounds:
+            T_bounds = plots['T']['bounds']
+        else:
+            T_bounds = [T.min(), T.max()]
+        if ticks:
+            T_ticks = plots['T']['ticks']
+        else:
+            T_ticks = None
         plot_scalar_field(
             fig, axes[i], x, y, T, plt.cm.jet, 
-            plots['T']['bounds'], plots['T']['ticks'], r'Temperature $T$', r'K'
+            T_bounds, T_ticks, r'Temperature $T$', r'K'
         )
         i += 1
     
@@ -593,14 +665,22 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
                 Y = Y[y_j].T
                 terrain = terrain[y_j].T
             elif visualization == 'horizontal':
-                Y = Y[:,:,z_j]
-                terrain = terrain[:,:,z_j]
+                Y = Y[:,:,z_k]
+                terrain = terrain[:,:,z_k]
             elif visualization == 'longitudinal':
                 Y = Y[:,x_i,:].T
                 terrain = terrain[:,x_i,:].T
+        if bounds:
+            Y_bounds = plots['Y']['bounds']
+        else:
+            Y_bounds = [Y.min(), Y.max()]
+        if ticks:
+            Y_ticks = plots['Y']['ticks']
+        else:
+            Y_ticks = None
         plot_scalar_field(
             fig, axes[i], x, y, Y, plt.cm.Oranges, 
-            plots['Y']['bounds'], plots['Y']['ticks'], r'Fuel $Y$', r'\%'
+            Y_bounds, Y_ticks, r'Fuel $Y$', r'\%'
         )
         plot_scalar_field(
             fig, axes[i], x, y, terrain, ListedColormap(['black']), [0, 1], None, None, None
@@ -619,17 +699,25 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
                 pz = pz[y_j].T
                 py = pz
             elif visualization == 'horizontal':
-                p = p[:,:,z_j]
-                px = px[:,:,z_j]
-                py = py[:,:,z_j]
+                p = p[:,:,z_k]
+                px = px[:,:,z_k]
+                py = py[:,:,z_k]
             elif visualization == 'longitudinal':
                 p = p[:,x_i,:].T
                 py = py[:,x_i,:].T
                 pz = pz[:,x_i,:].T
                 px = py
+        if bounds:
+            p_bounds = plots['p']['bounds']
+        else:
+            p_bounds = [p.min(), p.max()]
+        if ticks:
+            p_ticks = plots['p']['ticks']
+        else:
+            p_ticks = None
         plot_scalar_field(
             fig, axes[i], x, y, p, plt.cm.viridis, 
-            plots['p']['bounds'], plots['p']['ticks'], r'Pressure $p$', r"kg m$^{-1}s^{-2}$", .8
+            p_bounds, p_ticks, r'Pressure $p$', r"kg m$^{-1}s^{-2}$", .8
         )
         plot_vector_field(
             axes[i], x, y, px, py, streamplot=streamplot, qs=qs, density=density
@@ -640,7 +728,7 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
     
     # Save or show plot
     if filename is not None:
-        plt.savefig(filename, dpi=dpi, bbox_inches='tight', transparent=True)
+        plt.savefig(filename, dpi=dpi, bbox_inches='tight', transparent=False)
         plt.close()
     else:
         plt.show()

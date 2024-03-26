@@ -1,43 +1,49 @@
 #!/bin/bash
-args=("$@");
-# sim_name=${args[0]};
-input_dir=${args[0]};
-ts=${args[1]};
-tn=${args[2]};
-xmin=${args[3]};
-xmax=${args[4]};
-ymin=${args[5]};
-ymax=${args[6]};
-# Data
-# data="${OUTPUT_DIR}${sim_name}/data.npz";
-# data="${data_dir}data.npz";
-# Check if t is not empty
-if [ -z "${t}" ]; then
-    t=1;
-fi
-# Check if n is not empty
-if [ -z "${n}" ]; then
-    n=0;
-fi
-# Check if xmin is not empty
-if [ -z "${xmin}" ]; then
-    # xmin=666;
-    xmin=0;
-fi
-# Check if xmax is not empty
-if [ -z "${xmax}" ]; then
-    # xmax=666;
-    xmax=200;
-fi
-# Check if ymin is not empty
-if [ -z "${ymin}" ]; then
-    # ymin=666;
-    ymin=0;
-fi
-# Check if ymax is not empty
-if [ -z "${ymax}" ]; then
-    # ymax=666;
-    ymax=20;
+usage() { echo "Usage: $0 [-i <input_dir>] [-s <ts>] [-n <tn>] [-v <vis>] [-x <xmin>] [-X <xmax>] [-y <ymin>] [-Y <ymax>] [-z <zmin>] [-Z <zmax>] [-b <bounds>]" 1>&2; exit 1; }
+# Default values
+ts=1;
+tn=-1;
+vis="vertical";
+xmin=0;
+xmax=200;
+ymin=0;
+ymax=200;
+zmin=0;
+zmax=20;
+plots="modU,T,Y";
+bounds=1;
+# Parse arguments
+while getopts ":i:s:n:v:x:X:y:Y:z:Z:b:" opt; do
+  case "${opt}" in
+    i) input_dir=${OPTARG} ;;
+    s) ts=${OPTARG} ;;
+    n) tn=${OPTARG} ;;
+    v) vis=${OPTARG} ;;
+    x) xmin=${OPTARG} ;;
+    X) xmax=${OPTARG} ;;
+    y) ymin=${OPTARG} ;;
+    Y) ymax=${OPTARG} ;;
+    z) zmin=${OPTARG} ;;
+    Z) zmax=${OPTARG} ;;
+    b) bounds=${OPTARG} ;;
+    *) echo "Invalid option -$OPTARG" >&2
+      exit 1
+    ;;
+  esac
+done
+if [ -z "$input_dir" ]; then
+    usage;
 fi
 # Create animation
-python src/create_animation.py -i ${input_dir} -ts ${ts} -tn ${tn} -xmin ${xmin} -xmax ${xmax} -ymin ${ymin} -ymax ${ymax} -p "u,v,T";
+python src/create_animation.py -i "${input_dir}" \
+                                -ts ${ts} \
+                                -tn ${tn} \
+                                -xmin ${xmin} \
+                                -xmax ${xmax} \
+                                -ymin ${ymin} \
+                                -ymax ${ymax} \
+                                -zmin ${zmin} \
+                                -zmax ${zmax} \
+                                -p ${plots} \
+                                -v ${vis} \
+                                -b ${bounds};

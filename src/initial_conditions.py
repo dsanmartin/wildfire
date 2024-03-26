@@ -1,8 +1,8 @@
 import numpy as np
 from topography import flat2D, hill2D, flat3D, hill3D
 from utils import create_plate, create_gaussian
-from arguments import T_hot, topography_shape, spatial_dims, Y_h # Parameters from command line
-from parameters import T_inf, u_ast, k, d, u_z_0, u_r, z_r, alpha_u, initial_u_type, T0_shape, T0_x_start, T0_x_end, T0_y_start, T0_y_end, T0_z_start, T0_z_end, T0_x_center, T0_y_center, T0_length, T0_width, T0_height
+from arguments import T_hot, topography_shape, spatial_dims, Y_h, u_r, T0_x_start, T0_x_end, T0_y_start, T0_y_end, T0_z_start, T0_z_end, T0_x_center, T0_y_center, T0_z_center, T0_length, T0_width, T0_height # Parameters from command line
+from parameters import T_inf, u_ast, k, d, u_z_0, z_r, alpha_u, initial_u_type, T0_shape
 
 def load_initial_condition(data_path: str, ndim: int = 2) -> callable:
     data = np.load(data_path)
@@ -76,7 +76,7 @@ elif spatial_dims == 3:
     if T0_shape == 'plate':
         shape = create_plate((T0_x_start, T0_x_end), (T0_y_start, T0_y_end), (T0_z_start, T0_z_end)) # Return True if x_min <= x <= x_max & y_min <= y <= y_max
     else:
-        shape = create_gaussian((T0_x_center, T0_y_center, 0), (T0_length, T0_width, T0_height)) #
+        shape = create_gaussian((T0_x_center, T0_y_center, T0_z_center), (T0_length, T0_width, T0_height)) #
     T0 = lambda x, y, z: T_inf + (shape(x, y, z)) * (T_hot - T_inf)
 
     # Initial pressure $p(x, y, z, 0)$ #

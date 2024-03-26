@@ -108,6 +108,7 @@ T0_width = (T0_y_end - T0_y_start)
 # 'Height' of initial fire source in m
 T0_z_start = 0
 T0_z_end = 1 # PLATE -> .25
+T0_z_center = 0
 T0_height = (T0_z_end - T0_z_start)
 
 # Fuel

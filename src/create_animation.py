@@ -1,7 +1,9 @@
 import os
 import imageio
 import argparse
+import numpy as np
 from plots import load_data_for_plots, plot_2D
+from skimage.transform import resize
 import warnings
 warnings.filterwarnings("ignore") # To remove warnings from contourf using NaNs
 
@@ -20,7 +22,9 @@ parser.add_argument('-ymin', '--y-min', type=float, default=0, help="Bottom boun
 parser.add_argument('-ymax', '--y-max', type=float, default=20, help="Top boundary of domain in y.")
 parser.add_argument('-zmin', '--z-min', type=float, default=-1, help="Bottom boundary of domain in z.")
 parser.add_argument('-zmax', '--z-max', type=float, default=-1, help="Top boundary of domain in z.")
-parser.add_argument('-v', '--visualization', type=str, default='vertical', help="Slice to show. Options: 'vertical', 'horizontal' or 'longitudinal'. Default: 'vertical'.")
+parser.add_argument('-v', '--visualization', type=str, default='vertical', 
+    help="Slice to show. Options: 'vertical', 'horizontal' or 'longitudinal'. Default: 'vertical'.")
+parser.add_argument('-b', '--bounds', type=int, default=1, help="Use scalar bounds in plots. Default: True.")
 args = parser.parse_args()
 
 # Default values
@@ -30,7 +34,12 @@ input_dir = args.input
 output_dir = args.output
 show = args.show # plot, video or gif
 visualization = args.visualization # vertical, horizontal or longitudinal
-streamplot = True
+streamplot = True 
+density = 5 # Streamplot density
+if visualization == "longitudinal" or visualization == "horizontal":
+    density = 5
+else:
+    density = 0.6 
 qs = 1 # Quiver samples
 ts = args.time_sample # Time samples
 tn = args.time_step # Up to time step. -1 for all
@@ -45,6 +54,7 @@ parameters_path = input_dir + "/parameters.pkl"
 U_comp = ['modU', 'divU', 'curlU'] # Computation
 dpi = 200
 filename = None
+bounds = ticks = args.bounds
 
 # Parameters for video or GIF
 if show != "plot":
@@ -61,6 +71,7 @@ if len(domain) == 3:
     z = None
 elif len(domain) == 4:
     x, y, z, t = domain
+    slices = [x.shape[0] // 2, y.shape[0] // 2, 1]
 
 # Computational domain
 x_min, x_max = x.min(), x.max()
@@ -73,13 +84,17 @@ if z is not None:
     z_min, z_max = args.z_min, args.z_max
     if z_min == z_max == -1:
         z_min, z_max = z.min(), z.max()
-    plot_lims = [x_min, x_max, y_min, 200, z_min, z_max]
+    plot_lims = [x_min, x_max, y_min, y_max, z_min, z_max]
 
 # Filenames for output
 filenames = []
 
 # Number of samples to show
-Nt = t.shape[0]
+if tn == -1:
+    Nt = t.shape[0]
+else:
+    Nt = tn
+
 # Plot
 for n in range(0, Nt, ts):
 # for n in [0, Nt // 2, Nt - 1]:
@@ -87,12 +102,15 @@ for n in range(0, Nt, ts):
         print("Creating figure %d/%d" % (n+1, Nt))
         filename = output_dir + str(n) + ext 
         filenames.append(filename)
-    plot_2D(n, domain, data_plots, plot_lims, visualization=visualization, title=True, filename=filename, dpi=dpi)
+    plot_2D(n, domain, data_plots, plot_lims, visualization=visualization, title=True, 
+            streamplot=streamplot, qs=qs, density=density, 
+            filename=filename, dpi=dpi, 
+            bounds=bounds, ticks=ticks, slices=slices)
 
 # Build video or GIF
 if show not in ["plot", "pdf"]:
     if show == "video":
-        io_writer = imageio.get_writer(video_name)
+        io_writer = imageio.get_writer(video_name, fps=1)
     else:
         io_writer = imageio.get_writer(gif_name, mode='I')
 
@@ -100,7 +118,13 @@ if show not in ["plot", "pdf"]:
         for i, filename in enumerate(filenames):
             print("Processing figure %d/%d" % (i+1, Nt))
             image = imageio.imread(filename)
+            if i == 0:
+                height, width, _ = image.shape
+            image = resize(image, (height, width))
             writer.append_data(image)
+            # image = Image.open(filename)
+            # resized_image = image.resize((width, height))
+            # writer.append_data(np.array(resized_image))
             os.remove(filename)
             
     print("Done!")

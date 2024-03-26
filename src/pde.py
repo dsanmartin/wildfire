@@ -84,6 +84,10 @@ def solve_tn(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, boundary_con
     T_min, T_max = params['T_min'], params['T_max']
     Y_min, Y_max = params['Y_min'], params['Y_max']
     # Solve time step 
+    if t_n <= 5:
+        method = RK4
+    else:
+        method = euler
     y_np1 = method(t_n, y_n, dt, Phi, params)
     # Solve Pressure problem
     p = solve_pressure(tuple(y_np1[:-2]), params)
@@ -125,6 +129,31 @@ def euler(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, params: dict) -
         The updated state of the system at time t_n + dt.
     """
     y_np1 = y_n + dt * Phi(t_n, y_n, params)
+    return y_np1
+
+def RK2(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, params: dict) -> np.ndarray:
+    """
+    Second-order Runge-Kutta method step for solving ordinary differential equations.
+
+    Parameters
+    ----------
+    t_n : float
+        Current time.
+    y_n : np.ndarray (4, Ny, Nx)
+        Current state vector.
+    dt : float
+        Time step.
+    params : dict
+        Dictionary containing parameters needed to evaluate the derivative function.
+
+    Returns
+    -------
+    np.ndarray (4, Ny, Nx)
+        State vector at the next time step.
+    """
+    k1 = Phi(t_n, y_n, params)
+    k2 = Phi(t_n + dt, y_n + dt * k1, params)
+    y_np1 = y_n + 0.5 * dt * (k1 + k2)
     return y_np1
 
 def RK4(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, params: dict) -> np.ndarray:
@@ -619,7 +648,7 @@ def solve_pde_2D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
     NT = params['NT']
     t = params['t']
     method = params['method']
-    methods = {'euler': euler, 'RK4': RK4}
+    methods = {'euler': euler, 'RK2': RK2, 'RK4': RK4}
     log_file = open(params['save_path'] + "log.txt", "w")
     solver_time_start = time.time()
     if NT == 1: # Save all time steps
@@ -701,7 +730,7 @@ def solve_pde_3D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
     NT = params['NT']
     t = params['t']
     method = params['method']
-    methods = {'euler': euler, 'RK4': RK4}
+    methods = {'euler': euler, 'RK2': RK2, 'RK4': RK4}
     log_file = open(params['save_path'] + "log.txt", "w")
     solver_time_start = time.time()
     if NT == 1: # Save all time steps

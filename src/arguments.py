@@ -157,6 +157,10 @@ if config.has_section("fuel"):
         Y_D = config.getfloat("fuel", "Y_D")
     if config.has_option("fuel", "Y_h"):
         Y_h = config.getfloat("fuel", "Y_h")
+    if config.has_option("fuel", "a_v"):
+        a_v = config.getfloat("fuel", "a_v")
+    if config.has_option("fuel", "Y_f"):
+        Y_f = config.getfloat("fuel", "Y_f")
 if config.has_section("temperature"):
     if config.has_option("temperature", "T_hot"):
         T_hot = config.getfloat("temperature", "T_hot")
@@ -170,9 +174,19 @@ if config.has_section("temperature"):
         T0_y_end = config.getfloat("temperature", "T0_y_end")
         T0_y_center = (T0_y_start + T0_y_end) / 2
         T0_width = (T0_y_end - T0_y_start)
+    if config.has_option("temperature", "T0_z_start") and config.has_option("temperature", "T0_z_end"):
+        T0_z_start = config.getfloat("temperature", "T0_z_start")
+        T0_z_end = config.getfloat("temperature", "T0_z_end")
+        T0_z_center = 0
+        T0_height = (T0_z_end - T0_z_start)
+    if config.has_option("temperature", "t_source"):
+        t_source = config.getfloat("temperature", "t_source")
 if config.has_section("parameters"):
     if config.has_option("parameters", "h"):
         h = config.getfloat("parameters", "h")
+if config.has_section("wind"):
+    if config.has_option("wind", "u_r"):
+        u_r = config.getfloat("wind", "u_r")
 
 parameters = {
     # Domain
@@ -248,6 +262,7 @@ if spatial_dims == 3:
     parameters['Nz'] = Nz
     parameters['T0_z_start'] = T0_z_start
     parameters['T0_z_end'] = T0_z_end
+    parameters['T0_z_center'] = T0_z_center
     parameters['T0_height'] = T0_height
     parameters['T0_y_center'] = T0_y_center
     parameters['T0_width'] = T0_width

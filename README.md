@@ -15,7 +15,7 @@ $$
 $$
 
 More details in:
-* **Simplified coupled atmosphere-fire model for simulation of 2D wildland fires** by Daniel San Martin & Claudio E. Torres. 
+* **Simplified coupled atmosphere-fire model for simulation of 2D wildland fires** by Daniel San Martin & Claudio E. Torres. Pre-print available at: https://dx.doi.org/10.2139/ssrn.4673376
 
 ## Examples
 
