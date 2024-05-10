@@ -142,7 +142,7 @@ S_T_0 = 273 # Reference temperature in K
 S_k_0 = 0.024 # Thermal conductivity in W m^{-1} K^{-1} or kg m s^{-3} K ^{-1}  (Air: 0.024)
 S_k = 194 # Sutherland's constant in K
 
-spatial_dims = 2
+spatial_dims = 3
 
 periodic_axes = (False, True)
 

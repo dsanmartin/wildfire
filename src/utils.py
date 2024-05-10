@@ -1,6 +1,7 @@
 import numpy as np
 from arguments import T_act, A, H_R, h, alpha, S_top, S_bot, k, Y_D # Parameters from command line
 from parameters import T_pc, T_inf, g, n_arrhenius, h_rad, C_p, rho, a_v, S_T_0, S_k_0, S_k, sigma, delta, sutherland_law, radiation, include_source, source_filter # Default parameters
+#from parameters import T_act, A, H_R, h, alpha, S_top, S_bot, k, Y_D
 
 # A lot of useful functions #
 G2D = lambda x, y, x0, y0, sx, sy, A: A * np.exp(-((x - x0) ** 2 / sx ** 2 + (y - y0) ** 2 / sy ** 2)) # 2D Gaussian function
@@ -264,29 +265,31 @@ def non_dimensional_numbers(parameters: dict) -> tuple[float, float, float, floa
     rho, C_p, h = parameters['rho'], parameters['C_p'], parameters['h']
     A = parameters['A']
     g = parameters['g']
+    alpha, k = parameters['alpha'], parameters['k']
     u0, v0, T0 = parameters['u0'], parameters['v0'], parameters['T0']
     L_v = y_dim
     L_c = x_dim * L_v
+    L = (L_c) ** 0.5
     spt = u0 ** 2 + v0 ** 2
     if 'z' in parameters:
         z_min, z_max = parameters['z'][0], parameters['z'][-1]
         z_dim = z_max - z_min
         L_v = z_dim
         L_c = x_dim * y_dim * L_v
+        L = (L_c) ** (1/3)
     if 'w0' in parameters:
         w0 = parameters['w0']
         spt += w0 ** 2
-    L = (L_c) ** 0.5
     dT = (np.max(T0) - np.min(T0))
     speed = np.sqrt(spt)
     U = np.max(speed)
     T = np.max(T0)
     T_avg = np.max(T0)
-    alpha = 1 / T_avg
+    alpha_T = 1 / T_avg
     # Reynolds
     Re = U * L / nu
     # Grashof
-    Gr = abs(g[-1]) * alpha * dT * L_v ** 3 / nu ** 2 
+    Gr = abs(g[-1]) * alpha_T * dT * L_v ** 3 / nu ** 2 
     # Rayleigh
     Ra = Gr * Pr
     # Strouhal
@@ -297,8 +300,12 @@ def non_dimensional_numbers(parameters: dict) -> tuple[float, float, float, floa
     St = h * L / (rho * C_p * U)
     # Zeldovich
     Ze = T_avg * dT / T ** 2
+    # Peclét
+    Pe = U * L / alpha
+    # Nusselt
+    Nu = h * L / k
     # Return
-    return Re, Gr, Ra, Sr, Ste, St, Ze
+    return Re, Gr, Ra, Sr, Ste, St, Ze, Pe, Nu
 
 def f(U: tuple, T: np.ndarray, Y: np.ndarray) -> list:
     """

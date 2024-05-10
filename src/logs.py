@@ -61,7 +61,7 @@ def log_params(params: dict, save: bool = False) -> None:
         T0_width = params['T0_width']
 
     # Non dimensional numbers calculation
-    Re, Gr, Ra, Sr, Ste, St, Ze = non_dimensional_numbers(params)
+    Re, Gr, Ra, Sr, Ste, St, Ze, Pe, Nu = non_dimensional_numbers(params)
 
     if save: # Print to file
         create_simulation_folder(dir_path) # Create simulation folder if it doesn't exist
@@ -119,6 +119,8 @@ def log_params(params: dict, save: bool = False) -> None:
     print("Grashof: %.2e" % Gr, file=f)
     print("Rayleigh: %.2e" % Ra, file=f)
     print("Strouhal: %.2e" % Sr, file=f)
+    print("Peclet: %.2e" % Pe, file=f)
+    print("Nusselt: %.4f" % Nu, file=f)
     print("Stefan: %.4f" % Ste, file=f)
     print("Stanton: %.4f" % St, file=f)
     print("Zeldovich: %.4f\n" % Ze, file=f)

@@ -59,8 +59,9 @@ bounds = ticks = args.bounds
 # Parameters for video or GIF
 if show != "plot":
     sim_id = input_dir.split("/")[-2]
-    gif_name = output_dir + sim_id + ".gif"
-    video_name = output_dir + sim_id + ".mp4"
+    name = output_dir + sim_id + "_" + visualization[0]
+    gif_name = name + ".gif"
+    video_name = name + ".mp4"
     ext = '.png' if show in ['gif', 'video'] else '.pdf'
     dpi = 400
 

@@ -123,6 +123,8 @@ class Wildfire:
             T_0[dead_nodes] = self.parameters['dead_nodes_values'][3]
             Y_0[dead_nodes] = self.parameters['dead_nodes_values'][4]
         if self.parameters['show_ic']:
+            plot_lims = [[0, 200], [0, 200], [0, 20]]
+            # plot_lims = [[x_min, x_max], [y_min, y_max], [z_min, z_max]]
             S_0 = np.sqrt(U_0 ** 2 + V_0 ** 2 + W_0 ** 2)
             # T_mask = T_0 > 300
             # Xp = Xm[T_mask]
@@ -132,8 +134,10 @@ class Wildfire:
             # plot_initial_conditions_3D(Xp, Yp, Zp, U_0, V_0, W_0, S_0, Tp, Y_0, plot_lims=[[0, 200], [0, 200], [0, 20]])
             # plot_initial_conditions_3D(Xm, Ym, Zm, U_0, V_0, W_0, S_0, T_0, Y_0, plot_lims=[[0, 200], [0, 200], [0, 20]])
             y_j = Ny // 2 
-            plot_initial_conditions_3D(Xm[y_j], Ym[y_j], Zm[y_j], U_0[y_j], V_0[y_j], W_0[y_j], S_0[y_j], T_0[y_j], Y_0[y_j], plot_lims=[[0, 200], [0, 200], [0, 20]])
-            # plot_initial_conditions(Xm[:,:,Nz//2], Ym[:,:,Nz//2], U_0[:,:,Nz//2], V_0[:,:,Nz//2], S_0[:,:,Nz//2], T_0[:,:,Nz//2], Y_0[:,:,Nz//2], plot_lims=[[0, 200], [0, 20]])
+            z_k = 1
+            plot_initial_conditions_3D(Xm[y_j], Ym[y_j], Zm[y_j], U_0[y_j], V_0[y_j], W_0[y_j], S_0[y_j], T_0[y_j], Y_0[y_j], plot_lims=plot_lims)
+            plot_initial_conditions(Xm[:,:,z_k], Ym[:,:,z_k], U_0[:,:,z_k], V_0[:,:,z_k], S_0[:,:,z_k], T_0[:,:,z_k], Y_0[:,:,z_k], plot_lims=plot_lims)
+            # plot_initial_conditions(Xm[:,:,z_k], Ym[:,:,z_k], U_0[:,:,z_k], V_0[:,:,z_k], S_0[:,:,z_k], T_0[:,:,z_k], Y_0[:,:,z_k], plot_lims=[[x_min, x_max], [y_min, y_max]])
         if self.parameters['debug']: 
             raise SystemExit()
         # We assume Dirichlet boundary conditions on the beginning

@@ -84,10 +84,10 @@ def solve_tn(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, boundary_con
     T_min, T_max = params['T_min'], params['T_max']
     Y_min, Y_max = params['Y_min'], params['Y_max']
     # Solve time step 
-    if t_n <= 5:
-        method = RK4
-    else:
-        method = euler
+    # if t_n <= 5:
+    #     method = RK4
+    # else:
+    #     method = euler
     y_np1 = method(t_n, y_n, dt, Phi, params)
     # Solve Pressure problem
     p = solve_pressure(tuple(y_np1[:-2]), params)

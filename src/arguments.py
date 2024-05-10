@@ -164,6 +164,8 @@ if config.has_section("fuel"):
 if config.has_section("temperature"):
     if config.has_option("temperature", "T_hot"):
         T_hot = config.getfloat("temperature", "T_hot")
+    if config.has_option("temperature", "T_max"):
+        T_max = config.getfloat("temperature", "T_max")
     if config.has_option("temperature", "T0_x_start") and config.has_option("temperature", "T0_x_end"):
         T0_x_start = config.getfloat("temperature", "T0_x_start")
         T0_x_end = config.getfloat("temperature", "T0_x_end")
