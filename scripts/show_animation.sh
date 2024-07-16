@@ -9,7 +9,7 @@ xmax=200;
 ymin=0;
 ymax=200;
 zmin=0;
-zmax=20;
+zmax=10;
 plots="modU,T,Y";
 bounds=1;
 # Parse arguments

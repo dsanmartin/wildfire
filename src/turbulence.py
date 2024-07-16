@@ -199,7 +199,8 @@ def turbulence_3D(U: tuple[np.ndarray, np.ndarray, np.ndarray], T: np.ndarray, h
     )
 
     # Wall damping function
-    tau_p = ((nu * 0.5 * (uz + wx)[0]) ** 2 + (nu * 0.5 * (vz + wy)[0]) ** 2) ** 0.5
+    tau_p = np.zeros_like(u)
+    tau_p[:,:,0] = ((nu * 0.5 * (uz + wx)[:,:,0]) ** 2 + (nu * 0.5 * (vz + wy)[:,:,0]) ** 2) ** 0.5
     u_tau = (tau_p) ** 0.5
     l = C_s * Delta 
 
@@ -208,6 +209,7 @@ def turbulence_3D(U: tuple[np.ndarray, np.ndarray, np.ndarray], T: np.ndarray, h
     fwx = compute_first_derivative(fw, dx, 1)
     fwy = compute_first_derivative(fw, dy, 0)
     fwz = compute_first_derivative(fw, dz, 2, False)
+    # fw = np.zeros_like(u)
 
     # Intermediary terms
     # with damping

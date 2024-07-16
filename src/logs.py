@@ -73,7 +73,7 @@ def log_params(params: dict, save: bool = False) -> None:
     if 'z' in params:
         print("Domain: [%.4f, %.4f] x [%.4f, %.4f] x [%.4f, %.4f] x [%.4f, %.4f]" % (x_min, x_max, y_min, y_max, z_min, z_max, t_min, t_max), file=f)
         print("Grid size: Nx: %d, Ny: %d, Nz: %d, Nt: %d" % (Nx, Ny, Nz, Nt), file=f)
-        print("dx: %.4f, dy: %.4f, dz: %.4f, dt: %.4f" % (dx, dy, dz, dt), file=f)
+        print("dx: %.6f, dy: %.6f, dz: %.6f, dt: %.6f" % (dx, dy, dz, dt), file=f)
     else:
         print("Domain: [%.4f, %.4f] x [%.4f, %.4f] x [%.4f, %.4f]" % (x_min, x_max, y_min, y_max, t_min, t_max), file=f)
         print("Grid size: Nx: %d, Ny: %d, Nt: %d" % (Nx, Ny, Nt), file=f)
@@ -159,7 +159,7 @@ def log_time_step(log_file: any, n: int, t: float, CFL: float, T_min: float, T_m
     -------
     None
     """
-    print("Time step: {:=6d}, Simulation time: {:.2f} s".format(n, t))
+    print("Time step: {:=6d}, Simulation time: {:f} s".format(n, t))
     print("CFL: {:.6f}".format(CFL))
     print("Temperature: Min = {:.2f} K, Max {:.2f} K".format(T_min, T_max))
     print("Fuel: Min = {:.2f}, Max {:.2f}".format(Y_min, Y_max))

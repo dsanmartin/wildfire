@@ -38,6 +38,7 @@ delta = 1 # Optical path length in m
 # Fluid equations parameters
 nu = 1.5e-5 # Kinematic viscosity in m^2 s^{-1} (Air: 1.5e-5)
 nu = mu / rho # Kinematic viscosity in m^2 s^{-1} (Air: 1.47e-5, Cengel 2018)
+nu = 1.47e-5
 T_inf = 293.15 # Temperature of the environment in K (Ambient temperature: 20°C - 293.15 K)
 T_inf = 288.15 # Temperature of the environment in K (Ambient temperature: 15°C - 288.15 K, NASA - Cengel 2018)
 g = (0, 0, -9.81) # Acceleration due to gravity in m s^{-2} (Typical value: 9.81 m s^{-2})
@@ -58,6 +59,7 @@ A = 1e9 # Pre-exponential factor in s^{-1}. (1e9, Asensio 2002)
 n_arrhenius = 0 # Arrhenius-like parameter in 1. 1
 E_A = 150e3 # Activation energy in J mol^{-1} or kg m^2 s^{-2} mol^{-1}. E_A = 20e3 cal mol^{-1} according to (Asensio 2002).
 T_act = E_A / R # Activation temperature in K 
+T_act = 18040.8533 
 h = 1.147#3.3#18 # Convection coefficient in W m^{-2} K^{-1} or kg s^{-3} K^{-1}  (Air: 0.5-1000), (15.9 - 18.2, Maragkos 2021)
 h_rad = 0*1e-7 #
 Y_D = 0.04 #.25 #.25 #.9 # Threshold to add solid fuel force
@@ -90,7 +92,7 @@ k = 0.41 # Von Karman constant in 1
 # Power law (used by FDS)
 u_r = 4.8 # Reference speed in ms^{-1}
 z_r = 2 # Reference height in m
-alpha_u = 1 / 7 # Empirical constant in 1
+alpha_u = 1.0 / 7.0 # Empirical constant in 1
 
 # Temperature 
 # Shape

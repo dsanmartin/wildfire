@@ -63,14 +63,14 @@ elif spatial_dims == 3:
     initial_u = power_law_wind if initial_u_type == 'power law' else log_wind
     u0 = lambda x, y, z: initial_u(x, y, z)   #+ np.random.rand(*x.shape) * 0.5
     # $v(x, y, z, 0) = 0$
-    v0 = lambda x, y, z: x * 0 
+    v0 = lambda x, y, z: np.zeros_like(y)
     # $w(x, y, z, 0) = 0$
-    w0 = lambda x, y, z: x * 0
+    w0 = lambda x, y, z: np.zeros_like(z)
     U0 = np.array([u0, v0, w0])
 
     # Initial fuel $Y(x, y, z, 0)$ #
     topo = flat3D if topography_shape == 'flat' else hill3D
-    Y0 = lambda x, y, z: (z <= (topo(x, y) + Y_h)).astype(int) # 1 if y <= topo(x) + Y_h else 0
+    Y0 = lambda x, y, z: (z <= (topo(x, y) + Y_h)).astype(np.float64) # 1 if y <= topo(x) + Y_h else 0
 
     # Initial temperature $T(x, y, z, 0)$ #
     if T0_shape == 'plate':

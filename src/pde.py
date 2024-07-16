@@ -89,23 +89,33 @@ def solve_tn(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, boundary_con
     # else:
     #     method = euler
     y_np1 = method(t_n, y_n, dt, Phi, params)
+    # for i in range(params['Nx'] - 1):
+    #     for j in range(params['Ny'] - 1):
+    #         for kk in range(params['Nz']):
+    #             u, v, w, T, Y = y_np1[:, j, i, kk]
+    #             print("u[%d,%d,%d] = %.14f" % (i, j, kk, u))
+    #             print("v[%d,%d,%d] = %.14f" % (i, j, kk, v))
+    #             print("w[%d,%d,%d] = %.14f" % (i, j, kk, w))
+    #             print("T[%d,%d,%d] = %.14f" % (i, j, kk, T))
+    #             print("Y[%d,%d,%d] = %.14f" % (i, j, kk, Y))
     # Solve Pressure problem
     p = solve_pressure(tuple(y_np1[:-2]), params)
-    grad_p = grad_pressure(p, params)
-    # Velocity correction (Chorin's projection method)
-    y_np1[:-2] = y_np1[:-2] - dt / rho * grad_p
-    # Update boundary conditions
-    y_np1 = boundary_conditions(*y_np1, params)
-    if bound:
-        # Bound temperature
-        y_np1[-2, y_np1[-2] < T_min] = T_min
-        y_np1[-2, y_np1[-2] > T_max] = T_max
-        # Bound mass fraction
-        y_np1[-1, y_np1[-1] < Y_min] = Y_min 
-        y_np1[-1, y_np1[-1] > Y_max] = Y_max 
+    # grad_p = grad_pressure(p, params)
+    # # Velocity correction (Chorin's projection method)
+    # y_np1[:-2] = y_np1[:-2] - dt / rho * grad_p
+    # # p = np.zeros_like(y_np1[0])
+    # # Update boundary conditions
+    # y_np1 = boundary_conditions(*y_np1, params)
+    # if bound:
+    #     # Bound temperature
+    #     y_np1[-2, y_np1[-2] < T_min] = T_min
+    #     y_np1[-2, y_np1[-2] > T_max] = T_max
+    #     # Bound mass fraction
+    #     y_np1[-1, y_np1[-1] < Y_min] = Y_min 
+    #     y_np1[-1, y_np1[-1] > Y_max] = Y_max 
     # Add temperature source if needed (permanent source up to t_source)
-    if t_n <= t_source:
-        y_np1[-2, T_mask] = T_source[T_mask]
+    # if t_n <= t_source:
+    #     y_np1[-2, T_mask] = T_source[T_mask]
     return y_np1, p
 
 def euler(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, params: dict) -> np.ndarray:
@@ -180,7 +190,7 @@ def RK4(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, params: dict) -> 
     k2 = Phi(t_n + 0.5 * dt, y_n + 0.5 * dt * k1, params)
     k3 = Phi(t_n + 0.5 * dt, y_n + 0.5 * dt * k2, params)
     k4 = Phi(t_n + dt, y_n + dt * k3, params)
-    y_np1 = y_n + (1/6) * dt * (k1 + 2 * k2 + 2 * k3 + k4)
+    y_np1 = y_n + (dt / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
     return y_np1
 
 def data_post_processing(z: np.ndarray, p: np.ndarray) -> dict:
@@ -397,10 +407,7 @@ def Phi_3D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     # Derivatives #
     # First partial derivatives 
     if conservative: # Conservative form for convection        
-        uux = compute_first_derivative(u * u, dx, 1, (False, True)) # (u_{i+1, j}^2 - u_{i-1, j}^2) / (2 * dx)
-        vuy = compute_first_derivative(u * v, dy, 0, (False, True)) # (u_{i, j+1} * v_{i, j+1} - u_{i, j-1} * v_{i, j-1}) / (2 * dy)
-        uvx = compute_first_derivative(v * u, dx, 1, (False, True)) # (v_{i+1, j} * u_{i+1, j} - v_{i-1, j} * u_{i-1, j}) / (2 * dx)
-        vvy = compute_first_derivative(v * v, dy, 0, (False, True)) # (v_{i, j+1}^2 - v_{i, j-1}^2) / (2 * dy)
+        pass
     else: # Non-conservative form for convection        
         uux = compute_first_derivative_upwind(u, u, dx, 1) 
         vuy = compute_first_derivative_upwind(v, u, dy, 0)
@@ -411,28 +418,33 @@ def Phi_3D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
         uwx = compute_first_derivative_upwind(u, w, dx, 1)
         vwy = compute_first_derivative_upwind(v, w, dy, 0)
         wwz = compute_first_derivative_upwind(w, w, dz, 2, periodic=False)
-    Tx, Ty, Tz = compute_gradient(T, (dx, dy, dz), (False, False, True))
+    Tx, Ty, Tz = compute_gradient(T, (dx, dy, dz), (True, True, False))
     # Second partial derivatives, compute Laplacian
-    lap_u = compute_laplacian(u, (dx, dy, dz), (False, False, True))
-    lap_v = compute_laplacian(v, (dx, dy, dz), (False, False, True))
-    lap_w = compute_laplacian(w, (dx, dy, dz), (False, False, True))
-    lap_T = compute_laplacian(T, (dx, dy, dz), (False, False, True))
+    lap_u = compute_laplacian(u, (dx, dy, dz), (True, True, False))
+    lap_v = compute_laplacian(v, (dx, dy, dz), (True, True, False))
+    lap_w = compute_laplacian(w, (dx, dy, dz), (True, True, False))
+    lap_T = compute_laplacian(T, (dx, dy, dz), (True, True, False))
     # Turbulence
     sgs_x = sgs_y = sgs_z = sgs_T = 0
     if turb:
         sgs_x, sgs_y, sgs_z, sgs_T = turbulence((u, v, w), T, params)
     # PDE RHS
+    # Y_D = 1.0
+    # a_v = 1.0
+    # F_x = - Y_D * a_v
     # Velocity: \nu \nabla^2 \mathb{u} - (\mathbf{u}\cdot\nabla) \mathbf{u} + \mathbf{f}
-    u_ = nu * lap_u - (uux + vuy + wuz) + F_x - sgs_x 
-    v_ = nu * lap_v - (uvx + vvy + wvz) + F_y - sgs_y 
-    w_ = nu * lap_w - (uwx + vwy + wwz) + F_z - sgs_z 
-    # for i in range(1, params['Nx'] - 1):
-    #     for j in range(1, params['Ny'] - 1):
-    #         for kk in range(1, params['Nz']):
-    #             # if (ux[i, j, k] > 0):
-    #             print("u[{},{},{}] = {}".format(i, j, kk, u_[i, j, kk]))
+    # u_ = nu * lap_u - (uux + vuy + wuz) + F_x - sgs_x
+    # v_ = nu * lap_v - (uvx + vvy + wvz) + F_y - sgs_y
+    # w_ = nu * lap_w - (uwx + vwy + wwz) + F_z - sgs_z
     # Temperature: \dfrac{\partial k(T)}{\partial T}||\nabla T||^2 + k(T)\nabla^2 T - (\mathbf{u}\cdot\nabla T) + S(T, Y) 
-    T_ = kT(T) * (Tx ** 2 + Ty ** 2 + Tz ** 2) + k(T) * lap_T - (u * Tx  + v * Ty + w * Tz) + S(T, Y) - sgs_T 
+    #T_ = kT(T) * (Tx ** 2 + Ty ** 2 + Tz ** 2) + k(T) * lap_T - (u * Tx  + v * Ty + w * Tz) + S(T, Y) - sgs_T 
+    # F_z = 1.0
+    u_ = nu * lap_u - (uux + vuy + wuz) + F_x - sgs_x
+    v_ = nu * lap_v - (uvx + vvy + wvz) + F_y - sgs_y
+    w_ = nu * lap_w - (uwx + vwy + wwz) + F_z - sgs_z
+    # Temperature: \dfrac{\partial k(T)}{\partial T}||\nabla T||^2 + k(T)\nabla^2 T - (\mathbf{u}\cdot\nabla T) + S(T, Y) 
+    #T_ = kT(T) * (Tx ** 2 + Ty ** 2 + Tz ** 2) + k(T) * lap_T - (u * Tx  + v * Ty + w * Tz) #+ S(T, Y)*0 - sgs_T 
+    T_ = params['alpha'] * lap_T - (u * Tx + v * Ty + w * Tz) + S(T, Y) - sgs_T
     # Combustion model: -Y_f K(T) H(T) Y
     Y_ = -Y_f * K(T) * H(T) * Y 
     # Boundary conditions
@@ -735,7 +747,7 @@ def solve_pde_3D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
     solver_time_start = time.time()
     if NT == 1: # Save all time steps
         # Approximation
-        z = np.zeros((Nt, r_0.shape[0], Ny - 1, Nx - 1, Nz)) 
+        z = np.zeros((Nt, r_0.shape[0], Ny - 1, Nx - 1, Nz), dtype=np.float64) 
         p = np.zeros((Nt, Ny - 1, Nx - 1, Nz))
         z[0] = r_0
         for n in range(Nt - 1):

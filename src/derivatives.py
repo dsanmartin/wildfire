@@ -251,7 +251,7 @@ def compute_second_derivative(phi: np.ndarray, h: float, axis: int, periodic: bo
     # phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
     phi_im1, phi_ip1 = get_nodes(phi, 1, axis)
     # Second derivative
-    phi_hh = (phi_ip1 - 2 * phi + phi_im1) / h ** 2
+    phi_hh = (phi_ip1 - 2.0 * phi + phi_im1) / h ** 2
     if periodic == False: # Fix boundary using second-order forward/backward difference - O(h^2)
         if axis == 0: # Fix boundary in y
             phi_hh[0, :] = (2 * phi[0, :] - 5 * phi[1, :] + 4 * phi[2, :] - phi[3, :]) / h ** 2 # Forward
@@ -260,8 +260,8 @@ def compute_second_derivative(phi: np.ndarray, h: float, axis: int, periodic: bo
             phi_hh[:, 0] = (2 * phi[:, 0] - 5 * phi[:, 1] + 4 * phi[:, 2] - phi[:, 3]) / h ** 2
             phi_hh[:,-1] = (2 * phi[:,-1] - 5 * phi[:,-2] + 4 * phi[:,-3] - phi[:,-4]) / h ** 2
         elif axis == 2: # Fix boundary in z
-            phi_hh[:,:, 0] = (2 * phi[:, :,0] - 5 * phi[:, :, 1] + 4 * phi[:, :, 2] - phi[:, :, 3]) / h ** 2
-            phi_hh[:,:,-1] = (2 * phi[:,:,-1] - 5 * phi[:,:,-2] + 4 * phi[:,:,-3] - phi[:,:,-4]) / h ** 2
+            phi_hh[:, :, 0] = (2 * phi[:, :,0] - 5 * phi[:, :, 1] + 4 * phi[:, :, 2] - phi[:, :, 3]) / h ** 2
+            phi_hh[:, :,-1] = (2 * phi[:,:,-1] - 5 * phi[:,: ,-2] + 4 * phi[:, :,-3] - phi[:, :,-4]) / h ** 2
     return phi_hh
 
 # @jit(nopython=True)

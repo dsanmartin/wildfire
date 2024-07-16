@@ -1,14 +1,14 @@
 import numpy as np
-from arguments import T_act, A, H_R, h, alpha, S_top, S_bot, k, Y_D # Parameters from command line
+# from arguments import T_act, A, H_R, h, alpha, S_top, S_bot, k, Y_D # Parameters from command line
 from parameters import T_pc, T_inf, g, n_arrhenius, h_rad, C_p, rho, a_v, S_T_0, S_k_0, S_k, sigma, delta, sutherland_law, radiation, include_source, source_filter # Default parameters
-#from parameters import T_act, A, H_R, h, alpha, S_top, S_bot, k, Y_D
+from parameters import T_act, A, H_R, h, alpha, S_top, S_bot, k, Y_D
 
 # A lot of useful functions #
 G2D = lambda x, y, x0, y0, sx, sy, A: A * np.exp(-((x - x0) ** 2 / sx ** 2 + (y - y0) ** 2 / sy ** 2)) # 2D Gaussian function
-G3D = lambda x, y, z, x0, y0, z0, sx, sy, sz, A: A * np.exp(-((x - x0) ** 2 / sx ** 2 + (y - y0) ** 2 / sy ** 2 + (z - z0) ** 2 / sz ** 2)) # 3D Gaussian function
+G3D = lambda x, y, z, x0, y0, z0, sx, sy, sz, A: A * np.exp(-(((x - x0) / sx) ** 2  + ((y - y0) / sy) ** 2 + ((z - z0) / sz) ** 2)) # 3D Gaussian function
 K = lambda T: A * np.exp(-T_act / T) # Arrhenius-like equation 
 Km = lambda T: K(T) * T ** n_arrhenius # Modified Arrhenius-like equation
-H = lambda T: T > T_pc # Step function
+H = lambda T: (T > T_pc).astype(np.float64) # Step function
 CV = lambda x, T_pc: 2 * x / T_pc - 1 # Variable change
 Sg = lambda x, x0, k: 1 / (1 + np.exp(-2 * k * (x - x0))) # Sigmoid function (to smooth the step function)
 HS2 = lambda x, x0, k: .5 * (1 + np.tanh(k * (x - x0))) # Hyperbolic tangent function (to smooth the step function) 
@@ -342,12 +342,22 @@ def f(U: tuple, T: np.ndarray, Y: np.ndarray) -> list:
         ]
     elif ndims == 3:
         u, v, w = U
-        mod_U = np.sqrt(u ** 2 + v ** 2 + w ** 2)
-        return [
-            - g_x * (T - T_inf) / T - Y_D * a_v * Y * mod_U * u,
-            - g_y * (T - T_inf) / T - Y_D * a_v * Y * mod_U * v,
+        # mod_U = np.sqrt(u ** 2 + v ** 2 + w ** 2)
+        mod_U = np.sqrt(u * u + v * v + w * w)
+        # T_tmp = (T - T_inf) / T
+        # mod_U = np.sqrt(np.power(u, 2) + np.power(v, 2) + np.power(w, 2))
+        return np.array([
+            # - g_x * (T - T_inf) / T - Y_D * a_v * Y * mod_U * u,
+            # - g_y * (T - T_inf) / T - Y_D * a_v * Y * mod_U * v,
+            # - Y_D * a_v + u*0.0, # * a_v * Y * mod_U * u,
+            
+            # np.full_like(u, -Y_D * a_v),
+            # - Y_D * a_v * Y,
+            - Y_D * a_v * Y * mod_U * u,
+            - Y_D * a_v * Y * mod_U * v,
             - g_z * (T - T_inf) / T - Y_D * a_v * Y * mod_U * w
-        ]
+            # (T_inf / T - 1.0) * g_z - Y_D * a_v * Y * mod_U * w
+        ])
     else:
         raise ValueError('Invalid number of dimensions of U')
 
