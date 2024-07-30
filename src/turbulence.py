@@ -201,6 +201,8 @@ def turbulence_3D(U: tuple[np.ndarray, np.ndarray, np.ndarray], T: np.ndarray, h
     # Wall damping function
     tau_p = np.zeros_like(u)
     tau_p[:,:,0] = ((nu * 0.5 * (uz + wx)[:,:,0]) ** 2 + (nu * 0.5 * (vz + wy)[:,:,0]) ** 2) ** 0.5
+    # np.savez('tau_p.npz', tau_p=tau_p)
+    # tau_p = ((nu * 0.5 * (uz + wx)[0]) ** 2 + (nu * 0.5 * (vz + wy)[0]) ** 2) ** 0.5
     u_tau = (tau_p) ** 0.5
     l = C_s * Delta 
 
@@ -228,7 +230,7 @@ def turbulence_3D(U: tuple[np.ndarray, np.ndarray, np.ndarray], T: np.ndarray, h
     sgs_T_no_damp = 1 / (2 * mod_S) * (psi_x * Tx  + psi_y * Ty + psi_z * Tz) + mod_S * (Txx + Tyy + Tzz) # No damping terms
     sgs_T_damp = 2 * fw * mod_S * (fwx * Tx + fwy * Ty + fwz * Tz) # Damping terms
     sgs_T = -l ** 2 / Pr * (sgs_T_no_damp * fw ** 2 + sgs_T_damp) # SGS thermal energy
-
+    
     return np.array([sgs_x, sgs_y, sgs_z, sgs_T])
     # return sgs_x, sgs_y, sgs_z, sgs_T
 

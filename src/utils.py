@@ -77,7 +77,7 @@ def domain_2D(x_min: float, x_max: float, y_min: float, y_max: float, t_min: flo
     # 1D arrays
     x = np.linspace(x_min, x_max, Nx)
     y = np.linspace(y_min, y_max, Ny)
-    t = np.linspace(t_min, t_max, Nt)
+    t = np.linspace(t_min, t_max, Nt+1)
     # Meshgrid
     Xm, Ym = np.meshgrid(x[:-1], y)
     # Interval size
@@ -144,7 +144,7 @@ def domain_3D(x_min: float, x_max: float, y_min: float, y_max: float, z_min: flo
     x = np.linspace(x_min, x_max, Nx)
     y = np.linspace(y_min, y_max, Ny)
     z = np.linspace(z_min, z_max, Nz)
-    t = np.linspace(t_min, t_max, Nt)
+    t = np.linspace(t_min, t_max, Nt+1)
     # Meshgrid
     Xm, Ym, Zm = np.meshgrid(x[:-1], y[:-1], z)
     # Interval size

@@ -207,9 +207,9 @@ def compute_first_derivative_half_step(phi: np.ndarray, h: float, axis: int, per
     # phi_ip1 = np.roll(phi,-1, axis=axis) # phi_{i+1}
     # phi_im1 = np.roll(phi, 1, axis=axis) # phi_{i-1}
     phi_im1, phi_ip1 = get_nodes(phi, 1, axis)
-    phi_iphj = 0.5 * (phi_ip1 + phi) # phi_{i+1/2}
-    phi_imhj = 0.5 * (phi_im1 + phi) # phi_{i-1/2}
-    phi_h = (phi_iphj - phi_imhj) / h # Central difference
+    phi_iph = 0.5 * (phi_ip1 + phi) # phi_{i+1/2}
+    phi_imh = 0.5 * (phi_im1 + phi) # phi_{i-1/2}
+    phi_h = (phi_iph - phi_imh) / h # Central difference
     if periodic == False: 
         if axis == 0:# Fix boundary in y - O(dy^2)
             phi_h[0 ,:] = (-phi[2, :] + 4 * phi[1, :] - 3 * phi[0, :]) / (2 * h)

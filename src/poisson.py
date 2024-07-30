@@ -55,6 +55,32 @@ def thomas_algorithm(a: np.ndarray, b: np.ndarray, c: np.ndarray, f: np.ndarray)
         u[k-1] = (y[k-1] - c[k] * u[k]) / v[k-1]
     return u
 
+@jit(nopython=True)
+def thomas_algorithm_debug(a: np.ndarray, b: np.ndarray, c: np.ndarray, f: np.ndarray) -> np.ndarray:#, U: np.ndarray, L: np.ndarray, Y: np.ndarray, r: int, s: int) -> np.ndarray:
+    N = b.shape[0]
+    v = np.zeros(N, dtype=np.complex128)
+    l = np.zeros(N - 1, dtype=np.complex128)
+    y = np.zeros(f.shape, dtype=np.complex128)
+    u = np.zeros(f.shape, dtype=np.complex128)
+    # Determine L, U
+    v[0] = b[0]
+    for k in range(1, N):
+        l[k-1] = a[k-1] / v[k-1]
+        v[k] = b[k] - l[k-1] * c[k-1]
+    # U[r, s, :] = v
+    # L[r, s, :] = l
+    # Solve Ly = f
+    y[0] = f[0]
+    for k in range(1, N):
+        y[k] = f[k] - l[k-1] * y[k-1]
+    # Y[r, s, :] = y
+    # Solve Uu = y
+    u[-1] = y[-1] / v[-1]
+    #for k in range(N-1, -1, -1):
+    for k in range(-1, -N, -1):
+        u[k-1] = (y[k-1] - c[k] * u[k]) / v[k-1]
+    return u, v, l, y, f
+
 @jit(nopython=True, parallel=True)
 def numba_process_loop(kx, ky, Nx, Ny, Nz, dz, F_k, P_kNz, P_k, solver):
     for r in prange(Nx - 1):
@@ -189,22 +215,17 @@ def fftfd_3D(f: np.ndarray, params: dict, solver: callable = thomas_algorithm) -
     """
     Nx, Ny, Nz = params['Nx'], params['Ny'], params['Nz'] # Number of intervals
     dz = params['dz']# Space step
-    x_max = params['x'][-1] # Max x value
-    y_max = params['y'][-1] # Max y value
+    x_max, x_min = params['x'][-1], params['x'][0] # Domain limits
+    y_max, y_min = params['y'][-1], params['y'][0] # Domain limits
     _, p_top = params['bc_on_z'][5] # Pressure top boundary condition
-    # F = f[:-1, :-1] # Remove boundary
     F = f[:, :, :-1] # Remove last slice
     rr = np.fft.fftfreq(Nx - 1) * (Nx - 1)
     ss = np.fft.fftfreq(Ny - 1) * (Ny - 1)
     # Scale frequencies
-    kx = 2 * np.pi * rr * dz / x_max
-    ky = 2 * np.pi * ss * dz / y_max
+    kx = 2 * np.pi * rr * dz / (x_max - x_min)
+    ky = 2 * np.pi * ss * dz / (y_max - y_min)
     # Compute FFT in x direction (column-wise)
     F_k = np.fft.fft2(F, axes=(0, 1))
-    # for r in range(1, params['Nx'] - 1):
-    #     for s in range(1, params['Ny'] - 1):
-    #         for k in range(1, Nz - 1):
-    #             print("F_out[%d,%d,%d] = %.14f + %.14fi" % (r, s, k, np.real(F_k[s, r, k]), np.imag(F_k[s, r, k])))
     # To store pressure in Fourier space
     P_k = np.zeros_like(F_k)
     # Compute FFT in the last row (top boundary condition)
@@ -227,23 +248,69 @@ def fftfd_3D(f: np.ndarray, params: dict, solver: callable = thomas_algorithm) -
             b[0] = -1 / dz
             # Solve system A P_k = F_k
             P_k[s, r, :] = solver(a, b, c, F_k[s, r, :])
-            # print("r = {}, s = {}".format(r, s))
-            # print("gamma_rs = %.14f" % (gamma_rs))
-            # for k in range(Nz - 1):
-            #     # if np.abs(P_k[s, r, k]) > 100:
-            #     # print("p[{}, {}, {}] = {}".format(r, s, k, P_k[s, r, k]))
-            #     print("p[%d, %d, %d] = %e + %ei" % (r, s, k, np.real(P_k[s, r, k]), np.imag(P_k[s, r, k])))
-            #     if k < Nz -2 :
-            #         print("a[%d] = %.14f" % (k, a[k])) 
-            #     print("b[%d] = %.14f" % (k, b[k]))
-            #     if k < Nz -2 :
-            #         print("c[%d] = %.14f" % (k, c[k]))
-            #     # print("d[{}] = {}".format(k, F_k[s, r, k]))
-            #     # print("d[%d] = %e + %ei" % (k, np.real(F_k[s, r, k]), np.imag(F_k[s, r, k])))
-            #     print("d[%d] = %.14f" % (k, np.real(F_k[s, r, k])))
-            #     print()
+    # Compute IFFT in x direction (column-wise) to restore pressure
+    p = np.real(np.fft.ifft2(P_k, axes=(0, 1)))
+    # Add top boundary condition
+    p = np.concatenate([p, np.expand_dims(p_top, axis=2)], axis=2)
+    return p
+
+def fftfd_3D_debug(f: np.ndarray, params: dict, solver: callable = thomas_algorithm) -> np.ndarray:
+    Nx, Ny, Nz = params['Nx'], params['Ny'], params['Nz'] # Number of intervals
+    dz = params['dz']# Space step
+    x_max = params['x'][-1] # Max x value
+    y_max = params['y'][-1] # Max y value
+    _, p_top = params['bc_on_z'][5] # Pressure top boundary condition
+    # F = f[:-1, :-1] # Remove boundary
+    F = f[:, :, :-1] # Remove last slice
+    rr = np.fft.fftfreq(Nx - 1) * (Nx - 1)
+    ss = np.fft.fftfreq(Ny - 1) * (Ny - 1)
+    # Scale frequencies
+    kx = 2 * np.pi * rr * dz / x_max
+    ky = 2 * np.pi * ss * dz / y_max
+    # Compute FFT in x direction (column-wise)
+    F_k = np.fft.fft2(F, axes=(0, 1))
+    # tmp = np.transpose(F, (1, 0, 2))
+    # F_k = np.fft.fft2(tmp, axes=(0, 1))
+    # To store pressure in Fourier space
+    P_k = np.zeros_like(F_k)
+    # Compute FFT in the last row (top boundary condition)
+    P_kNz = np.fft.fft2(p_top, axes=(0, 1))
+    np.savez(params['save_path'] + "P_k_top.npz", P_k_top=P_kNz)
+    # np.savez(params['save_path'] + "F_k.npz", F=F_k)
+    A = np.zeros((Nx - 1, Ny - 1, Nz - 2))
+    B = np.zeros((Nx - 1, Ny - 1, Nz - 1))
+    C = np.zeros((Nx - 1, Ny - 1, Nz - 2))
+    U = np.zeros((Nx - 1, Ny - 1, Nz - 1), dtype=np.complex128)
+    L = np.zeros((Nx - 1, Ny - 1, Nz - 2), dtype=np.complex128)
+    Y = np.zeros((Nx - 1, Ny - 1, Nz - 1), dtype=np.complex128)
+    D = np.zeros((Nx - 1, Ny - 1, Nz - 1), dtype=np.complex128)
+    # Solve the system for each gamma
+    for r in range(Nx - 1):
+        for s in range(Ny - 1):
+            # Compute gamma
+            gamma_rs = - 2 - kx[r] ** 2 - ky[s] ** 2
+            # Create RHS of system
+            F_k[s, r, 0] = 0 + 0.5 * dz * F_k[s, r, 1] # dp/dy = 0
+            # Substract coefficient of top boundary condition
+            F_k[s, r, -1] -=  P_kNz[s, r] / dz ** 2 
+            # Create A in the system. Only keep diagonals of matrix
+            a = np.ones(Nz - 2) / dz ** 2
+            b = np.ones(Nz - 1) * gamma_rs / dz ** 2
+            c = np.ones(Nz - 2) / dz ** 2
+            # Fix first coefficients
+            c[0] = (2 + 0.5 * gamma_rs) / dz
+            b[0] = -1 / dz
+            A[r, s, :] = a
+            B[r, s, :] = b
+            C[r, s, :] = c
+            # Solve system A P_k = F_k
+            # P_k[s, r, :] = solver(a, b, c, F_k[s, r, :])
+            P_k[s, r, :], U[r,s,:], L[r,s,:], Y[r,s,:], D[r,s, :] = thomas_algorithm_debug(a, b, c, F_k[s, r, :])
     # numba_process_loop(kx, ky, Nx, Ny, Nz, dz, F_k, P_kNz, P_k, solver)
     np.savez(params['save_path'] + "F_k.npz", F=F_k)
+    np.savez(params['save_path'] + "P_in.npz", P_in=P_k)
+    np.savez(params['save_path'] + "matrix.npz", A=A, B=B, C=C)
+    np.savez(params['save_path'] + "thomas.npz", U=U, L=L, Y=Y, D=D)
     # Compute IFFT in x direction (column-wise) to restore pressure
     p = np.real(np.fft.ifft2(P_k, axes=(0, 1)))
     # Add top boundary condition
@@ -336,25 +403,23 @@ def solve_pressure_3D(u: np.ndarray, v: np.ndarray, w: np.ndarray, params: dict)
     wz = compute_first_derivative_half_step(w, dz, 2, periodic=False)
     # Compute f
     f = rho * (ux + vy + wz) / dt
-    np.savez(params['save_path'] + "f.npz", f=f)
-    # for i in range(0, params['Nx'] - 2):
-    #     for j in range(0, params['Ny'] - 2):
-    #         for k in range(0, params['Nz'] - 1):
-    # #             # if (ux[i, j, k] > 0):
-    # #             # print("u[{},{},{}] = {}".format(i, j, k, u[j, i, k]))
-    # #             # print("u_ip1jk = {}, u_im1jk = {}".format(u[j, i+1, k], u[j, i-1, k]))
-    # #             # print("ux[{},{},{}] = {}".format(i, j, k, ux[j, i, k]))
-    # #             # print("v[{},{},{}] = {}".format(i, j, k, v[j, i, k]))
-    # #             # print("v_ijp1k = {}, v_ijm1k = {}".format(v[j+1, i, k], v[j-1, i, k]))
-    # #             # print("vy[{},{},{}] = {}".format(i, j, k, vy[j, i, k]))
-    # #             # print("w[{},{},{}] = {}".format(i, j, k, w[j, i, k]))
-    # #             # print("w_ijkp1 = {}, w_ijkm1 = {}".format(w[j, i, k+1], w[j, i, k-1]))
-    # #             # print("wz[{},{},{}] = {}".format(i, j, k, wz[j, i, k]))
-    #             if f[j, i, k] != 0:
-    #                 print("f[%d,%d,%d] = %.8f" % (i, j, k, f[j, i, k]))
     # Solve using FFT-FD
     p = fftfd_3D(f, params)
-    # p = fftfd_3D_pre(f, params)
+    return p
+
+def solve_pressure_3D_debug(u: np.ndarray, v: np.ndarray, w: np.ndarray, params: dict) -> np.ndarray:
+    rho = params['rho']
+    dx, dy, dz, dt = params['dx'], params['dy'], params['dz'], params['dt']
+    # Compute ux, vy and wz using half step to avoid odd-even decoupling
+    ux = compute_first_derivative_half_step(u, dx, 1)
+    vy = compute_first_derivative_half_step(v, dy, 0)
+    wz = compute_first_derivative_half_step(w, dz, 2, periodic=False)
+    # Compute f
+    f = rho * (ux + vy + wz) / dt
+    np.savez(params['save_path'] + "f.npz", f=f)
+    np.savez(params['save_path'] + "divergence_f.npz", ux=ux, vy=vy, wz=wz)
+    # Solve using FFT-FD
+    p = fftfd_3D_debug(f, params)
     return p
 
 def solve_pressure(U, params):

@@ -89,33 +89,23 @@ def solve_tn(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, boundary_con
     # else:
     #     method = euler
     y_np1 = method(t_n, y_n, dt, Phi, params)
-    # for i in range(params['Nx'] - 1):
-    #     for j in range(params['Ny'] - 1):
-    #         for kk in range(params['Nz']):
-    #             u, v, w, T, Y = y_np1[:, j, i, kk]
-    #             print("u[%d,%d,%d] = %.14f" % (i, j, kk, u))
-    #             print("v[%d,%d,%d] = %.14f" % (i, j, kk, v))
-    #             print("w[%d,%d,%d] = %.14f" % (i, j, kk, w))
-    #             print("T[%d,%d,%d] = %.14f" % (i, j, kk, T))
-    #             print("Y[%d,%d,%d] = %.14f" % (i, j, kk, Y))
     # Solve Pressure problem
     p = solve_pressure(tuple(y_np1[:-2]), params)
-    # grad_p = grad_pressure(p, params)
-    # # Velocity correction (Chorin's projection method)
-    # y_np1[:-2] = y_np1[:-2] - dt / rho * grad_p
-    # # p = np.zeros_like(y_np1[0])
-    # # Update boundary conditions
-    # y_np1 = boundary_conditions(*y_np1, params)
-    # if bound:
-    #     # Bound temperature
-    #     y_np1[-2, y_np1[-2] < T_min] = T_min
-    #     y_np1[-2, y_np1[-2] > T_max] = T_max
-    #     # Bound mass fraction
-    #     y_np1[-1, y_np1[-1] < Y_min] = Y_min 
-    #     y_np1[-1, y_np1[-1] > Y_max] = Y_max 
+    grad_p = grad_pressure(p, params)
+    # Velocity correction (Chorin's projection method)
+    y_np1[:-2] = y_np1[:-2] - dt / rho * grad_p
+    # Update boundary conditions
+    y_np1 = boundary_conditions(*y_np1, params)
+    if bound:
+        # Bound temperature
+        y_np1[-2, y_np1[-2] < T_min] = T_min
+        y_np1[-2, y_np1[-2] > T_max] = T_max
+        # Bound mass fraction
+        y_np1[-1, y_np1[-1] < Y_min] = Y_min 
+        y_np1[-1, y_np1[-1] > Y_max] = Y_max 
     # Add temperature source if needed (permanent source up to t_source)
-    # if t_n <= t_source:
-    #     y_np1[-2, T_mask] = T_source[T_mask]
+    if t_n <= t_source:
+        y_np1[-2, T_mask] = T_source[T_mask]
     return y_np1, p
 
 def euler(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, params: dict) -> np.ndarray:
@@ -428,6 +418,7 @@ def Phi_3D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     sgs_x = sgs_y = sgs_z = sgs_T = 0
     if turb:
         sgs_x, sgs_y, sgs_z, sgs_T = turbulence((u, v, w), T, params)
+    # np.savez(params['save_path'] + 'sgs.npz', sgs_x=sgs_x, sgs_y=sgs_y, sgs_z=sgs_z, sgs_T=sgs_T)
     # PDE RHS
     # Y_D = 1.0
     # a_v = 1.0
@@ -665,10 +656,10 @@ def solve_pde_2D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
     solver_time_start = time.time()
     if NT == 1: # Save all time steps
         # Approximation
-        z = np.zeros((Nt, r_0.shape[0], Ny, Nx - 1)) 
-        p = np.zeros((Nt, Ny, Nx - 1))
+        z = np.zeros((Nt+1, r_0.shape[0], Ny, Nx - 1)) 
+        p = np.zeros((Nt+1, Ny, Nx - 1))
         z[0] = r_0
-        for n in range(Nt - 1):
+        for n in range(Nt):
             # Simulation 
             step_time_start = time.time()
             z[n+1], p[n+1] = solve_tn(t[n], z[n], dt, Phi_2D, boundary_conditions_2D, methods[method], params)
@@ -693,7 +684,7 @@ def solve_pde_2D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
             z_tmp, p_tmp = solve_tn(t[n], z_tmp, dt, Phi_2D, boundary_conditions_2D, methods[method], params)
             step_time_end = time.time()
             step_elapsed_time = (step_time_end - step_time_start)
-            if n % NT == 0 or n == (Nt - 2): # Save every NT steps and last step
+            if n % NT == 0 or n == (Nt - 1): # Save every NT steps and last step
                 z[n // NT + 1], p[n // NT + 1] = z_tmp, p_tmp
                 # Print log
                 CFL = dt * (np.max(np.abs(z_tmp[0])) / dx + np.max(np.abs(z_tmp[1])) / dy)  # Compute CFL
@@ -747,10 +738,10 @@ def solve_pde_3D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
     solver_time_start = time.time()
     if NT == 1: # Save all time steps
         # Approximation
-        z = np.zeros((Nt, r_0.shape[0], Ny - 1, Nx - 1, Nz), dtype=np.float64) 
-        p = np.zeros((Nt, Ny - 1, Nx - 1, Nz))
+        z = np.zeros((Nt+1, r_0.shape[0], Ny - 1, Nx - 1, Nz), dtype=np.float64) 
+        p = np.zeros((Nt+1, Ny - 1, Nx - 1, Nz))
         z[0] = r_0
-        for n in range(Nt - 1):
+        for n in range(Nt):
             # Simulation 
             step_time_start = time.time()
             z[n+1], p[n+1] = solve_tn(t[n], z[n], dt, Phi_3D, boundary_conditions_3D, methods[method], params)
@@ -768,13 +759,13 @@ def solve_pde_3D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
         z[0] = r_0
         z_tmp = z[0].copy()
         p_tmp = p[0].copy()
-        for n in range(Nt - 1):
+        for n in range(Nt):
             # Simulation 
             step_time_start = time.time()
             z_tmp, p_tmp = solve_tn(t[n], z_tmp, dt, Phi_3D, boundary_conditions_3D, methods[method], params)
             step_time_end = time.time()
             step_elapsed_time = (step_time_end - step_time_start)
-            if n % NT == 0 or n == (Nt - 2): # Save every NT steps and last step
+            if (n+1) % NT == 0 or n == (Nt - 1): # Save every NT steps and last step
                 z[n // NT + 1], p[n // NT + 1] = z_tmp, p_tmp
                 # Print log
                 CFL = dt * (np.max(np.abs(z_tmp[0])) / dx + np.max(np.abs(z_tmp[1])) / dy + np.max(np.abs(z_tmp[2])) / dz)  # Compute CFL
