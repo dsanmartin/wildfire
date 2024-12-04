@@ -28,7 +28,7 @@ def log_params(params: dict, save: bool = False) -> None:
     # U_0, V_0, T_0 = params['u0'], params['v0'], params['T0']
     sim_name = params['sim_name']
     method = params['method']
-    rho, T_hot, T_inf, T_pc = params['rho'], params['T_hot'], params['T_inf'], params['T_pc']
+    rho_0, T_hot, T_inf, T_pc = params['rho_0'], params['T_hot'], params['T_inf'], params['T_pc']
     nu, k, alpha, Pr, g = params['nu'], params['k'], params['alpha'], params['Pr'], params['g']
     A, T_act, H_R, h, a_v = params['A'], params['T_act'], params['H_R'], params['h'], params['a_v']
     Y_f, Y_D, C_p = params['Y_f'], params['Y_D'], params['C_p']
@@ -82,7 +82,7 @@ def log_params(params: dict, save: bool = False) -> None:
     print("Time samples: %d" % NT, file=f)
     print("nu: %.2e, g: (%.4f, %.4f, %.4f)" % (nu, *g), file=f)
     print("alpha: %.2e, C_p: %.4f, T_inf: %.4f, T_hot: %.4f" % (alpha, C_p, T_inf, T_hot), file=f)
-    print("rho: %.4f, T_pc: %.4f, A: %.4f, T_act: %.4f" % (rho, T_pc, A, T_act), file=f)
+    print("rho_0: %.4f, T_pc: %.4f, A: %.4f, T_act: %.4f" % (rho_0, T_pc, A, T_act), file=f)
     print("H_R: %.4f, h: %.4f, a_v: %.4f, Y_D: %.4f, Y_f: %.4f" % (H_R, h, a_v, Y_D, Y_f), file=f)
     print("Initial u type: %s" % initial_u_type, file=f)
     if initial_u_type == 'log':

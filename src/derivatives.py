@@ -6,7 +6,7 @@ def get_nodes(phi: np.ndarray, n: int, axis: int) -> tuple[np.ndarray, np.ndarra
     return phi_imn, phi_ipn
 
 ### Derivatives for PDE solver ###
-def compute_first_derivative(phi: np.ndarray, h: float, axis: int, periodic: bool = True, type: str = 'central') -> np.ndarray:
+def compute_first_derivative(phi: np.ndarray, h: float, axis: int, periodic: bool = True, type: str = 'central', order: int = 1) -> np.ndarray:
     """
     Compute the first derivative of a scalar field along a given axis.
 
@@ -26,6 +26,8 @@ def compute_first_derivative(phi: np.ndarray, h: float, axis: int, periodic: boo
     type : str
         Type of difference scheme. 'forward' for forward difference, 'backward'
         for backward difference and 'central' for central difference. Default is 'central'.
+    order : int
+        Order for backward and forward difference schemes. 1 for first-order, 2 for second-order.
 
     Returns
     -------
@@ -36,23 +38,51 @@ def compute_first_derivative(phi: np.ndarray, h: float, axis: int, periodic: boo
     phi_im1, phi_ip1 = get_nodes(phi, 1, axis)
     # Compute derivative
     if type == 'forward':
-        phi_h = (phi_ip1 - phi) / h # Forward difference
-        if periodic == False: # Fix boundary using backward difference in the last node - O(h)
-            if axis == 0: # Fix boundary in y
-                phi_h[-1,:] = (phi[-1,:] - phi[-2,:]) / h
-            elif axis == 1: # Fix boundary in x
-                phi_h[:,-1] = (phi[:,-1] - phi[:,-2]) / h
-            elif axis == 2: # Fix boundary in z
-                phi_h[:,:,-1] = (phi[:,:,-1] - phi[:,:,-2]) / h
+        if order == 1:
+            phi_h = (phi_ip1 - phi) / h # Forward difference
+            if periodic == False: # Fix boundary using backward difference in the last node - O(h)
+                if axis == 0: # Fix boundary in y
+                    phi_h[-1,:] = (phi[-1,:] - phi[-2,:]) / h
+                elif axis == 1: # Fix boundary in x
+                    phi_h[:,-1] = (phi[:,-1] - phi[:,-2]) / h
+                elif axis == 2: # Fix boundary in z
+                    phi_h[:,:,-1] = (phi[:,:,-1] - phi[:,:,-2]) / h
+        elif order == 2:
+            phi_ip2 = np.roll(phi, -2, axis=axis) # phi_{i+2}
+            phi_h = (-3 * phi + 4 * phi_ip1 - phi_ip2) / (2 * h) # Forward difference
+            if periodic == False: # Fix boundary using backward difference in the 2 last nodes - O(h^2)
+                if axis == 0:
+                    phi_h[-1] = (3 * phi[-1] - 4 * phi[-2] + phi[-3]) / (2 * h)
+                    phi_h[-2] = (3 * phi[-2] - 4 * phi[-3] + phi[-4]) / (2 * h)
+                elif axis == 1:
+                    phi_h[:,-1] = (3 * phi[:,-1] - 4 * phi[:,-2] + phi[:,-3]) / (2 * h)
+                    phi_h[:,-2] = (3 * phi[:,-2] - 4 * phi[:,-3] + phi[:,-4]) / (2 * h)
+                elif axis == 2:
+                    phi_h[:,:,-1] = (3 * phi[:,:,-1] - 4 * phi[:,:,-2] + phi[:,:,-3]) / (2 * h)
+                    phi_h[:,:,-2] = (3 * phi[:,:,-2] - 4 * phi[:,:,-3] + phi[:,:,-4]) / (2 * h)
     elif type == 'backward':
-        phi_h = (phi - phi_im1) / h # Backward difference
-        if periodic == False: # Fix boundary using forward difference in the first node - O(h)
-            if axis == 0: # Fix boundary in y
-                phi_h[0,:] = (phi[1, :] - phi[0, :]) / h
-            elif axis == 1: # Fix boundary in x 
-                phi_h[:,0] = (phi[:, 1] - phi[:, 0]) / h
-            elif axis == 2:
-                phi_h[:,:,0] = (phi[:, :, 1] - phi[:, :, 0]) / h
+        if order == 1:
+            phi_h = (phi - phi_im1) / h # Backward difference
+            if periodic == False: # Fix boundary using forward difference in the first node - O(h)
+                if axis == 0: # Fix boundary in y
+                    phi_h[0,:] = (phi[1, :] - phi[0, :]) / h
+                elif axis == 1: # Fix boundary in x 
+                    phi_h[:,0] = (phi[:, 1] - phi[:, 0]) / h
+                elif axis == 2:
+                    phi_h[:,:,0] = (phi[:, :, 1] - phi[:, :, 0]) / h
+        elif order == 2:
+            phi_im2 = np.roll(phi, 2, axis=axis) # phi_{i-2}
+            phi_h = (3 * phi - 4 * phi_im1 + phi_im2) / (2 * h) # Backward difference
+            if periodic == False:
+                if axis == 0:
+                    phi_h[0] = (-3 * phi[0] + 4 * phi[1] - phi[2]) / (2 * h)
+                    phi_h[1] = (-3 * phi[1] + 4 * phi[2] - phi[3]) / (2 * h)
+                elif axis == 1:
+                    phi_h[:,0] = (-3 * phi[:,0] + 4 * phi[:,1] - phi[:,2]) / (2 * h)
+                    phi_h[:,1] = (-3 * phi[:,1] + 4 * phi[:,2] - phi[:,3]) / (2 * h)
+                elif axis == 2:
+                    phi_h[:,:,0] = (-3 * phi[:,:,0] + 4 * phi[:,:,1] - phi[:,:,2]) / (2 * h)
+                    phi_h[:,:,1] = (-3 * phi[:,:,1] + 4 * phi[:,:,2] - phi[:,:,3]) / (2 * h)
     elif type == 'central':
         phi_h = (phi_ip1 - phi_im1) / (2 * h) # Central difference
         if periodic == False:
@@ -241,7 +271,12 @@ def compute_gradient_2D(phi: np.ndarray, dx: float, dy: float, periodic_axes: tu
     gradient = np.array([dphi_x, dphi_y]) # 2D in space case
     return gradient
 
-def compute_gradient_3D(phi: np.ndarray, dx: float, dy: float, dz: float, periodic_axes: tuple[bool, bool, bool]) -> tuple:
+def compute_gradient_3D(phi: np.ndarray, 
+                        dx: float, dy: float, dz: float, 
+                        periodic_axes: tuple[bool, bool, bool], 
+                        types: tuple[str, str, str] = ('central', 'central', 'central'),
+                        orders: tuple[int, int, int] = (1, 1, 1)
+                        ) -> tuple:
     """
     Compute the gradient of a 3D scalar field.
 
@@ -268,14 +303,19 @@ def compute_gradient_3D(phi: np.ndarray, dx: float, dy: float, dz: float, period
         Gradient of `phi`.
     """
     # Compute derivatives
-    dphi_x = compute_first_derivative(phi, dx, axis=1, periodic=periodic_axes[0]) # dphi/dx
-    dphi_y = compute_first_derivative(phi, dy, axis=0, periodic=periodic_axes[1]) # dphi/dy
-    dphi_z = compute_first_derivative(phi, dz, axis=2, periodic=periodic_axes[2]) # dphi/dz
+    # dphi_x = compute_first_derivative(phi, dx, axis=1, periodic=periodic_axes[0]) # dphi/dx
+    # dphi_y = compute_first_derivative(phi, dy, axis=0, periodic=periodic_axes[1]) # dphi/dy
+    # dphi_z = compute_first_derivative(phi, dz, axis=2, periodic=periodic_axes[2]) # dphi/dz
+    dphi_x = compute_first_derivative(phi, dx, axis=1, periodic=periodic_axes[0], type=types[0], order=orders[0]) # dphi/dx
+    dphi_y = compute_first_derivative(phi, dy, axis=0, periodic=periodic_axes[1], type=types[1], order=orders[1]) # dphi/dy
+    dphi_z = compute_first_derivative(phi, dz, axis=2, periodic=periodic_axes[2], type=types[2], order=orders[2]) # dphi/dz
     #gradient = np.array([dphi_x, dphi_y, dphi_z]) # 3D in space case
     # return gradient
     return dphi_x, dphi_y, dphi_z
 
-def compute_gradient(phi: np.ndarray, hs: tuple, periodic_axes: tuple) -> np.ndarray:
+def compute_gradient(phi: np.ndarray, hs: tuple, periodic_axes: tuple, 
+                     types: tuple = ('central', 'central', 'central'), 
+                     order: tuple = (1, 1, 1)) -> np.ndarray:
     """
     Compute the gradient of a 2D or 3D scalar field.
 
@@ -300,7 +340,7 @@ def compute_gradient(phi: np.ndarray, hs: tuple, periodic_axes: tuple) -> np.nda
     if ndims == 2:
         return compute_gradient_2D(phi, hs[0], hs[1], periodic_axes)
     elif ndims == 3:
-        return compute_gradient_3D(phi, hs[0], hs[1], hs[2], periodic_axes)
+        return compute_gradient_3D(phi, hs[0], hs[1], hs[2], periodic_axes, types, order)
 
 def compute_laplacian_2D(phi: np.ndarray, dx: float, dy: float, periodic_axes: tuple) -> np.ndarray:
     """

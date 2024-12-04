@@ -32,7 +32,7 @@ def turbulence_2D(U: tuple[np.ndarray, np.ndarray] , T: np.ndarray, args: dict) 
     dx, dy = args['dx'], args['dy']
     C_s = args['C_s'] 
     Pr = args['Pr']
-    rho = args['rho']
+    # rho = args['rho']
     Ym = args['Ym']
     nu = args['nu']
     Delta = (dx * dy) ** (1/2)
@@ -116,8 +116,6 @@ def turbulence_3D(U: tuple[np.ndarray, np.ndarray, np.ndarray], T: np.ndarray, h
             Constant used in the wall damping function.
         - Pr : float
             Prandtl number.
-        - rho : float
-            Density of the fluid.
         - Zm : float
             Mixing length.
         - nu : float

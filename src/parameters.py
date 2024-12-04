@@ -21,9 +21,10 @@ sigma = 5.670374419e-8 # Stefan-Boltzmann constant in W m^{-2} K^{-4} or kg s^{-
 C_p = 1005 # Specific heat capacity (constant pressure) in J kg^{-1} K^{-1} or m^2 s^{-2} K^{-1} (Air: 1005)
 C_p = 1007 # Specific heat capacity (constant pressure) in J kg^{-1} K^{-1} or m^2 s^{-2} K^{-1} (Air: 1007 at 15 °C, NASA - Cengel 2018)
 C_V =  717 # Specific heat capacity (constant volume) in J kg^{-1} K^{-1} or m^2 s^{-2} K^{-1} (Air: 717)
-rho = 1.293 # Density in kg m^{-3} (Air: 1.293)
-rho = 1.229 # Density in kg m^{-3} (Air: 1.229 at 15 °C - NASA)
-rho = 1.225 # Density in kg m^{-3} (Air: 1.225 at 15 °C - Cengel 2018)
+# rho = 1.293 # Density in kg m^{-3} (Air: 1.293)
+# rho = 1.229 # Density in kg m^{-3} (Air: 1.229 at 15 °C - NASA)
+# rho = 1.225 # Density in kg m^{-3} (Air: 1.225 at 15 °C - Cengel 2018)
+rho_0 = 1.225 # Reference density in kg m^{-3} (Air: 1.225)
 mu = 1.73e-5 # Dynamic viscosity in kg m^{-1} s^{-1} (Air: 1.73e-5)
 mu = 1.802e-5 # Dynamic viscosity in kg m^{-1} s^{-1} (Air: 1.802e-5, Cengel 2018)
 
@@ -37,7 +38,8 @@ delta = 1 # Optical path length in m
 
 # Fluid equations parameters
 nu = 1.5e-5 # Kinematic viscosity in m^2 s^{-1} (Air: 1.5e-5)
-nu = mu / rho # Kinematic viscosity in m^2 s^{-1} (Air: 1.47e-5, Cengel 2018)
+# nu = mu / rho # Kinematic viscosity in m^2 s^{-1} (Air: 1.47e-5, Cengel 2018)
+nu = mu / rho_0 # Kinematic viscosity in m^2 s^{-1} (Air: 1.47e-5)
 nu = 1.47e-5
 T_inf = 293.15 # Temperature of the environment in K (Ambient temperature: 20°C - 293.15 K)
 T_inf = 288.15 # Temperature of the environment in K (Ambient temperature: 15°C - 288.15 K, NASA - Cengel 2018)
@@ -149,3 +151,7 @@ spatial_dims = 3
 periodic_axes = (False, True)
 
 output_dir = './data/output/'
+
+# Solver parameters
+tol = 1e-8
+max_iter = 50

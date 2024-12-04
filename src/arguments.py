@@ -195,7 +195,7 @@ parameters = {
     'x': (x_min, x_max), 'y': (y_min, y_max), 't': (t_min, t_max),
     'Nx': Nx, 'Ny': Ny, 'Nt': Nt, 'NT': NT,
     # Fluid
-    'nu': nu, 'rho': rho, 'g': g, 'T_inf': T_inf, 
+    'nu': nu, 'rho_0': rho_0, 'g': g, 'T_inf': T_inf, 
     'Pr': Pr, 'C_s': C_s, # Turbulence
     'C_D': C_D, 'a_v': a_v, # Drag force
     'turbulence': turb,
@@ -257,6 +257,9 @@ parameters = {
     'input_ic': input_ic,
     'sim_name': sim_name,
     'save_path': save_path,
+    # Poisson solver parameters
+    'tol': tol,
+    'max_iter': max_iter,
 }
 
 if spatial_dims == 3:

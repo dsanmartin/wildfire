@@ -135,9 +135,13 @@ data/
 others/
 docs/
 src_gpu/
+src_cupy/
+src_cunumeric/
 
 # Script
 scripts/run_gpu.sh
+scripts/run_cron.sh
+scripts/show_animation_bk.sh
 
 # Sphinx
 .readthedocs.yaml

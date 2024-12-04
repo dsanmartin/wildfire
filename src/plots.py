@@ -120,10 +120,11 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
     if 'Y' in plots:
         Y, Y_min, Y_max = get_variable(data, 'Y', tn)
         # Fix boundaries for Y
-        Y[0, 0, :, :] = 0
-        Y[0,-1, :, :] = 0
-        Y[0, :, 0, :] = 0
-        Y[0, :,-1, :] = 0 
+        Y[0, :, 0] = 0
+        Y[0, :,-1] = 0
+        if 'z' in data:
+            Y[0, 0, :, :] = 0
+            Y[0,-1, :, :] = 0
         # Get IBM nodes
         dead_nodes = parameters['dead_nodes']
         terrain = np.zeros_like(Y[0])

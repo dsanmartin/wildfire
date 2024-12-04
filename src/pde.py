@@ -4,7 +4,7 @@ from datetime import timedelta
 from derivatives import compute_gradient, compute_laplacian, compute_first_derivative_upwind, compute_first_derivative
 from poisson import solve_pressure
 from turbulence import turbulence
-from utils import f, S, k, kT, K, H
+from utils import f, S, k, kT, K, H, rho
 from logs import log_time_step
 
 def grad_pressure(p: np.ndarray, params: dict) -> np.ndarray:
@@ -43,7 +43,9 @@ def grad_pressure(p: np.ndarray, params: dict) -> np.ndarray:
     grad_p = np.array(compute_gradient(p, hs, periodic))
     return grad_p
 
-def solve_tn(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, boundary_conditions: callable, method: callable, params: dict) -> tuple[np.ndarray, np.ndarray]:
+# def solve_tn(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, boundary_conditions: callable, method: callable, params: dict) -> tuple[np.ndarray, np.ndarray]:
+def solve_tn(t_n: float, y_n: np.ndarray, p: np.ndarray, dt: float, Phi: callable, boundary_conditions: callable, method: callable, params: dict, log_fp: bool = False) -> tuple[np.ndarray, np.ndarray]:
+
     """
     Solve the PDE system for a single time step.
 
@@ -76,13 +78,16 @@ def solve_tn(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, boundary_con
     and returns the solution at the next time step and the pressure solution.
     """
     # Get parameters
-    rho = params['rho']
+    # rho_0 = params['rho_0']
     T_mask = params['T_mask']
     t_source = params['t_source']
     T_source = params['T_source']
     bound = params['bound']
     T_min, T_max = params['T_min'], params['T_max']
     Y_min, Y_max = params['Y_min'], params['Y_max']
+    # Poisson solver parameters
+    max_iter = params['max_iter']
+    tol = params['tol']
     # Solve time step 
     # if t_n <= 5:
     #     method = RK4
@@ -90,10 +95,42 @@ def solve_tn(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, boundary_con
     #     method = euler
     y_np1 = method(t_n, y_n, dt, Phi, params)
     # Solve Pressure problem
-    p = solve_pressure(tuple(y_np1[:-2]), params)
+    # p = solve_pressure(tuple(y_np1[:-2]), params)
+    # p = solve_pressure(tuple(y_np1[:-2]), y_np1[-2], params)
+    # Fixed point iteration for pressure
+    # N_iter = 5
+    # for _ in range(N_iter):
+    for i in range(max_iter):
+        p_tmp = p.copy()
+        p = solve_pressure(tuple(y_np1[:-2]), y_np1[-2], p, params)
+        if np.linalg.norm(p.flatten() - p_tmp.flatten(), np.inf) < tol:
+            break
+        if log_fp:
+            print("Fixed-point iteration:")
+            print("Iteration:", i)
+            print("Pressure:")
+            print("L2:", np.linalg.norm(p.flatten() - p_tmp.flatten()))
+            print("L-inf", np.linalg.norm(p.flatten() - p_tmp.flatten(), np.inf))
+            # Compute gradient of pressure
+            grad_p = grad_pressure(p, params)
+            grad_p_tmp = grad_pressure(p_tmp, params)
+            print("Gradient of pressure:")
+            print("p:")
+            print("L2:", np.linalg.norm(grad_p.flatten()))
+            print("L-inf", np.linalg.norm(grad_p.flatten(), np.inf))
+            print("p_tmp:")
+            print("L2:", np.linalg.norm(grad_p_tmp.flatten()))
+            print("L-inf", np.linalg.norm(grad_p_tmp.flatten(), np.inf))
+            print("Diff: ")
+            print("L2:", np.linalg.norm(grad_p.flatten() - grad_p_tmp.flatten()))            
+            print("L-inf", np.linalg.norm(grad_p.flatten() - grad_p_tmp.flatten(), np.inf))
     grad_p = grad_pressure(p, params)
     # Velocity correction (Chorin's projection method)
-    y_np1[:-2] = y_np1[:-2] - dt / rho * grad_p
+    # T_inf = params['T_inf']
+    # rho_v = rho_0 * T_inf / y_np1[-2]
+    rho_v = rho(y_np1[-2])
+    y_np1[:-2] = y_np1[:-2] - dt / rho_v * grad_p
+    # y_np1[:-2] = y_np1[:-2] - dt / rho * grad_p
     # Update boundary conditions
     y_np1 = boundary_conditions(*y_np1, params)
     if bound:
@@ -661,8 +698,9 @@ def solve_pde_2D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
         z[0] = r_0
         for n in range(Nt):
             # Simulation 
-            step_time_start = time.time()
-            z[n+1], p[n+1] = solve_tn(t[n], z[n], dt, Phi_2D, boundary_conditions_2D, methods[method], params)
+            step_time_start = time.time()            
+            # z[n+1], p[n+1] = solve_tn(t[n], z[n], dt, Phi_2D, boundary_conditions_2D, methods[method], params)
+            z[n+1], p[n+1] = solve_tn(t[n], z[n], p[n], dt, Phi_2D, boundary_conditions_2D, methods[method], params)
             step_time_end = time.time()
             elapsed_time = (step_time_end - step_time_start)
             # Print log
@@ -681,7 +719,8 @@ def solve_pde_2D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
         for n in range(Nt - 1):
             # Simulation 
             step_time_start = time.time()
-            z_tmp, p_tmp = solve_tn(t[n], z_tmp, dt, Phi_2D, boundary_conditions_2D, methods[method], params)
+            # z_tmp, p_tmp = solve_tn(t[n], z_tmp, dt, Phi_2D, boundary_conditions_2D, methods[method], params)
+            z_tmp, p_tmp = solve_tn(t[n], z_tmp, p_tmp, dt, Phi_2D, boundary_conditions_2D, methods[method], params, n % NT == 0 or n == (Nt - 1))
             step_time_end = time.time()
             step_elapsed_time = (step_time_end - step_time_start)
             if n % NT == 0 or n == (Nt - 1): # Save every NT steps and last step

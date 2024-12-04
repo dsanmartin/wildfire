@@ -3,7 +3,7 @@
 if [ $# -eq 0 ]
   then
     echo "Error: The parameters file path is required."
-    python src/2d/main.py -h
+    python src/main.py -h
 fi
 args=("$@");
 parameters_file=${args[0]}; # Path to parameters file

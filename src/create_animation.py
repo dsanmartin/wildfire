@@ -70,6 +70,7 @@ domain, data_plots = load_data_for_plots(data_path, parameters_path, plots, tn=N
 if len(domain) == 3:
     x, y, t = domain
     z = None
+    slices = None
 elif len(domain) == 4:
     x, y, z, t = domain
     slices = [x.shape[0] // 2, y.shape[0] // 2, 1]
@@ -111,7 +112,7 @@ for n in range(0, Nt, ts):
 # Build video or GIF
 if show not in ["plot", "pdf"]:
     if show == "video":
-        io_writer = imageio.get_writer(video_name, fps=1)
+        io_writer = imageio.get_writer(video_name, fps=10)
     else:
         io_writer = imageio.get_writer(gif_name, mode='I')
 

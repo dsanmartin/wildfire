@@ -1,5 +1,5 @@
 import numpy as np
-from utils import gamma
+from utils import gamma, rho
 from numba import jit, njit, prange
 from derivatives import compute_first_derivative_half_step
 from multiprocessing import Pool
@@ -317,7 +317,8 @@ def fftfd_3D_debug(f: np.ndarray, params: dict, solver: callable = thomas_algori
     p = np.concatenate([p, np.expand_dims(p_top, axis=2)], axis=2)
     return p
 
-def solve_pressure_2D(u: np.ndarray, v: np.ndarray, params: dict) -> np.ndarray:
+# def solve_pressure_2D(u: np.ndarray, v: np.ndarray, params: dict) -> np.ndarray:
+def solve_pressure_2D(u: np.ndarray, v: np.ndarray, T: np.ndarray, p: np.ndarray, params: dict) -> np.ndarray:
     """
     Solves the pressure Poisson equation for a given temporal velocity field.
     Used to correct the velocity field to satisfy the continuity equation.
@@ -348,13 +349,19 @@ def solve_pressure_2D(u: np.ndarray, v: np.ndarray, params: dict) -> np.ndarray:
         The pressure field.
 
     """
-    rho = params['rho']
+    # rho_0 = params['rho_0']
     dx, dy, dt = params['dx'], params['dy'], params['dt']
     # Compute ux and vy using half step to avoid odd-even decoupling
     ux = compute_first_derivative_half_step(u, dx, 1) 
     vy = compute_first_derivative_half_step(v, dy, 0, False)
     # Compute f
-    f = rho / dt * (ux + vy)
+    rho_v = rho(T)
+    rho_vx = compute_first_derivative_half_step(rho_v, dx, 1)
+    rho_vy = compute_first_derivative_half_step(rho_v, dy, 0, False)
+    px = compute_first_derivative_half_step(p, dx, 1)
+    py = compute_first_derivative_half_step(p, dy, 0, False)
+    extra = (rho_vx * px + rho_vy * py) / rho_v
+    f = rho_v / dt * (ux + vy) + extra
     # Solve using FFT-FD
     p = fftfd(f, params)
     # p = fftfd_parallel(f, params)
@@ -422,11 +429,11 @@ def solve_pressure_3D_debug(u: np.ndarray, v: np.ndarray, w: np.ndarray, params:
     p = fftfd_3D_debug(f, params)
     return p
 
-def solve_pressure(U, params):
+def solve_pressure(U, T, p, params):
     ndims = len(U)
     if ndims == 2:
         u, v = U
-        p = solve_pressure_2D(u, v, params)
+        p = solve_pressure_2D(u, v, T, p, params)
     elif ndims == 3:
         u, v, w = U
         p = solve_pressure_3D(u, v, w, params)
