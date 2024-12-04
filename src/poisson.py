@@ -318,7 +318,8 @@ def fftfd_3D_debug(f: np.ndarray, params: dict, solver: callable = thomas_algori
     return p
 
 # def solve_pressure_2D(u: np.ndarray, v: np.ndarray, params: dict) -> np.ndarray:
-def solve_pressure_2D(u: np.ndarray, v: np.ndarray, T: np.ndarray, p: np.ndarray, params: dict) -> np.ndarray:
+# def solve_pressure_2D(u: np.ndarray, v: np.ndarray, T: np.ndarray, p: np.ndarray, params: dict) -> np.ndarray:
+def solve_pressure_2D(u: np.ndarray, v: np.ndarray, rho: np.ndarray, p: np.ndarray, params: dict) -> np.ndarray:
     """
     Solves the pressure Poisson equation for a given temporal velocity field.
     Used to correct the velocity field to satisfy the continuity equation.
@@ -355,7 +356,7 @@ def solve_pressure_2D(u: np.ndarray, v: np.ndarray, T: np.ndarray, p: np.ndarray
     ux = compute_first_derivative_half_step(u, dx, 1) 
     vy = compute_first_derivative_half_step(v, dy, 0, False)
     # Compute f
-    rho_v = rho(T)
+    rho_v = rho
     rho_vx = compute_first_derivative_half_step(rho_v, dx, 1)
     rho_vy = compute_first_derivative_half_step(rho_v, dy, 0, False)
     px = compute_first_derivative_half_step(p, dx, 1)

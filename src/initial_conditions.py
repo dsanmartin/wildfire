@@ -1,7 +1,7 @@
 import numpy as np
 from topography import flat2D, hill2D, flat3D, hill3D
 from utils import create_plate, create_gaussian
-from arguments import T_hot, topography_shape, spatial_dims, Y_h, u_r, T0_x_start, T0_x_end, T0_y_start, T0_y_end, T0_z_start, T0_z_end, T0_x_center, T0_y_center, T0_z_center, T0_length, T0_width, T0_height # Parameters from command line
+from arguments import T_hot, topography_shape, spatial_dims, Y_h, u_r, T0_x_start, T0_x_end, T0_y_start, T0_y_end, T0_z_start, T0_z_end, T0_x_center, T0_y_center, T0_z_center, T0_length, T0_width, T0_height, rho_0 # Parameters from command line
 from parameters import T_inf, u_ast, k, d, u_z_0, z_r, alpha_u, initial_u_type, T0_shape
 
 def load_initial_condition(data_path: str, ndim: int = 2) -> callable:
@@ -44,6 +44,9 @@ if spatial_dims == 2:
 
     # Initial pressure $p(x, y, 0)$ #
     p0 = lambda x, y: x * y * 0 
+    
+    # Initial density $\rho(x, y, 0)$ #
+    rho0 = lambda x, y: rho_0 * T_inf / T0(x, y)
 
     # Force term $F=(fx, fy)$ #
     F = lambda x, y: np.array([

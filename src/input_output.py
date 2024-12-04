@@ -43,12 +43,15 @@ def save_approximation(parameters: dict, data: dict) -> None:
     create_simulation_folder(save_path)
     # Save approximation data
     filename = save_path + 'data.npz'
-    if len(data) == 5:
+    n_dims = data['u'].ndim
+    # if len(data) == 5:
+    if n_dims == 3:
         x, y, t = parameters['x'], parameters['y'], parameters['t']
-        u, v, T, Y, p = data['u'], data['v'], data['T'], data['Y'], data['p']
+        u, v, T, Y, p, rho = data['u'], data['v'], data['T'], data['Y'], data['p'], data['rho']
         NT = parameters['NT'] # Subsampling rate
-        np.savez(filename, u=u, v=v, T=T, Y=Y, p=p, x=x, y=y, t=t[::NT])
-    elif len(data) == 6:
+        np.savez(filename, u=u, v=v, T=T, Y=Y, p=p, rho=rho, x=x, y=y, t=t[::NT])
+    # elif len(data) == 6:
+    elif n_dims == 4:
         x, y, z, t = parameters['x'], parameters['y'], parameters['z'], parameters['t']
         u, v, w, T, Y, p = data['u'], data['v'], data['w'], data['T'], data['Y'], data['p']
         NT = parameters['NT'] # Subsampling rate

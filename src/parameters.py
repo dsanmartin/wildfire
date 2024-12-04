@@ -76,7 +76,7 @@ source_filter = False
 radiation = False
 sutherland_law = False
 debug_pde = False
-bound = True
+bound = False
 T_min, T_max = T_inf, 1500
 # T_min, T_max = -10000, 10000
 Y_min, Y_max = 0, 1
@@ -132,13 +132,15 @@ v_dead_nodes = 0
 w_dead_nodes = 0
 T_dead_nodes = T_inf
 Y_dead_nodes = 1
+rho_dead_nodes = 0
 
 dead_nodes_values = [
     u_dead_nodes, 
     v_dead_nodes, 
     w_dead_nodes, 
     T_dead_nodes, 
-    Y_dead_nodes
+    Y_dead_nodes,
+    rho_dead_nodes
 ]
 
 # Sutherland's law parameters

@@ -14,9 +14,10 @@ Sg = lambda x, x0, k: 1 / (1 + np.exp(-2 * k * (x - x0))) # Sigmoid function (to
 HS2 = lambda x, x0, k: .5 * (1 + np.tanh(k * (x - x0))) # Hyperbolic tangent function (to smooth the step function) 
 HS3 = lambda x, x0, k, T_pc: Sg(CV(x, T_pc), x0, k) # Hyperbolic tangent function (to smooth the step function)
 Q_rad = lambda T: h_rad * (T ** 4 - T_inf ** 4) / (rho_0 * C_p) # Radiative heat flux
-rho = lambda T: rho_0 * T_inf / T # Density
+rho = lambda T: rho_0 + T * 0#* T_inf / T # Density
 source = lambda T, Y: H_R * Y * K(T) * H(T) / C_p # Source term
 sink = lambda T: -h * a_v * (T - T_inf) / (rho(T) * C_p) # Sink term
+sink2 = lambda T, rho: -h * a_v * (T - T_inf) / (rho * C_p) # Sink term
 sutherland = lambda T: S_k_0 * (T / S_T_0) ** 1.5 * (S_T_0 + S_k) / (T + S_k) / (rho_0 * C_p) # Sutherland's law
 sutherland_T = lambda T: 1.5 * S_k_0 * (S_T_0 + S_k) / T ** 1.5 * (T ** .5 * (T + S_k) - T ** 1.5) / (T + S_k) ** 2 / (rho_0 * C_p) # Sutherland's law derivative
 stefan_radiation = lambda T: 4 * sigma * delta * T ** 3 / (rho_0 * C_p) # Stefan-Boltzmann law
@@ -382,6 +383,32 @@ def S(T: np.ndarray, Y: np.ndarray) -> np.ndarray:
     if include_source:
         S1 = source(T, Y)
         S2 = sink(T)
+        if source_filter:
+            S1[S1 >= S_top] = S_bot
+        return S1 + S2
+    else:
+        return 0
+    
+def SS(T: np.ndarray, Y: np.ndarray, rho: np.ndarray) -> np.ndarray:
+    """
+    Calculate the value of souce and sink given temperature and fuel arrays.
+
+    Parameters
+    ----------
+    T : np.ndarray (Ny, Nx)
+        Array of temperatures.
+    Y : np.ndarray (Ny, Nx)
+        Array of fuel fraction.
+
+    Returns
+    -------
+    np.ndarray
+        Array of S values.
+
+    """
+    if include_source:
+        S1 = source(T, Y)
+        S2 = sink2(T, rho)
         if source_filter:
             S1[S1 >= S_top] = S_bot
         return S1 + S2

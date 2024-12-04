@@ -1,4 +1,5 @@
 import sys
+import numpy as np
 from utils import non_dimensional_numbers
 from input_output import create_simulation_folder
 
@@ -130,7 +131,7 @@ def log_params(params: dict, save: bool = False) -> None:
 
     return None
 
-def log_time_step(log_file: any, n: int, t: float, CFL: float, T_min: float, T_max: float, Y_min: float, Y_max: float, elapsed_time: float) -> None:
+def log_time_step_v1(log_file: any, n: int, t: float, CFL: float, T_min: float, T_max: float, Y_min: float, Y_max: float, elapsed_time: float) -> None:
     """
     Log the time step information.
 
@@ -169,5 +170,54 @@ def log_time_step(log_file: any, n: int, t: float, CFL: float, T_min: float, T_m
     print("CFL: {:.6f}".format(CFL), file=log_file)
     print("Temperature: Min = {:.2f} K, Max {:.2f} K".format(T_min, T_max), file=log_file)
     print("Fuel: Min = {:.2f}, Max {:.2f}".format(Y_min, Y_max), file=log_file)
+    print("Step time: {:.6f} s".format(elapsed_time), file=log_file)
+    return None
+
+def log_time_step(log_file: any, n: int, t: float, y_n: np.ndarray, elapsed_time: float, params: dict) -> None:
+    """
+    Log the time step information.
+
+    Parameters
+    ----------
+    log_file : file-like object
+        The file to which the log will be saved.
+    n : int
+        The time step number.
+    t : float
+        The simulation time.
+    CFL : float
+        The CFL number.
+    T_min : float
+        The minimum temperature.
+    T_max : float
+        The maximum temperature.
+    Y_min : float
+        The minimum fuel value.
+    Y_max : float
+        The maximum fuel value.
+    elapsed_time : float
+        The time taken for the time step.
+
+    Returns
+    -------
+    None
+    """
+    dx, dy, dt = params['dx'], params['dy'], params['dt']
+    CFL = dt * (np.max(np.abs(y_n[0])) / dx + np.max(np.abs(y_n[1])) / dy)  # Compute CFL
+    T_min, T_max = np.min(y_n[2]), np.max(y_n[2])
+    Y_min, Y_max = np.min(y_n[3]), np.max(y_n[3]) 
+    rho_min, rho_max = np.min(y_n[4]), np.max(y_n[4])
+    print("Time step: {:=6d}, Simulation time: {:f} s".format(n, t))
+    print("CFL: {:.6f}".format(CFL))
+    print("Temperature: Min = {:.2f} K, Max {:.2f} K".format(T_min, T_max))
+    print("Fuel: Min = {:.2f}, Max {:.2f}".format(Y_min, Y_max))
+    print("Density: Min = {:.2f}, Max {:.2f}".format(rho_min, rho_max))
+    print("Step time: {:.6f} s".format(elapsed_time))
+    # Save log to file
+    print("Time step: {:=6d}, Simulation time: {:.2f} s".format(n, t), file=log_file)
+    print("CFL: {:.6f}".format(CFL), file=log_file)
+    print("Temperature: Min = {:.2f} K, Max {:.2f} K".format(T_min, T_max), file=log_file)
+    print("Fuel: Min = {:.2f}, Max {:.2f}".format(Y_min, Y_max), file=log_file)
+    print("Density: Min = {:.2f}, Max {:.2f}".format(rho_min, rho_max), file=log_file)
     print("Step time: {:.6f} s".format(elapsed_time), file=log_file)
     return None

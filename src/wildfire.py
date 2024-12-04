@@ -1,7 +1,7 @@
 import numpy as np
 # from arguments import * # Include default parameters + command line arguments
 from utils import domain_2D, domain_3D
-from initial_conditions import U0, T0, Y0, p0, F, topo
+from initial_conditions import rho0, U0, T0, Y0, p0, F, topo
 from ibm import topography_nodes, topography_nodes_3D, topography_distance, topography_distance_3D
 from pde import solve_pde_2D, solve_pde_3D
 from poisson import pre_computation
@@ -32,6 +32,7 @@ class Wildfire:
         x, y, t, Xm, Ym, dx, dy, dt = domain_2D(x_min, x_max, y_min, y_max, t_min, t_max, Nx, Ny, Nt)
         # Evaluate initial conditions
         u0, v0 = U0 
+        RHO_0 = rho0(Xm, Ym)
         U_0 = u0(Xm, Ym)
         V_0 = v0(Xm, Ym)
         T_0 = T0(Xm, Ym) 
@@ -43,7 +44,8 @@ class Wildfire:
         dead_nodes_values = np.array([
             self.parameters['dead_nodes_values'][0], 
             self.parameters['dead_nodes_values'][1], 
-            self.parameters['dead_nodes_values'][-2], 
+            self.parameters['dead_nodes_values'][-3], 
+            self.parameters['dead_nodes_values'][-2],
             self.parameters['dead_nodes_values'][-1]
         ])
         topo_distance = topography_distance(Xm, Ym, topo)
@@ -51,8 +53,9 @@ class Wildfire:
         if self.parameters['input_ic'] is not True:
             U_0[dead_nodes] = dead_nodes_values[0]
             V_0[dead_nodes] = dead_nodes_values[1]
-            T_0[dead_nodes] = dead_nodes_values[2]
-            Y_0[dead_nodes] = dead_nodes_values[3]
+            T_0[dead_nodes] = dead_nodes_values[-3]
+            Y_0[dead_nodes] = dead_nodes_values[-2]
+            RHO_0[dead_nodes] = dead_nodes_values[-1]
         if self.parameters['show_ic']:
             S_0 = np.sqrt(U_0 ** 2 + V_0 ** 2)
             plot_initial_conditions(Xm, Ym, U_0, V_0, S_0, T_0, Y_0, plot_lims=[[0, 200], [0, 20]])
@@ -64,7 +67,8 @@ class Wildfire:
             [V_0[0], V_0[-1]],
             [T_0[0], T_0[-1]],
             [Y_0[0], Y_0[-1]],
-            [P_0[0], P_0[-1]]
+            [P_0[0], P_0[-1]],
+            [RHO_0[0], RHO_0[-1]]
         ])
         # Add parameters to the dictionary
         self.parameters['x'] = x
@@ -79,6 +83,7 @@ class Wildfire:
         self.parameters['Ny'] = Ny
         self.parameters['Nt'] = Nt
         self.parameters['NT'] = NT
+        self.parameters['rho0'] = RHO_0
         self.parameters['u0'] = U_0
         self.parameters['v0'] = V_0
         self.parameters['T0'] = T_0
@@ -203,11 +208,12 @@ class Wildfire:
     def solve(self):
         # Initial conditions
         if self.ndims == 3:
-            r_0 = np.array([
+            r_0 = np.array([                
                 self.parameters['u0'], 
                 self.parameters['v0'],
                 self.parameters['T0'],
-                self.parameters['Y0']
+                self.parameters['Y0'],
+                self.parameters['rho0']
             ])
             self.data = solve_pde_2D(r_0, self.parameters)
         elif self.ndims == 4:

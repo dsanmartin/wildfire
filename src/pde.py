@@ -4,8 +4,8 @@ from datetime import timedelta
 from derivatives import compute_gradient, compute_laplacian, compute_first_derivative_upwind, compute_first_derivative
 from poisson import solve_pressure
 from turbulence import turbulence
-from utils import f, S, k, kT, K, H, rho
-from logs import log_time_step
+from utils import f, S, SS, k, kT, K, H, rho
+from logs import log_time_step, log_time_step_v1
 
 def grad_pressure(p: np.ndarray, params: dict) -> np.ndarray:
     """
@@ -41,6 +41,9 @@ def grad_pressure(p: np.ndarray, params: dict) -> np.ndarray:
         periodic = (True, True, False)
     # Compute grad(p)
     grad_p = np.array(compute_gradient(p, hs, periodic))
+    p_x = compute_first_derivative(p, hs[0], axis=1, periodic=periodic[0]) # dphi/dx
+    p_y = compute_first_derivative(p, hs[1], axis=0, periodic=periodic[1], type='forward', order=2) # dphi/dy
+    grad_p = np.array([p_x, p_y]) # 2D in space case
     return grad_p
 
 # def solve_tn(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, boundary_conditions: callable, method: callable, params: dict) -> tuple[np.ndarray, np.ndarray]:
@@ -102,47 +105,56 @@ def solve_tn(t_n: float, y_n: np.ndarray, p: np.ndarray, dt: float, Phi: callabl
     # for _ in range(N_iter):
     for i in range(max_iter):
         p_tmp = p.copy()
-        p = solve_pressure(tuple(y_np1[:-2]), y_np1[-2], p, params)
+        # p = solve_pressure(tuple(y_np1[:-2]), y_np1[-2], p, params)
+        p = solve_pressure(tuple(y_np1[:-3]), y_np1[-1], p, params)
         if np.linalg.norm(p.flatten() - p_tmp.flatten(), np.inf) < tol:
             break
         if log_fp:
             print("Fixed-point iteration:")
             print("Iteration:", i)
-            print("Pressure:")
+            # print("Pressure:")
             print("L2:", np.linalg.norm(p.flatten() - p_tmp.flatten()))
             print("L-inf", np.linalg.norm(p.flatten() - p_tmp.flatten(), np.inf))
-            # Compute gradient of pressure
-            grad_p = grad_pressure(p, params)
-            grad_p_tmp = grad_pressure(p_tmp, params)
-            print("Gradient of pressure:")
-            print("p:")
-            print("L2:", np.linalg.norm(grad_p.flatten()))
-            print("L-inf", np.linalg.norm(grad_p.flatten(), np.inf))
-            print("p_tmp:")
-            print("L2:", np.linalg.norm(grad_p_tmp.flatten()))
-            print("L-inf", np.linalg.norm(grad_p_tmp.flatten(), np.inf))
-            print("Diff: ")
-            print("L2:", np.linalg.norm(grad_p.flatten() - grad_p_tmp.flatten()))            
-            print("L-inf", np.linalg.norm(grad_p.flatten() - grad_p_tmp.flatten(), np.inf))
+            # # Compute gradient of pressure
+            # grad_p = grad_pressure(p, params)
+            # grad_p_tmp = grad_pressure(p_tmp, params)
+            # print("Gradient of pressure:")
+            # print("p:")
+            # print("L2:", np.linalg.norm(grad_p.flatten()))
+            # print("L-inf", np.linalg.norm(grad_p.flatten(), np.inf))
+            # print("p_tmp:")
+            # print("L2:", np.linalg.norm(grad_p_tmp.flatten()))
+            # print("L-inf", np.linalg.norm(grad_p_tmp.flatten(), np.inf))
+            # print("Diff: ")
+            # print("L2:", np.linalg.norm(grad_p.flatten() - grad_p_tmp.flatten()))            
+            # print("L-inf", np.linalg.norm(grad_p.flatten() - grad_p_tmp.flatten(), np.inf))
     grad_p = grad_pressure(p, params)
     # Velocity correction (Chorin's projection method)
-    # T_inf = params['T_inf']
-    # rho_v = rho_0 * T_inf / y_np1[-2]
-    rho_v = rho(y_np1[-2])
-    y_np1[:-2] = y_np1[:-2] - dt / rho_v * grad_p
+    rho_v = y_np1[-1]#rho(y_np1[-2])
+    rho_min = np.min(rho_v)
+    if rho_min < 1e-6:
+        print("rho_min:", rho_min)
     # y_np1[:-2] = y_np1[:-2] - dt / rho * grad_p
+    # y_np1[:-2] = y_np1[:-2] - dt / rho_v * grad_p
+    y_np1[:-3] = y_np1[:-3] - dt / rho_v * grad_p
     # Update boundary conditions
     y_np1 = boundary_conditions(*y_np1, params)
     if bound:
         # Bound temperature
-        y_np1[-2, y_np1[-2] < T_min] = T_min
-        y_np1[-2, y_np1[-2] > T_max] = T_max
+        # y_np1[-2, y_np1[-2] < T_min] = T_min
+        # y_np1[-2, y_np1[-2] > T_max] = T_max
+        # # Bound mass fraction
+        # y_np1[-1, y_np1[-1] < Y_min] = Y_min 
+        # y_np1[-1, y_np1[-1] > Y_max] = Y_max 
+        y_np1[-3, y_np1[-3] < T_min] = T_min
+        y_np1[-3, y_np1[-3] > T_max] = T_max
         # Bound mass fraction
-        y_np1[-1, y_np1[-1] < Y_min] = Y_min 
-        y_np1[-1, y_np1[-1] > Y_max] = Y_max 
+        y_np1[-2, y_np1[-2] < Y_min] = Y_min 
+        y_np1[-2, y_np1[-2] > Y_max] = Y_max 
     # Add temperature source if needed (permanent source up to t_source)
     if t_n <= t_source:
-        y_np1[-2, T_mask] = T_source[T_mask]
+        # y_np1[-2, T_mask] = T_source[T_mask]
+        y_np1[-3, T_mask] = T_source[T_mask]
     return y_np1, p
 
 def euler(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, params: dict) -> np.ndarray:
@@ -239,24 +251,26 @@ def data_post_processing(z: np.ndarray, p: np.ndarray) -> dict:
 
     """
     # Get ndims
-    ndims = z.ndim
-    if ndims == 4: # 2D case
+    ndims = p.ndim #z.ndim
+    if ndims == 3:#4: # 2D case
         # Get data
-        u, v, T, Y = z[:, 0], z[:, 1], z[:, 2], z[:, 3]
+        u, v, T, Y, rho = z[:, 0], z[:, 1], z[:, 2], z[:, 3], z[:, 4]
         # Concatenate last column (periodic boundary in x)
         u = np.concatenate((u, u[:, :, 0].reshape(u.shape[0], u.shape[1], 1)), axis=2)
         v = np.concatenate((v, v[:, :, 0].reshape(v.shape[0], v.shape[1], 1)), axis=2)
         T = np.concatenate((T, T[:, :, 0].reshape(T.shape[0], T.shape[1], 1)), axis=2)
         Y = np.concatenate((Y, Y[:, :, 0].reshape(Y.shape[0], Y.shape[1], 1)), axis=2)
         p = np.concatenate((p, p[:, :, 0].reshape(p.shape[0], p.shape[1], 1)), axis=2)
+        rho = np.concatenate((rho, rho[:, :, 0].reshape(rho.shape[0], rho.shape[1], 1)), axis=2)
         data = {
             'u': u,
             'v': v,
             'T': T,
             'Y': Y,
-            'p': p
+            'p': p,
+            'rho': rho
         }
-    elif ndims == 5: # 3D case
+    elif ndims == 4:#5: # 3D case
         u_, v_, w_, T_, Y_ = z[:, 0], z[:, 1], z[:, 2], z[:, 3], z[:, 4]
         p_ = p.copy()
         # Get dimensions
@@ -340,11 +354,12 @@ def Phi_2D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     """
     dx, dy = params['dx'], params['dy']
     nu = params['nu']
+    mu = params['nu'] * params['rho_0']
     Y_f = params['Y_f']
     turb = params['turbulence']
     conservative = params['conservative']
     # Get variables
-    u, v, T, Y = R
+    u, v, T, Y, rho = R
     # Forces
     F_x, F_y = f((u, v), T, Y)
     # Derivatives #
@@ -360,6 +375,13 @@ def Phi_2D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
         uvx = compute_first_derivative_upwind(u, v, dx, 1)
         vvy = compute_first_derivative_upwind(v, v, dy, 0, periodic=False)
     Tx, Ty = compute_gradient(T, (dx, dy), (True, False))
+    uTx = compute_first_derivative_upwind(u, T, dx, 1)
+    vTy = compute_first_derivative_upwind(v, T, dy, 0)
+    rhox, rhoy = compute_gradient(rho, (dx, dy), (True, False))
+    urhox = compute_first_derivative_upwind(u, rho, dx, 1)
+    vrhoy = compute_first_derivative_upwind(v, rho, dy, 0)
+    ux = compute_first_derivative(u, dx, 1, (True, False))
+    vy = compute_first_derivative(v, dy, 0, (True, False))
     # Second partial derivatives, compute Laplacian
     lap_u = compute_laplacian(u, (dx, dy), (True, False))
     lap_v = compute_laplacian(v, (dx, dy), (True, False))
@@ -372,13 +394,21 @@ def Phi_2D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     # Velocity: \nu \nabla^2 \mathb{u} - (\mathbf{u}\cdot\nabla) \mathbf{u} + \mathbf{f}
     u_ = nu * lap_u - (uux + vuy) + F_x - sgs_x 
     v_ = nu * lap_v - (uvx + vvy) + F_y - sgs_y 
+    # u_ = mu / rho * lap_u - (uux + vuy) + F_x - sgs_x 
+    # v_ = mu / rho * lap_v - (uvx + vvy) + F_y - sgs_y 
     # Temperature: \dfrac{\partial k(T)}{\partial T}||\nabla T||^2 + k(T)\nabla^2 T - (\mathbf{u}\cdot\nabla T) + S(T, Y) 
-    T_ = kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T - (u * Tx  + v * Ty) + S(T, Y) - sgs_T 
+    # T_ = kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T - (u * Tx  + v * Ty) + S(T, Y) - sgs_T 
+    T_ = kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T - (uTx  + vTy) + S(T, Y) - sgs_T 
     # Combustion model: -Y_f K(T) H(T) Y
     Y_ = -Y_f * K(T) * H(T) * Y 
+    # Density: - (\mathbf{u}\cdot\nabla \rho)
+    # rho_ = - (u * rhox + v * rhoy)
+    # rho_ = - (urhox + vrhoy)
+    # Asuming div(U) is not exactly zero
+    rho_ = - (urhox + vrhoy + 0 * rho * (ux + vy))
     # Boundary conditions
-    u_, v_, T_, Y_ = boundary_conditions_2D(u_, v_, T_, Y_, params)
-    return np.array([u_, v_, T_, Y_])
+    u_, v_, T_, Y_, rho_ = boundary_conditions_2D(u_, v_, T_, Y_, rho_, params)
+    return np.array([u_, v_, T_, Y_, rho_])
 
 def Phi_3D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     """
@@ -479,7 +509,8 @@ def Phi_3D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     u_, v_, w_, T_, Y_ = boundary_conditions_3D(u_, v_, w_, T_, Y_, params)
     return np.array([u_, v_, w_, T_, Y_])
 
-def boundary_conditions_2D(u: np.ndarray, v: np.ndarray, T: np.ndarray, Y: np.ndarray, params: dict) -> np.ndarray:
+# def boundary_conditions_2D(u: np.ndarray, v: np.ndarray, T: np.ndarray, Y: np.ndarray, params: dict) -> np.ndarray:
+def boundary_conditions_2D(u: np.ndarray, v: np.ndarray, T: np.ndarray, Y: np.ndarray, rho: np.ndarray, params: dict) -> np.ndarray:
     """
     Apply boundary conditions to the input variables.
 
@@ -517,50 +548,59 @@ def boundary_conditions_2D(u: np.ndarray, v: np.ndarray, T: np.ndarray, Y: np.nd
     v_y_min, v_y_max = bc_on_y[1]
     T_y_min, T_y_max = bc_on_y[2]
     Y_y_min, Y_y_max = bc_on_y[3]
+    rho_y_min, rho_y_max = bc_on_y[4]
     cut_nodes = params['cut_nodes']
     cut_nodes_y, cut_nodes_x = cut_nodes # For FD in BC
     dead_nodes = params['dead_nodes']
-    u_dn, v_dn, T_dn, Y_dn = params['dead_nodes_values']
+    u_dn, v_dn, T_dn, Y_dn, rho_dn = params['dead_nodes_values']
     # Boundary conditions on x: Nothing to do because Phi includes them
     # Boundary conditions on y 
     # u = u_y_min, v = 0, dT/dy = 0 at y = y_min
     # u = u_y_max, v = 0, T=T_inf at y = y_max
     # Assume Dirichlet boundary conditions
     u_s, v_s, T_s, Y_s, u_n, v_n, T_n, Y_n = u_y_min, v_y_min, T_y_min, Y_y_min, u_y_max, v_y_max, T_inf, Y_y_max
+    rho_s, rho_n = rho_y_min, rho_y_max
     # Neumann boundary at south. Derivatives using O(dy^2) 
     T_s = (4 * T[1, :] - T[2, :]) / 3 # dT/dy = 0
     Y_s = (4 * Y[1, :] - Y[2, :]) / 3 # dY/dy = 0
+    rho_s = (4 * rho[1, :] - rho[2, :]) / 3 # drho/dy = 0
     # Neumann boundary at north. Derivatives using O(dy^2)
     u_n = (4 * u[-2, :] - u[-3, :]) / 3 # du/dy = 0
     v_n = (4 * v[-2, :] - v[-3, :]) / 3 # dv/dy = 0
     T_n = (4 * T[-2, :] - T[-3, :]) / 3 # dT/dy = 0
     Y_n = (4 * Y[-2, :] - Y[-3, :]) / 3 # dY/dy = 0
+    rho_n = (4 * rho[-2, :] - rho[-3, :]) / 3 # drho/dy = 0
     # Boundary conditions on y=y_min
     u[0] = u_s
     v[0] = v_s
     T[0] = T_s 
     Y[0] = Y_s
+    rho[0] = rho_s
     # Boundary conditions on y=y_max
     u[-1] = u_n
     v[-1] = v_n
     T[-1] = T_n
     Y[-1] = Y_n
+    rho[-1] = rho_n
     # IBM implementation #
     # Boundary at edge nodes
     T_s = (4 * T[cut_nodes_y + 1, cut_nodes_x] - T[cut_nodes_y + 2, cut_nodes_x]) / 3 # Derivative using O(h^2)	
     Y_s = (4 * Y[cut_nodes_y + 1, cut_nodes_x] - Y[cut_nodes_y + 2, cut_nodes_x]) / 3 # Derivative using O(h^2)
+    rho_s = (4 * rho[cut_nodes_y + 1, cut_nodes_x] - rho[cut_nodes_y + 2, cut_nodes_x]) / 3 # Derivative using O(h^2)
     # Boundary on cut nodes
     u[cut_nodes] = u_s
     v[cut_nodes] = v_s
     T[cut_nodes] = T_s
     Y[cut_nodes] = Y_s
+    rho[cut_nodes] = rho_s
     # Dead nodes
     u[dead_nodes] = u_dn
     v[dead_nodes] = v_dn
     T[dead_nodes] = T_dn
     Y[dead_nodes] = Y_dn
+    rho[dead_nodes] = rho_dn
     # Return variables with boundary conditions
-    return np.array([u, v, T, Y])
+    return np.array([u, v, T, Y, rho])
 
 def boundary_conditions_3D(u: np.ndarray, v: np.ndarray, w: np.ndarray, T: np.ndarray, Y: np.ndarray, params: dict) -> np.ndarray:
     """
@@ -708,7 +748,7 @@ def solve_pde_2D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
             T_min, T_max = np.min(z[n+1, 2]), np.max(z[n+1, 2])
             Y_min, Y_max = np.min(z[n+1, 3]), np.max(z[n+1, 3])
             # Show/print log
-            log_time_step(log_file, n+1, t[n+1], CFL, T_min, T_max, Y_min, Y_max, elapsed_time)
+            log_time_step_v1(log_file, n+1, t[n+1], CFL, T_min, T_max, Y_min, Y_max, elapsed_time)
     else: # Save every NT steps
         # Approximation
         z = np.zeros((Nt // NT + 1, r_0.shape[0], Ny, Nx - 1)) 
@@ -726,10 +766,11 @@ def solve_pde_2D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
             if n % NT == 0 or n == (Nt - 1): # Save every NT steps and last step
                 z[n // NT + 1], p[n // NT + 1] = z_tmp, p_tmp
                 # Print log
-                CFL = dt * (np.max(np.abs(z_tmp[0])) / dx + np.max(np.abs(z_tmp[1])) / dy)  # Compute CFL
-                T_min, T_max = np.min(z_tmp[2]), np.max(z_tmp[2])
-                Y_min, Y_max = np.min(z_tmp[3]), np.max(z_tmp[3]) 
-                log_time_step(log_file, n+1, t[n+1], CFL, T_min, T_max, Y_min, Y_max, step_elapsed_time)
+                # CFL = dt * (np.max(np.abs(z_tmp[0])) / dx + np.max(np.abs(z_tmp[1])) / dy)  # Compute CFL
+                # T_min, T_max = np.min(z_tmp[2]), np.max(z_tmp[2])
+                # Y_min, Y_max = np.min(z_tmp[3]), np.max(z_tmp[3]) 
+                # log_time_step(log_file, n+1, t[n+1], CFL, T_min, T_max, Y_min, Y_max, step_elapsed_time)
+                log_time_step(log_file, n+1, t[n+1], z_tmp, step_elapsed_time, params)
     solver_time_end = time.time()
     solver_time = (solver_time_end - solver_time_start)
     print("\nSolver time: ", str(timedelta(seconds=round(solver_time))), "\n")
