@@ -146,8 +146,8 @@ def solve_tn(t_n: float, y_n: np.ndarray, p: np.ndarray, dt: float, Phi: callabl
         # # Bound mass fraction
         # y_np1[-1, y_np1[-1] < Y_min] = Y_min 
         # y_np1[-1, y_np1[-1] > Y_max] = Y_max 
-        y_np1[-3, y_np1[-3] < T_min] = T_min
-        y_np1[-3, y_np1[-3] > T_max] = T_max
+        # y_np1[-3, y_np1[-3] < T_min] = T_min
+        # y_np1[-3, y_np1[-3] > T_max] = T_max
         # Bound mass fraction
         y_np1[-2, y_np1[-2] < Y_min] = Y_min 
         y_np1[-2, y_np1[-2] > Y_max] = Y_max 
