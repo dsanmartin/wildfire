@@ -257,9 +257,12 @@ parameters = {
     'input_ic': input_ic,
     'sim_name': sim_name,
     'save_path': save_path,
+    # Density constant or variable
+    'density': density_constant,
     # Poisson solver parameters
     'tol': tol,
     'max_iter': max_iter,
+    'log_solver': log_solver,
 }
 
 if spatial_dims == 3:

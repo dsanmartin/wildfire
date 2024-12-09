@@ -318,7 +318,7 @@ def fftfd_3D_debug(f: np.ndarray, params: dict, solver: callable = thomas_algori
     return p
 
 # def solve_pressure_2D(u: np.ndarray, v: np.ndarray, params: dict) -> np.ndarray:
-def solve_pressure_2D(u: np.ndarray, v: np.ndarray, T: np.ndarray, p: np.ndarray, params: dict) -> np.ndarray:
+def solve_pressure_2D(u: np.ndarray, v: np.ndarray, T: np.ndarray, params: dict, p: np.ndarray = None) -> np.ndarray:
     """
     Solves the pressure Poisson equation for a given temporal velocity field.
     Used to correct the velocity field to satisfy the continuity equation.
@@ -356,12 +356,14 @@ def solve_pressure_2D(u: np.ndarray, v: np.ndarray, T: np.ndarray, p: np.ndarray
     vy = compute_first_derivative_half_step(v, dy, 0, False)
     # Compute f
     rho_v = rho(T)
-    rho_vx = compute_first_derivative_half_step(rho_v, dx, 1)
-    rho_vy = compute_first_derivative_half_step(rho_v, dy, 0, False)
-    px = compute_first_derivative_half_step(p, dx, 1)
-    py = compute_first_derivative_half_step(p, dy, 0, False)
-    extra = (rho_vx * px + rho_vy * py) / rho_v
-    f = rho_v / dt * (ux + vy) + extra
+    f = rho_v / dt * (ux + vy)
+    # If density is not constant, add the term grad(rho)\cdot grad(p) / rho
+    if p is not None:        
+        rho_vx = compute_first_derivative_half_step(rho_v, dx, 1)
+        rho_vy = compute_first_derivative_half_step(rho_v, dy, 0, False)
+        px = compute_first_derivative_half_step(p, dx, 1)
+        py = compute_first_derivative_half_step(p, dy, 0, False)
+        f += (rho_vx * px + rho_vy * py) / rho_v
     # Solve using FFT-FD
     p = fftfd(f, params)
     # p = fftfd_parallel(f, params)
@@ -414,26 +416,11 @@ def solve_pressure_3D(u: np.ndarray, v: np.ndarray, w: np.ndarray, params: dict)
     p = fftfd_3D(f, params)
     return p
 
-def solve_pressure_3D_debug(u: np.ndarray, v: np.ndarray, w: np.ndarray, params: dict) -> np.ndarray:
-    rho = params['rho']
-    dx, dy, dz, dt = params['dx'], params['dy'], params['dz'], params['dt']
-    # Compute ux, vy and wz using half step to avoid odd-even decoupling
-    ux = compute_first_derivative_half_step(u, dx, 1)
-    vy = compute_first_derivative_half_step(v, dy, 0)
-    wz = compute_first_derivative_half_step(w, dz, 2, periodic=False)
-    # Compute f
-    f = rho * (ux + vy + wz) / dt
-    np.savez(params['save_path'] + "f.npz", f=f)
-    np.savez(params['save_path'] + "divergence_f.npz", ux=ux, vy=vy, wz=wz)
-    # Solve using FFT-FD
-    p = fftfd_3D_debug(f, params)
-    return p
-
 def solve_pressure(U, T, p, params):
     ndims = len(U)
     if ndims == 2:
         u, v = U
-        p = solve_pressure_2D(u, v, T, p, params)
+        p = solve_pressure_2D(u, v, T, params, p)
     elif ndims == 3:
         u, v, w = U
         p = solve_pressure_3D(u, v, w, params)

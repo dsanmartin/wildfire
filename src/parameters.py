@@ -103,6 +103,10 @@ T0_shape = 'gaussian' # 'plate' or 'gaussian'
 # 'Width' of initial fire source in m
 T0_x_start = 0
 T0_x_end = T0_x_start + 6 #4#2 # PLATE -> x_start + 3.3 (FDS)
+# Testing right to left
+# T0_x_start = 200
+# T0_x_end = T0_x_start - 6 #4#2 # PLATE -> x_start + 3.3 (FDS)
+# Testing
 T0_x_center = (T0_x_start + T0_x_end) / 2
 T0_length = (T0_x_end - T0_x_start)
 T0_y_start = 80
@@ -152,6 +156,10 @@ periodic_axes = (False, True)
 
 output_dir = './data/output/'
 
+# Density variable or constant
+density_constant = False
+
 # Solver parameters
-tol = 1e-8
+tol = 1e-10
 max_iter = 50
+log_solver = False #not density_constant

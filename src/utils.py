@@ -1,7 +1,7 @@
 import numpy as np
 # from arguments import T_act, A, H_R, h, alpha, S_top, S_bot, k, Y_D # Parameters from command line
 from parameters import T_pc, T_inf, g, n_arrhenius, h_rad, C_p, rho_0, a_v, S_T_0, S_k_0, S_k, sigma, delta, sutherland_law, radiation, include_source, source_filter # Default parameters
-from parameters import T_act, A, H_R, h, alpha, S_top, S_bot, k, Y_D
+from parameters import T_act, A, H_R, h, alpha, S_top, S_bot, k, Y_D, density_constant
 
 # A lot of useful functions #
 G2D = lambda x, y, x0, y0, sx, sy, A: A * np.exp(-((x - x0) ** 2 / sx ** 2 + (y - y0) ** 2 / sy ** 2)) # 2D Gaussian function
@@ -14,14 +14,18 @@ Sg = lambda x, x0, k: 1 / (1 + np.exp(-2 * k * (x - x0))) # Sigmoid function (to
 HS2 = lambda x, x0, k: .5 * (1 + np.tanh(k * (x - x0))) # Hyperbolic tangent function (to smooth the step function) 
 HS3 = lambda x, x0, k, T_pc: Sg(CV(x, T_pc), x0, k) # Hyperbolic tangent function (to smooth the step function)
 Q_rad = lambda T: h_rad * (T ** 4 - T_inf ** 4) / (rho_0 * C_p) # Radiative heat flux
-rho = lambda T: rho_0 * T_inf / T # Density
+# rho = lambda T: rho_0 * T_inf / T # Density
 source = lambda T, Y: H_R * Y * K(T) * H(T) / C_p # Source term
-sink = lambda T: -h * a_v * (T - T_inf) / (rho(T) * C_p) # Sink term
+sink = lambda T: -h * a_v * (T - T_inf) / (rho_0 * C_p) # Sink term
 sutherland = lambda T: S_k_0 * (T / S_T_0) ** 1.5 * (S_T_0 + S_k) / (T + S_k) / (rho_0 * C_p) # Sutherland's law
 sutherland_T = lambda T: 1.5 * S_k_0 * (S_T_0 + S_k) / T ** 1.5 * (T ** .5 * (T + S_k) - T ** 1.5) / (T + S_k) ** 2 / (rho_0 * C_p) # Sutherland's law derivative
 stefan_radiation = lambda T: 4 * sigma * delta * T ** 3 / (rho_0 * C_p) # Stefan-Boltzmann law
 stefan_radiation_T = lambda T: 12 * sigma * delta * T ** 2 / (rho_0 * C_p) # Stefan-Boltzmann law derivative
 gamma = lambda r, s, dz, Nx, Ny: - (2 + (2 * np.pi * dz) ** 2 * ((r / Nx) ** 2 + (s / Ny) ** 2))
+if density_constant:
+    rho = lambda T: rho_0 # Constant density
+else:
+    rho = lambda T: rho_0 * T_inf / T
 # # Convective heat transfer coefficient
 if h < 0:
     hv = lambda v: np.piecewise(v, [v < 2, v >= 2], [

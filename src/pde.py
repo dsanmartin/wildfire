@@ -44,7 +44,7 @@ def grad_pressure(p: np.ndarray, params: dict) -> np.ndarray:
     return grad_p
 
 # def solve_tn(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, boundary_conditions: callable, method: callable, params: dict) -> tuple[np.ndarray, np.ndarray]:
-def solve_tn(t_n: float, y_n: np.ndarray, p: np.ndarray, dt: float, Phi: callable, boundary_conditions: callable, method: callable, params: dict, log_fp: bool = False) -> tuple[np.ndarray, np.ndarray]:
+def solve_tn(t_n: float, y_n: np.ndarray, p: np.ndarray, dt: float, Phi: callable, boundary_conditions: callable, method: callable, params: dict, show_fp_iter: bool = False) -> tuple[np.ndarray, np.ndarray]:
 
     """
     Solve the PDE system for a single time step.
@@ -78,16 +78,18 @@ def solve_tn(t_n: float, y_n: np.ndarray, p: np.ndarray, dt: float, Phi: callabl
     and returns the solution at the next time step and the pressure solution.
     """
     # Get parameters
-    # rho_0 = params['rho_0']
     T_mask = params['T_mask']
     t_source = params['t_source']
     T_source = params['T_source']
     bound = params['bound']
     T_min, T_max = params['T_min'], params['T_max']
     Y_min, Y_max = params['Y_min'], params['Y_max']
+    # Density constant
+    density_constant = params['density']
     # Poisson solver parameters
     max_iter = params['max_iter']
     tol = params['tol']
+    log_fp = params['log_solver']
     # Solve time step 
     # if t_n <= 5:
     #     method = RK4
@@ -95,35 +97,18 @@ def solve_tn(t_n: float, y_n: np.ndarray, p: np.ndarray, dt: float, Phi: callabl
     #     method = euler
     y_np1 = method(t_n, y_n, dt, Phi, params)
     # Solve Pressure problem
-    # p = solve_pressure(tuple(y_np1[:-2]), params)
-    # p = solve_pressure(tuple(y_np1[:-2]), y_np1[-2], params)
-    # Fixed point iteration for pressure
-    # N_iter = 5
-    # for _ in range(N_iter):
-    for i in range(max_iter):
-        p_tmp = p.copy()
-        p = solve_pressure(tuple(y_np1[:-2]), y_np1[-2], p, params)
-        if np.linalg.norm(p.flatten() - p_tmp.flatten(), np.inf) < tol:
-            break
-        if log_fp:
-            print("Fixed-point iteration:")
-            print("Iteration:", i)
-            print("Pressure:")
-            print("L2:", np.linalg.norm(p.flatten() - p_tmp.flatten()))
-            print("L-inf", np.linalg.norm(p.flatten() - p_tmp.flatten(), np.inf))
-            # Compute gradient of pressure
-            grad_p = grad_pressure(p, params)
-            grad_p_tmp = grad_pressure(p_tmp, params)
-            print("Gradient of pressure:")
-            print("p:")
-            print("L2:", np.linalg.norm(grad_p.flatten()))
-            print("L-inf", np.linalg.norm(grad_p.flatten(), np.inf))
-            print("p_tmp:")
-            print("L2:", np.linalg.norm(grad_p_tmp.flatten()))
-            print("L-inf", np.linalg.norm(grad_p_tmp.flatten(), np.inf))
-            print("Diff: ")
-            print("L2:", np.linalg.norm(grad_p.flatten() - grad_p_tmp.flatten()))            
-            print("L-inf", np.linalg.norm(grad_p.flatten() - grad_p_tmp.flatten(), np.inf))
+    if density_constant:
+        p = solve_pressure(tuple(y_np1[:-2]), y_np1[-2], None, params)
+    else:
+        for i in range(max_iter):
+            p_tmp = p.copy()
+            p = solve_pressure(tuple(y_np1[:-2]), y_np1[-2], p, params)            
+            if log_fp and show_fp_iter:
+                l2_norm = np.linalg.norm(p.flatten() - p_tmp.flatten())
+                l_inf_norm = np.linalg.norm(p.flatten() - p_tmp.flatten(), np.inf)
+                print(f"Fixed-point iteration: {i}, L2: {l2_norm:.2e}, L-inf: {l_inf_norm:.2e}")
+            if np.linalg.norm(p.flatten() - p_tmp.flatten(), np.inf) < tol:
+                break
     grad_p = grad_pressure(p, params)
     # Velocity correction (Chorin's projection method)
     # T_inf = params['T_inf']
@@ -360,6 +345,8 @@ def Phi_2D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
         uvx = compute_first_derivative_upwind(u, v, dx, 1)
         vvy = compute_first_derivative_upwind(v, v, dy, 0, periodic=False)
     Tx, Ty = compute_gradient(T, (dx, dy), (True, False))
+    uTx = compute_first_derivative_upwind(u, T, dx, 1)
+    vTy = compute_first_derivative_upwind(v, T, dy, 0, periodic=False)
     # Second partial derivatives, compute Laplacian
     lap_u = compute_laplacian(u, (dx, dy), (True, False))
     lap_v = compute_laplacian(v, (dx, dy), (True, False))
@@ -373,7 +360,8 @@ def Phi_2D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     u_ = nu * lap_u - (uux + vuy) + F_x - sgs_x 
     v_ = nu * lap_v - (uvx + vvy) + F_y - sgs_y 
     # Temperature: \dfrac{\partial k(T)}{\partial T}||\nabla T||^2 + k(T)\nabla^2 T - (\mathbf{u}\cdot\nabla T) + S(T, Y) 
-    T_ = kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T - (u * Tx  + v * Ty) + S(T, Y) - sgs_T 
+    T_ = kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T - (u * Tx + v * Ty) + S(T, Y) - sgs_T 
+    # T_ = kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T - (uTx  + vTy) + S(T, Y) - sgs_T 
     # Combustion model: -Y_f K(T) H(T) Y
     Y_ = -Y_f * K(T) * H(T) * Y 
     # Boundary conditions
