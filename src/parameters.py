@@ -155,5 +155,5 @@ periodic_axes = (False, True)
 output_dir = './data/output/'
 
 # Solver parameters
-tol = 1e-8
+tol = 1e-10
 max_iter = 50

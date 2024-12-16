@@ -107,14 +107,17 @@ def solve_tn(t_n: float, y_n: np.ndarray, p: np.ndarray, dt: float, Phi: callabl
         p_tmp = p.copy()
         # p = solve_pressure(tuple(y_np1[:-2]), y_np1[-2], p, params)
         p = solve_pressure(tuple(y_np1[:-3]), y_np1[-1], p, params)
-        if np.linalg.norm(p.flatten() - p_tmp.flatten(), np.inf) < tol:
-            break
-        if log_fp:
-            print("Fixed-point iteration:")
-            print("Iteration:", i)
-            # print("Pressure:")
-            print("L2:", np.linalg.norm(p.flatten() - p_tmp.flatten()))
-            print("L-inf", np.linalg.norm(p.flatten() - p_tmp.flatten(), np.inf))
+        if log_fp and log_fp:
+            l2_norm = np.linalg.norm(p.flatten() - p_tmp.flatten())
+            l_inf_norm = np.linalg.norm(p.flatten() - p_tmp.flatten(), np.inf)
+            print(f"Fixed-point iteration: {i}, L2: {l2_norm:.2e}, L-inf: {l_inf_norm:.2e}")
+        
+        # if log_fp:
+        #     print("Fixed-point iteration:")
+        #     print("Iteration:", i)
+        #     # print("Pressure:")
+        #     print("L2:", np.linalg.norm(p.flatten() - p_tmp.flatten()))
+        #     print("L-inf", np.linalg.norm(p.flatten() - p_tmp.flatten(), np.inf))
             # # Compute gradient of pressure
             # grad_p = grad_pressure(p, params)
             # grad_p_tmp = grad_pressure(p_tmp, params)
@@ -128,6 +131,8 @@ def solve_tn(t_n: float, y_n: np.ndarray, p: np.ndarray, dt: float, Phi: callabl
             # print("Diff: ")
             # print("L2:", np.linalg.norm(grad_p.flatten() - grad_p_tmp.flatten()))            
             # print("L-inf", np.linalg.norm(grad_p.flatten() - grad_p_tmp.flatten(), np.inf))
+        if np.linalg.norm(p.flatten() - p_tmp.flatten(), np.inf) < tol:
+            break
     grad_p = grad_pressure(p, params)
     # Velocity correction (Chorin's projection method)
     rho_v = y_np1[-1]#rho(y_np1[-2])
@@ -146,8 +151,9 @@ def solve_tn(t_n: float, y_n: np.ndarray, p: np.ndarray, dt: float, Phi: callabl
         # # Bound mass fraction
         # y_np1[-1, y_np1[-1] < Y_min] = Y_min 
         # y_np1[-1, y_np1[-1] > Y_max] = Y_max 
-        # y_np1[-3, y_np1[-3] < T_min] = T_min
-        # y_np1[-3, y_np1[-3] > T_max] = T_max
+        # Bound temperature
+        y_np1[-3, y_np1[-3] < T_min] = T_min
+        y_np1[-3, y_np1[-3] > T_max] = T_max
         # Bound mass fraction
         y_np1[-2, y_np1[-2] < Y_min] = Y_min 
         y_np1[-2, y_np1[-2] > Y_max] = Y_max 
@@ -376,10 +382,10 @@ def Phi_2D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
         vvy = compute_first_derivative_upwind(v, v, dy, 0, periodic=False)
     Tx, Ty = compute_gradient(T, (dx, dy), (True, False))
     uTx = compute_first_derivative_upwind(u, T, dx, 1)
-    vTy = compute_first_derivative_upwind(v, T, dy, 0)
+    vTy = compute_first_derivative_upwind(v, T, dy, 0, periodic=False)
     rhox, rhoy = compute_gradient(rho, (dx, dy), (True, False))
     urhox = compute_first_derivative_upwind(u, rho, dx, 1)
-    vrhoy = compute_first_derivative_upwind(v, rho, dy, 0)
+    vrhoy = compute_first_derivative_upwind(v, rho, dy, 0, periodic=False)
     ux = compute_first_derivative(u, dx, 1, (True, False))
     vy = compute_first_derivative(v, dy, 0, (True, False))
     # Second partial derivatives, compute Laplacian
@@ -398,14 +404,16 @@ def Phi_2D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     # v_ = mu / rho * lap_v - (uvx + vvy) + F_y - sgs_y 
     # Temperature: \dfrac{\partial k(T)}{\partial T}||\nabla T||^2 + k(T)\nabla^2 T - (\mathbf{u}\cdot\nabla T) + S(T, Y) 
     # T_ = kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T - (u * Tx  + v * Ty) + S(T, Y) - sgs_T 
-    T_ = kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T - (uTx  + vTy) + S(T, Y) - sgs_T 
+    # T_ = kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T - (uTx  + vTy) + S(T, Y) - sgs_T 
+    # T_ = - (u * Tx  + v * Ty)
+    T_ = - (uTx  + vTy)
     # Combustion model: -Y_f K(T) H(T) Y
     Y_ = -Y_f * K(T) * H(T) * Y 
     # Density: - (\mathbf{u}\cdot\nabla \rho)
     # rho_ = - (u * rhox + v * rhoy)
-    # rho_ = - (urhox + vrhoy)
+    rho_ = - (urhox + vrhoy)
     # Asuming div(U) is not exactly zero
-    rho_ = - (urhox + vrhoy + 0 * rho * (ux + vy))
+    # rho_ = - (urhox + vrhoy + 0 * rho * (ux + vy))
     # Boundary conditions
     u_, v_, T_, Y_, rho_ = boundary_conditions_2D(u_, v_, T_, Y_, rho_, params)
     return np.array([u_, v_, T_, Y_, rho_])
