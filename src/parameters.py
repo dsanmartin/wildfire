@@ -135,7 +135,7 @@ u_dead_nodes = 0
 v_dead_nodes = 0
 w_dead_nodes = 0
 T_dead_nodes = T_inf
-Y_dead_nodes = 1
+Y_dead_nodes = 0
 
 dead_nodes_values = [
     u_dead_nodes, 

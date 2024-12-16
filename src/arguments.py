@@ -164,25 +164,31 @@ if config.has_section("fuel"):
 if config.has_section("temperature"):
     if config.has_option("temperature", "T_hot"):
         T_hot = config.getfloat("temperature", "T_hot")
+    if config.has_option("temperature", "T_cold"):
+        T_cold = config.getfloat("temperature", "T_cold")
+    if config.has_option("temperature", "T_min"):
+        T_min = config.getfloat("temperature", "T_min")
     if config.has_option("temperature", "T_max"):
         T_max = config.getfloat("temperature", "T_max")
-    if config.has_option("temperature", "T0_x_start") and config.has_option("temperature", "T0_x_end"):
-        T0_x_start = config.getfloat("temperature", "T0_x_start")
-        T0_x_end = config.getfloat("temperature", "T0_x_end")
+    if config.has_option("temperature", "x_start") and config.has_option("temperature", "x_end"):
+        T0_x_start = config.getfloat("temperature", "x_start")
+        T0_x_end = config.getfloat("temperature", "x_end")
         T0_x_center = (T0_x_start + T0_x_end) / 2
         T0_length = (T0_x_end - T0_x_start)
-    if config.has_option("temperature", "T0_y_start") and config.has_option("temperature", "T0_y_end"):
-        T0_y_start = config.getfloat("temperature", "T0_y_start")
-        T0_y_end = config.getfloat("temperature", "T0_y_end")
+    if config.has_option("temperature", "y_start") and config.has_option("temperature", "y_end"):
+        T0_y_start = config.getfloat("temperature", "y_start")
+        T0_y_end = config.getfloat("temperature", "y_end")
         T0_y_center = (T0_y_start + T0_y_end) / 2
         T0_width = (T0_y_end - T0_y_start)
-    if config.has_option("temperature", "T0_z_start") and config.has_option("temperature", "T0_z_end"):
-        T0_z_start = config.getfloat("temperature", "T0_z_start")
-        T0_z_end = config.getfloat("temperature", "T0_z_end")
+    if config.has_option("temperature", "z_start") and config.has_option("temperature", "z_end"):
+        T0_z_start = config.getfloat("temperature", "z_start")
+        T0_z_end = config.getfloat("temperature", "z_end")
         T0_z_center = 0
         T0_height = (T0_z_end - T0_z_start)
     if config.has_option("temperature", "t_source"):
         t_source = config.getfloat("temperature", "t_source")
+    if config.has_option("temperature", "shape"):
+        T0_shape = config.get("temperature", "shape")
 if config.has_section("parameters"):
     if config.has_option("parameters", "h"):
         h = config.getfloat("parameters", "h")
@@ -213,6 +219,7 @@ parameters = {
     # 'mask': mask,
     'method': method, # IVP solver Initial u type
     'T_hot': T_hot,
+    'T_cold': T_cold,
     't_source': t_source,
     # Source/sink bounds
     'S_top': S_top,

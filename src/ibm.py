@@ -62,6 +62,20 @@ def cylinders(x, y, centers, radiuses, dx, dy):
     dead_nodes = np.array(dead_nodes, dtype=int)
     return cut_nodes, dead_nodes
 
+def cavity(x, y, walls_lims, dx, dy):
+    # Nx, Ny = x.shape[0], y.shape[0]
+    Nx, Ny = x.shape[1], y.shape[0]
+    x_min, x_max = walls_lims
+    # Create a periodic walls in the x direction
+    left_wall_end = x_min
+    right_wall_start = x_max
+    wall = np.zeros((Ny, Nx))
+    wall[(x <= left_wall_end) | (x >= right_wall_start)] = 1
+    wall[(x < left_wall_end) | (x > right_wall_start)] = 0.5
+    dead_nodes = np.where(wall == 0.5)
+    cut_nodes = np.where(wall == 1)
+    return cut_nodes, dead_nodes
+
 def topography_nodes(x, y, f, dx, dy):
     """Topography for IBM
 

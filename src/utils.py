@@ -291,6 +291,8 @@ def non_dimensional_numbers(parameters: dict) -> tuple[float, float, float, floa
     T = np.max(T0)
     T_avg = np.max(T0)
     alpha_T = 1 / T_avg
+    if U == 0:
+        U = 1e-14
     # Reynolds
     Re = U * L / nu
     # Grashof

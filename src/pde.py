@@ -328,6 +328,7 @@ def Phi_2D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     Y_f = params['Y_f']
     turb = params['turbulence']
     conservative = params['conservative']
+    fire = params['T0_shape'] != 'cavity'
     # Get variables
     u, v, T, Y = R
     # Forces
@@ -365,7 +366,7 @@ def Phi_2D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     # Combustion model: -Y_f K(T) H(T) Y
     Y_ = -Y_f * K(T) * H(T) * Y 
     # Boundary conditions
-    u_, v_, T_, Y_ = boundary_conditions_2D(u_, v_, T_, Y_, params)
+    u_, v_, T_, Y_ = boundary_conditions_2D(u_, v_, T_, Y_, params) if fire else boundary_conditions_2D_cavity(u_, v_, T_, Y_, params)
     return np.array([u_, v_, T_, Y_])
 
 def Phi_3D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
@@ -550,6 +551,86 @@ def boundary_conditions_2D(u: np.ndarray, v: np.ndarray, T: np.ndarray, Y: np.nd
     # Return variables with boundary conditions
     return np.array([u, v, T, Y])
 
+def boundary_conditions_2D_cavity(u: np.ndarray, v: np.ndarray, T: np.ndarray, Y: np.ndarray, params: dict) -> np.ndarray:
+    """
+    Apply boundary conditions to the input variables.
+
+    Parameters
+    ----------
+    u : numpy.ndarray (Ny, Nx-1)
+        Velocity in the x direction.
+    v : numpy.ndarray (Ny, Nx-1)
+        Velocity in the y direction.
+    T : numpy.ndarray (Ny, Nx-1)
+        Temperature.
+    Y : np.ndarray (Ny, Nx)
+        Mass fraction of fuel.
+    params : dict
+        Dictionary containing the following parameters:
+        - T_inf : float
+            Temperature at infinity.
+        - bc_on_y : list
+            List containing the boundary conditions for each variable.
+        - cut_nodes : tuple
+            Tuple containing the indices of the cut nodes.
+        - dead_nodes : numpy.ndarray
+            Array containing the indices of the dead nodes.
+        - values_dead_nodes : tuple
+            Tuple containing the values of the dead nodes.
+
+    Returns
+    -------
+    numpy.ndarray (4, Ny, Nx-1)
+        Array containing the input variables with the applied boundary conditions.
+    """
+    T_inf = params['T_inf']
+    bc_on_y = params['bc_on_z'] # Boundary conditions (for Dirichlet)
+    u_y_min, u_y_max = bc_on_y[0]
+    v_y_min, v_y_max = bc_on_y[1]
+    T_y_min, T_y_max = bc_on_y[2]
+    Y_y_min, Y_y_max = bc_on_y[3]
+    cut_nodes = params['cut_nodes']
+    cut_nodes_y, cut_nodes_x = cut_nodes # For FD in BC
+    dead_nodes = params['dead_nodes']
+    u_dn, v_dn, T_dn, Y_dn = params['dead_nodes_values']
+    # Boundary conditions on x: Nothing to do because Phi includes them
+    # Boundary conditions on y 
+    # u = u_y_min, v = 0, dT/dy = 0 at y = y_min
+    # u = u_y_max, v = 0, T=T_inf at y = y_max
+    # Assume Dirichlet boundary conditions
+    u_s, v_s, T_s, Y_s, u_n, v_n, T_n, Y_n = u_y_min, v_y_min, T_y_min, Y_y_min, u_y_max, v_y_max, T_y_max, Y_y_max
+    # Neumann boundary at south. Derivatives using O(dy^2) 
+    # T_s = (4 * T[1, :] - T[2, :]) / 3 # dT/dy = 0
+    # Y_s = (4 * Y[1, :] - Y[2, :]) / 3 # dY/dy = 0
+    # # Neumann boundary at north. Derivatives using O(dy^2)
+    # T_n = (4 * T[-2, :] - T[-3, :]) / 3 # dT/dy = 0
+    # Y_n = (4 * Y[-2, :] - Y[-3, :]) / 3 # dY/dy = 0
+    # Boundary conditions on y=y_min
+    u[0] = u_s
+    v[0] = v_s
+    T[0] = T_s 
+    Y[0] = Y_s
+    # Boundary conditions on y=y_max
+    u[-1] = u_n
+    v[-1] = v_n
+    T[-1] = T_n
+    Y[-1] = Y_n
+    # IBM implementation #
+    # Boundary on cut nodes
+    # print(u_s.shape, u[cut_nodes].shape)
+    # print(cut_nodes)
+    # u[cut_nodes] = u_s
+    # v[cut_nodes] = v_s
+    # T[cut_nodes] = T_s
+    # Y[cut_nodes] = Y_s
+    # # Dead nodes
+    u[dead_nodes] = u_dn
+    v[dead_nodes] = v_dn
+    T[dead_nodes] = T_dn
+    Y[dead_nodes] = Y_dn
+    # Return variables with boundary conditions
+    return np.array([u, v, T, Y])
+
 def boundary_conditions_3D(u: np.ndarray, v: np.ndarray, w: np.ndarray, T: np.ndarray, Y: np.ndarray, params: dict) -> np.ndarray:
     """
     Apply boundary conditions to the input variables.
@@ -635,7 +716,7 @@ def boundary_conditions_3D(u: np.ndarray, v: np.ndarray, w: np.ndarray, T: np.nd
     # w[cut_nodes] = w_s
     # T[cut_nodes] = T_s
     # Y[cut_nodes] = Y_s
-    # # Dead nodes
+    # Dead nodes
     # u[dead_nodes] = u_dn
     # v[dead_nodes] = v_dn
     # w[dead_nodes] = w_dn
@@ -678,6 +759,8 @@ def solve_pde_2D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
     method = params['method']
     methods = {'euler': euler, 'RK2': RK2, 'RK4': RK4}
     log_file = open(params['save_path'] + "log.txt", "w")
+    fire = params['T0_shape'] != 'cavity'
+    boundary_conditions = boundary_conditions_2D if fire else boundary_conditions_2D_cavity
     solver_time_start = time.time()
     if NT == 1: # Save all time steps
         # Approximation
@@ -688,7 +771,7 @@ def solve_pde_2D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
             # Simulation 
             step_time_start = time.time()            
             # z[n+1], p[n+1] = solve_tn(t[n], z[n], dt, Phi_2D, boundary_conditions_2D, methods[method], params)
-            z[n+1], p[n+1] = solve_tn(t[n], z[n], p[n], dt, Phi_2D, boundary_conditions_2D, methods[method], params)
+            z[n+1], p[n+1] = solve_tn(t[n], z[n], p[n], dt, Phi_2D, boundary_conditions, methods[method], params)
             step_time_end = time.time()
             elapsed_time = (step_time_end - step_time_start)
             # Print log
@@ -708,7 +791,7 @@ def solve_pde_2D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
             # Simulation 
             step_time_start = time.time()
             # z_tmp, p_tmp = solve_tn(t[n], z_tmp, dt, Phi_2D, boundary_conditions_2D, methods[method], params)
-            z_tmp, p_tmp = solve_tn(t[n], z_tmp, p_tmp, dt, Phi_2D, boundary_conditions_2D, methods[method], params, n % NT == 0 or n == (Nt - 1))
+            z_tmp, p_tmp = solve_tn(t[n], z_tmp, p_tmp, dt, Phi_2D, boundary_conditions, methods[method], params, n % NT == 0 or n == (Nt - 1))
             step_time_end = time.time()
             step_elapsed_time = (step_time_end - step_time_start)
             if n % NT == 0 or n == (Nt - 1): # Save every NT steps and last step

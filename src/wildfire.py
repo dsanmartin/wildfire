@@ -2,7 +2,7 @@ import numpy as np
 # from arguments import * # Include default parameters + command line arguments
 from utils import domain_2D, domain_3D
 from initial_conditions import U0, T0, Y0, p0, F, topo
-from ibm import topography_nodes, topography_nodes_3D, topography_distance, topography_distance_3D
+from ibm import topography_nodes, topography_nodes_3D, topography_distance, topography_distance_3D, cavity
 from pde import solve_pde_2D, solve_pde_3D
 from poisson import pre_computation
 from logs import log_params
@@ -39,7 +39,12 @@ class Wildfire:
         P_0 = p0(Xm, Ym)
         F_e = F(Xm, Ym)
         # Topography effect
-        cut_nodes, dead_nodes = topography_nodes(Xm, Ym, topo, dx, dy)
+        if self.parameters['T0_shape'] == 'cavity':
+            T0_x_start, T0_x_end = self.parameters['T0_x_start'], self.parameters['T0_x_end']
+            T0_y_start, T0_y_end = self.parameters['T0_y_start'], self.parameters['T0_y_end']
+            cut_nodes, dead_nodes = cavity(Xm, Ym, [T0_x_start, T0_x_end], dx, dy)
+        else:
+            cut_nodes, dead_nodes = topography_nodes(Xm, Ym, topo, dx, dy)
         dead_nodes_values = np.array([
             self.parameters['dead_nodes_values'][0], 
             self.parameters['dead_nodes_values'][1], 
@@ -54,8 +59,26 @@ class Wildfire:
             T_0[dead_nodes] = dead_nodes_values[2]
             Y_0[dead_nodes] = dead_nodes_values[3]
         if self.parameters['show_ic']:
-            S_0 = np.sqrt(U_0 ** 2 + V_0 ** 2)
-            plot_initial_conditions(Xm, Ym, U_0, V_0, S_0, T_0, Y_0, plot_lims=[[0, 200], [0, 20]])
+            plot_lims = [[0, 200], [0, 20]]
+            plot_lims = [[x_min, x_max], [y_min, y_max]]
+            # Add last columns to plot
+            Xm_plot = np.c_[Xm, np.ones(Ny) * x_max]
+            U_plot = np.c_[U_0, U_0[:,0]]
+            V_plot = np.c_[V_0, V_0[:,0]]
+            T_plot = np.c_[T_0, T_0[:,0]]
+            Y_plot = np.c_[Y_0, Y_0[:,0]]
+            S_plot = np.sqrt(U_plot ** 2 + V_plot ** 2)
+            # Plots
+            all_plots = {
+                'u': U_plot,
+                'v': V_plot,
+                's': S_plot,
+                'T': T_plot,
+                'Y': Y_plot
+            }
+            selected_plots = ['s', 'T']
+            plots_to_show = {key: value for key, value in all_plots.items() if key in selected_plots}
+            plot_initial_conditions(Xm_plot, Ym, plots_to_show, plot_lims=plot_lims, visualization='horizontal')
         if self.parameters['debug']:  
             raise SystemExit()
         # We assume Dirichlet boundary conditions on the beginning

@@ -735,7 +735,7 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
         plt.show()
     return None
 
-def plot_initial_conditions(x: np.ndarray, y: np.ndarray, u: np.ndarray, v: np.ndarray, s: np.ndarray, T: np.ndarray, Y: np.ndarray, plot_lims: list = None) -> None:
+def plot_initial_conditions(x: np.ndarray, y: np.ndarray, plot_to_show: dict, plot_lims: list = None, visualization: str = 'vertical') -> None:
     """
     Plots the initial conditions of a wildfire simulation.
 
@@ -762,38 +762,61 @@ def plot_initial_conditions(x: np.ndarray, y: np.ndarray, u: np.ndarray, v: np.n
     -------
     None
     """
-    fig, axes = plt.subplots(5, 1, sharex=True, figsize=(12, 8))
-
-    # Axis labels
-    axes[-1].set_xlabel('x')
-    for i in range(len(axes)):
-        axes[i].set_ylabel('y')
+    n_plots = len(plot_to_show)
+    if visualization == 'vertical':
+        fig, axes = plt.subplots(n_plots, 1, sharex=True, figsize=(12, 8))
+        axes[-1].set_xlabel('x')
+        for i in range(len(axes)):
+            axes[i].set_ylabel('y')
+    else:
+        fig, axes = plt.subplots(1, n_plots, sharey=True, figsize=(12, 8))
+        axes[0].set_ylabel('y')
+        for i in range(len(axes)):
+            axes[i].set_xlabel('x')
+    
 
     # Set limits if given
     if plot_lims is not None:
         for i in range(len(axes)):
             axes[i].set_xlim(plot_lims[0])
             axes[i].set_ylim(plot_lims[1])
+            
+    i = 0
 
     # Plot speed
-    plot_scalar_field(fig, axes[0], x, y, s, plt.cm.viridis, 
-        [s.min(), s.max()], None, r'Speed $\|\mathbf{u}\|$', r'm s$^{-1}$') 
+    if 's' in plot_to_show:
+        s = plot_to_show['s']
+        plot_scalar_field(fig, axes[i], x, y, s, plt.cm.viridis, 
+            [s.min(), s.max()], None, r'Speed $\|\mathbf{u}\|$', r'm s$^{-1}$') 
+        i += 1
     
     # Plot velocity u component
-    plot_scalar_field(fig, axes[1], x, y, u, plt.cm.viridis,
-        [u.min(), u.max()], None, r'Velocity component $u$', r'm s$^{-1}$')
+    if 'u' in plot_to_show:
+        u = plot_to_show['u']
+        plot_scalar_field(fig, axes[i], x, y, u, plt.cm.viridis,
+            [u.min(), u.max()], None, r'Velocity component $u$', r'm s$^{-1}$')
+        i += 1
     
     # Plot velocity v component
-    plot_scalar_field(fig, axes[2], x, y, v, plt.cm.viridis,
-        [v.min(), v.max()], None, r'Velocity component $v$', r'm s$^{-1}$')
+    if 'v' in plot_to_show:
+        v = plot_to_show['v']
+        plot_scalar_field(fig, axes[i], x, y, v, plt.cm.viridis,
+            [v.min(), v.max()], None, r'Velocity component $v$', r'm s$^{-1}$')
+        i += 1
     
     # Plot temperature
-    plot_scalar_field(fig, axes[3], x, y, T, plt.cm.jet,
-        [T.min(), T.max()], None, r'Temperature $T$', r'K')
+    if 'T' in plot_to_show:
+        T = plot_to_show['T']
+        plot_scalar_field(fig, axes[i], x, y, T, plt.cm.jet,
+            [T.min(), T.max()], None, r'Temperature $T$', r'K')
+        i += 1
     
     # Plot fuel
-    plot_scalar_field(fig, axes[4], x, y, Y, plt.cm.Oranges,
-        [Y.min(), Y.max()], None, r'Fuel $Y$', r'\%')
+    if 'Y' in plot_to_show:
+        Y = plot_to_show['Y']
+        plot_scalar_field(fig, axes[i], x, y, Y, plt.cm.Oranges,
+            [Y.min(), Y.max()], None, r'Fuel $Y$', r'\%')
+        i += 1
 
     fig.tight_layout() # Adjust spacing between subplots
     plt.show()
