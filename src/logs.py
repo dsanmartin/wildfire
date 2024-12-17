@@ -46,6 +46,7 @@ def log_params(params: dict, save: bool = False) -> None:
     topography_shape = params['topography_shape']
     hill_center, hill_height, hill_length = params['hill_center'], params['hill_height'], params['hill_length']
     Y_h = params['Y_h']
+    t_source = params['t_source']
     sutherland_law = params['sutherland_law']
     S_T_0, S_k_0, S_k = params['S_T_0'], params['S_k_0'], params['S_k']
     bound = params['bound']
@@ -59,6 +60,7 @@ def log_params(params: dict, save: bool = False) -> None:
         T0_height = params['T0_height']
         T0_y_center = params['T0_y_center']
         T0_width = params['T0_width']
+    experiment = params['experiment']
 
     # Non dimensional numbers calculation
     Re, Gr, Ra, Sr, Ste, St, Ze, Pe, Nu = non_dimensional_numbers(params)
@@ -70,6 +72,8 @@ def log_params(params: dict, save: bool = False) -> None:
         f = sys.stdout
 
     print("Simulation name:", sim_name, file=f)
+    if experiment is not None:
+        print("Experiment: %s" % experiment, file=f)
     if 'z' in params:
         print("Domain: [%.4f, %.4f] x [%.4f, %.4f] x [%.4f, %.4f] x [%.4f, %.4f]" % (x_min, x_max, y_min, y_max, z_min, z_max, t_min, t_max), file=f)
         print("Grid size: Nx: %d, Ny: %d, Nz: %d, Nt: %d" % (Nx, Ny, Nz, Nt), file=f)
@@ -96,6 +100,8 @@ def log_params(params: dict, save: bool = False) -> None:
     else:
         print("  x: [%.4f, %.4f], y: [%.4f, %.4f]" % (T0_x_start, T0_x_end, T0_y_start, T0_y_end), file=f)
         print("  x center: %.4f, length: %.4f, height: %.4f" % (T0_x_center, T0_length, T0_height), file=f)
+    if t_source > 0:
+        print("  Source until t = %.4f s" % t_source, file=f)
     print("Topography shape: %s" % topography_shape, file=f)
     if topography_shape == 'hill':
         print("    Center: %.4f, Height: %.4f, Width: %.4f" % (hill_center, hill_height, hill_length), file=f)

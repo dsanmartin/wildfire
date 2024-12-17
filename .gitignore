@@ -142,6 +142,7 @@ src_cunumeric/
 scripts/run_gpu.sh
 scripts/run_cron.sh
 scripts/show_animation_bk.sh
+scripts/commands.txt
 
 # Sphinx
 .readthedocs.yaml

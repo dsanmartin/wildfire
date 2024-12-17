@@ -1,8 +1,8 @@
 import numpy as np
 from topography import flat2D, hill2D, flat3D, hill3D
-from utils import create_plate, create_gaussian
-from arguments import T_hot, topography_shape, spatial_dims, Y_h, u_r, T0_shape, T0_x_start, T0_x_end, T0_y_start, T0_y_end, T0_z_start, T0_z_end, T0_x_center, T0_y_center, T0_z_center, T0_length, T0_width, T0_height, T_cold # Parameters from command line
-from parameters import T_inf, u_ast, k, d, u_z_0, z_r, alpha_u, initial_u_type
+from utils import create_plate, create_gaussian, create_plate_slope
+from arguments import initial_u_type, T_hot, topography_shape, spatial_dims, Y_h, u_r, T0_shape, T0_x_start, T0_x_end, T0_y_start, T0_y_end, T0_z_start, T0_z_end, T0_x_center, T0_y_center, T0_z_center, T0_length, T0_width, T0_height, T_cold # Parameters from command line
+from parameters import T_inf, u_ast, k, d, u_z_0, z_r, alpha_u
 
 def load_initial_condition(data_path: str, ndim: int = 2) -> callable:
     data = np.load(data_path)
@@ -22,7 +22,14 @@ if spatial_dims == 2:
         ])
     # Power law wind profile (FDS experiment)
     power_law_wind = lambda x, y: u_r * (y / z_r) ** alpha_u
-    initial_u = power_law_wind if initial_u_type == 'power law' else log_wind
+    constant = lambda x, y: u_r + x * y * 0
+    # initial_u = power_law_wind if initial_u_type == 'power law' else log_wind
+    if initial_u_type == 'constant':
+        initial_u = constant
+    elif initial_u_type == 'power law':
+        initial_u = power_law_wind
+    elif initial_u_type == 'log':
+        initial_u = log_wind
     u0 = lambda x, y: initial_u(x, y)   #+ np.random.rand(*x.shape) * 0.5
     # $v(x,y, 0) = 0$
     v0 = lambda x, y: x * 0 
@@ -40,10 +47,15 @@ if spatial_dims == 2:
         shape = create_plate((T0_x_start, T0_x_end), (T0_z_start, T0_z_end)) 
     elif T0_shape == 'gaussian':
         shape = create_gaussian((T0_x_center, 0), (T0_length, T0_height)) 
+    # else:
+    #     shape = create_plate((T0_x_start, T0_x_end), (T0_z_start, T0_z_end)) 
     T0 = lambda x, y: T_inf + (shape(x, y)) * (T_hot - T_inf)
     if T0_shape == 'cavity':
-        shape1 = create_plate((T0_x_start, T0_x_end), (T0_z_start, T0_z_end))
-        shape2 = create_plate((T0_x_start, T0_x_end), (T0_x_end - T0_z_end, T0_x_end - T0_z_start))
+        shape1 = create_plate((T0_x_start, T0_x_end), (T0_y_start, T0_y_end))
+        shape2 = create_plate((T0_x_start, T0_x_end), (T0_x_end - T0_y_end, T0_x_end - T0_y_start))
+        # eps = 0.01
+        # shape1 = create_plate_slope(T0_x_start, T0_x_end, T0_y_end, T0_y_end + eps)
+        # shape2 = create_plate_slope(T0_x_start, T0_x_end, T0_x_end -T0_y_end - eps, T0_x_end - T0_y_end, True) 
         T0 = lambda x, y: T_inf + (shape1(x, y)) * (T_hot - T_inf) + (shape2(x, y)) * (T_cold - T_inf)
 
     # Initial pressure $p(x, y, 0)$ #

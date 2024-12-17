@@ -139,6 +139,8 @@ Nx = config.getint("numerics", "Nx")
 Ny = config.getint("numerics", "Ny")
 Nt = config.getint("numerics", "Nt")
 NT = config.getint("numerics", "NT")
+if config.has_section("experiment"):
+    experiment = config.get("experiment", "name")
 if config.has_option("numerics", "time_method"):
     method = config.get("numerics", "time_method")
 if config.has_option("domain", "z_min"):
@@ -195,6 +197,8 @@ if config.has_section("parameters"):
 if config.has_section("wind"):
     if config.has_option("wind", "u_r"):
         u_r = config.getfloat("wind", "u_r")
+    if config.has_option("wind", "shape"):
+        initial_u_type = config.get("wind", "shape")
 
 parameters = {
     # Domain
@@ -270,6 +274,7 @@ parameters = {
     'tol': tol,
     'max_iter': max_iter,
     'log_solver': log_solver,
+    'experiment': experiment
 }
 
 if spatial_dims == 3:

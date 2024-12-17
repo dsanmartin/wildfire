@@ -35,7 +35,7 @@ if h < 0:
 else:
     hv = lambda v: h # Constant 17-18 W/m^2/K?
 
-def domain_2D(x_min: float, x_max: float, y_min: float, y_max: float, t_min: float, t_max: float, Nx: int, Ny: int, Nt: int) -> tuple:
+def domain_2D(x_min: float, x_max: float, y_min: float, y_max: float, t_min: float, t_max: float, Nx: int, Ny: int, Nt: int, periodic: tuple[bool, bool] = (True, False)) -> tuple:
     """
     Generate a 2D domain for a given range and number of points in each dimension.
 
@@ -83,10 +83,15 @@ def domain_2D(x_min: float, x_max: float, y_min: float, y_max: float, t_min: flo
     x = np.linspace(x_min, x_max, Nx)
     y = np.linspace(y_min, y_max, Ny)
     t = np.linspace(t_min, t_max, Nt+1)
-    # Meshgrid
-    Xm, Ym = np.meshgrid(x[:-1], y)
-    # Interval size
     dx, dy, dt = x[1] - x[0], y[1] - y[0], t[1] - t[0]
+    # Meshgrid
+    xm, ym = x, y
+    if periodic[0]:
+        xm = xm[:-1]
+    if periodic[1]:
+        ym = ym[:-1]
+    Xm, Ym = np.meshgrid(xm, ym)
+    # Interval size
     return x, y, t, Xm, Ym, dx, dy, dt
 
 def domain_3D(x_min: float, x_max: float, y_min: float, y_max: float, z_min: float, z_max: float, t_min: float, t_max: float, Nx: int, Ny: int, Nz: int, Nt: int) -> tuple:
@@ -190,6 +195,69 @@ def create_plate(x_lim: tuple[float, float], y_lim: tuple[float, float], z_lim: 
         z_min, z_max = z_lim
         plate = lambda x, y, z: ((y >= y_min) & (y <= y_max) & (x <= x_max) & (x >= x_min) & (z <= z_max) & (z >= z_min)).astype(int)
     return plate
+
+# def create_trapzoid(p1: tuple[float, float], p2: tuple[float, float], p3: tuple[float, float], p4: tuple[float, float]) -> callable:
+#     """
+#     Create a trapezoid function that returns a binary mask indicating whether a point is inside the trapezoid.
+#     This is used for temperature initial condition.
+
+#     Parameters:
+#     ----------
+#     p1 : tuple[float, float]
+#         The first point of the trapezoid.
+#     p2 : tuple[float, float]
+#         The second point of the trapezoid.
+#     p3 : tuple[float, float]
+#         The third point of the trapezoid.
+#     p4 : tuple[float, float]
+#         The fourth point of the trapezoid.
+
+#     Returns:
+#     -------
+#     callable
+#         A function that takes the coordinates of a point and returns a binary mask indicating whether the point is inside the trapezoid.
+#     """
+#     x1, y1 = p1
+#     x2, y2 = p2
+#     x3, y3 = p3
+#     x4, y4 = p4
+#     trapzoid = lambda x, y: (y - y1) * (x2 - x1) - (x - x1) * (y2 - y1) >= 0 and \
+#                             (y - y2) * (x3 - x2) - (x - x2) * (y3 - y2) >= 0 and \
+#                             (y - y3) * (x4 - x3) - (x - x3) * (y4 - y3) >= 0 and \
+#                             (y - y4) * (x1 - x4) - (x - x4) * (y1 - y4) >= 0
+#     return trapzoid
+def create_plate_slope(x_start: float, x_end: float, y_start: float, y_end: float, neg: bool = False) -> callable:
+    """
+    Create a plate function that returns a binary mask indicating whether a point is inside the plate.
+    This is used for temperature initial condition.
+
+    Parameters:
+    ----------
+    x_start : float
+        The x-axis starting point of the plate.
+    x_end : float
+        The x-axis ending point of the plate.
+    y_start : float
+        The y-axis starting point of the plate.
+    y_end : float
+        The y-axis ending point of the plate.
+
+    Returns:
+    -------
+    callable
+        A function that takes the coordinates of a point and returns a binary mask indicating whether the point is inside the plate.
+
+    Notes:
+    ------
+    - The plate function will only consider the x and y coordinates.
+    """
+    slope = (y_end - y_start) / (x_end - x_start)
+    plate = lambda x, y: ((y - y_start) - slope * (x - x_start) <= 0).astype(int)
+    if neg:
+        plate = lambda x, y: ((y - y_start) - slope * (x - x_start) >= 0).astype(int)
+    return plate
+    
+    
 
 def create_gaussian(center: tuple, dimensions: tuple) -> callable:
     """

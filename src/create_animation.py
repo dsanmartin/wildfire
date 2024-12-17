@@ -25,6 +25,7 @@ parser.add_argument('-zmax', '--z-max', type=float, default=-1, help="Top bounda
 parser.add_argument('-v', '--visualization', type=str, default='vertical', 
     help="Slice to show. Options: 'vertical', 'horizontal' or 'longitudinal'. Default: 'vertical'.")
 parser.add_argument('-b', '--bounds', type=int, default=1, help="Use scalar bounds in plots. Default: True.")
+parser.add_argument('-fps', '--fps', type=int, default=10, help="Frames per second for video. Default: 10.")
 args = parser.parse_args()
 
 # Default values
@@ -55,6 +56,7 @@ U_comp = ['modU', 'divU', 'curlU'] # Computation
 dpi = 200
 filename = None
 bounds = ticks = args.bounds
+fps = args.fps
 
 # Parameters for video or GIF
 if show != "plot":
@@ -67,6 +69,7 @@ if show != "plot":
 
 # Load data
 domain, data_plots = load_data_for_plots(data_path, parameters_path, plots, tn=None)
+
 if len(domain) == 3:
     x, y, t = domain
     z = None
@@ -112,7 +115,7 @@ for n in range(0, Nt, ts):
 # Build video or GIF
 if show not in ["plot", "pdf"]:
     if show == "video":
-        io_writer = imageio.get_writer(video_name, fps=10)
+        io_writer = imageio.get_writer(video_name, fps=fps)
     else:
         io_writer = imageio.get_writer(gif_name, mode='I')
 
@@ -123,6 +126,7 @@ if show not in ["plot", "pdf"]:
             if i == 0:
                 height, width, _ = image.shape
             image = resize(image, (height, width))
+            image = (255 * image).astype(np.uint8)
             writer.append_data(image)
             # image = Image.open(filename)
             # resized_image = image.resize((width, height))

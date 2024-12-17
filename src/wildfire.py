@@ -2,7 +2,7 @@ import numpy as np
 # from arguments import * # Include default parameters + command line arguments
 from utils import domain_2D, domain_3D
 from initial_conditions import U0, T0, Y0, p0, F, topo
-from ibm import topography_nodes, topography_nodes_3D, topography_distance, topography_distance_3D, cavity
+from ibm import topography_nodes, topography_nodes_3D, topography_distance, topography_distance_3D, cavity, cylinder
 from pde import solve_pde_2D, solve_pde_3D
 from poisson import pre_computation
 from logs import log_params
@@ -26,10 +26,15 @@ class Wildfire:
             raise Exception('Number of dimensions not supported')
 
     def initialize_2D(self):
+        experiment = self.parameters['experiment']
         # Extract parameters to initialize
         (x_min, x_max, Nx), (y_min, y_max, Ny), (t_min, t_max, Nt, NT) = self.domain
         # Create arrays
-        x, y, t, Xm, Ym, dx, dy, dt = domain_2D(x_min, x_max, y_min, y_max, t_min, t_max, Nx, Ny, Nt)
+        if experiment == 'fire':
+            periodic = (True, False)
+        elif experiment == 'cylinder':
+            periodic = (True, True)
+        x, y, t, Xm, Ym, dx, dy, dt = domain_2D(x_min, x_max, y_min, y_max, t_min, t_max, Nx, Ny, Nt, periodic)
         # Evaluate initial conditions
         u0, v0 = U0 
         U_0 = u0(Xm, Ym)
@@ -39,10 +44,15 @@ class Wildfire:
         P_0 = p0(Xm, Ym)
         F_e = F(Xm, Ym)
         # Topography effect
-        if self.parameters['T0_shape'] == 'cavity':
+        if experiment == 'cavity':
             T0_x_start, T0_x_end = self.parameters['T0_x_start'], self.parameters['T0_x_end']
             T0_y_start, T0_y_end = self.parameters['T0_y_start'], self.parameters['T0_y_end']
             cut_nodes, dead_nodes = cavity(Xm, Ym, [T0_x_start, T0_x_end], dx, dy)
+        elif experiment == 'cylinder':
+            x_0 = (x_max + x_min) / 2
+            y_0 = (y_max + y_min) / 2
+            R = 1
+            cut_nodes, dead_nodes = cylinder(Xm, Ym, x_0, y_0, R, dx, dy)
         else:
             cut_nodes, dead_nodes = topography_nodes(Xm, Ym, topo, dx, dy)
         dead_nodes_values = np.array([
@@ -62,11 +72,18 @@ class Wildfire:
             plot_lims = [[0, 200], [0, 20]]
             plot_lims = [[x_min, x_max], [y_min, y_max]]
             # Add last columns to plot
-            Xm_plot = np.c_[Xm, np.ones(Ny) * x_max]
-            U_plot = np.c_[U_0, U_0[:,0]]
-            V_plot = np.c_[V_0, V_0[:,0]]
-            T_plot = np.c_[T_0, T_0[:,0]]
-            Y_plot = np.c_[Y_0, Y_0[:,0]]
+            if experiment == 'fire' or experiment == 'cavity':
+                Xm_plot = np.c_[Xm, np.ones(Ny) * x_max]
+                U_plot = np.c_[U_0, U_0[:,0]]
+                V_plot = np.c_[V_0, V_0[:,0]]
+                T_plot = np.c_[T_0, T_0[:,0]]
+                Y_plot = np.c_[Y_0, Y_0[:,0]]
+            else:
+                Xm_plot = Xm
+                U_plot = U_0
+                V_plot = V_0
+                T_plot = T_0
+                Y_plot = Y_0
             S_plot = np.sqrt(U_plot ** 2 + V_plot ** 2)
             # Plots
             all_plots = {
@@ -113,7 +130,7 @@ class Wildfire:
         self.parameters['dead_nodes_values'] = dead_nodes_values
         self.parameters['Y_top'] = topo_distance
         if self.parameters['t_source'] > 0:
-            T_mask = T_0 > 300 #plate(Xm, Ym) #shape(Xm, Ym) > 0.01
+            T_mask = T_0 != self.parameters['T_inf'] #plate(Xm, Ym) #shape(Xm, Ym) > 0.01
             T_source = T_0
         else:
             T_mask = T_source = None

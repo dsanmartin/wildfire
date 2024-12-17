@@ -68,6 +68,7 @@ Y_D = 0.04 #.25 #.25 #.9 # Threshold to add solid fuel force
 Y_f = 1e2 # Extra parameter to control the fuel consumption rate
 Y_f = 100
 T_hot = T_inf + 500 #500 #600 #450 #Temperature of fire in K
+T_cold = T_inf
 S_top = 3000 #3384 #S(800,1) ~ 3384 
 S_bot = S_top
 Sx = -1
@@ -163,3 +164,6 @@ density_constant = False
 tol = 1e-10
 max_iter = 50
 log_solver = False #not density_constant
+
+# Experiment
+experiment = 'fire'
