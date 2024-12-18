@@ -354,7 +354,6 @@ def Phi_2D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     Y_f = params['Y_f']
     turb = params['turbulence']
     conservative = params['conservative']
-    fire = params['T0_shape'] != 'cavity'
     # Get variables
     u, v, T, Y = R
     # Forces
@@ -689,38 +688,10 @@ def boundary_conditions_2D_periodic(u: np.ndarray, v: np.ndarray, T: np.ndarray,
     numpy.ndarray (4, Ny, Nx-1)
         Array containing the input variables with the applied boundary conditions.
     """
-    T_inf = params['T_inf']
-    bc_on_y = params['bc_on_z'] # Boundary conditions (for Dirichlet)
-    u_y_min, u_y_max = bc_on_y[0]
-    v_y_min, v_y_max = bc_on_y[1]
-    T_y_min, T_y_max = bc_on_y[2]
-    Y_y_min, Y_y_max = bc_on_y[3]
-    cut_nodes = params['cut_nodes']
-    cut_nodes_y, cut_nodes_x = cut_nodes # For FD in BC
+    # cut_nodes = params['cut_nodes']
     dead_nodes = params['dead_nodes']
     u_dn, v_dn, T_dn, Y_dn = params['dead_nodes_values']
     # Boundary conditions on x: Nothing to do because Phi includes them
-    # Boundary conditions on y 
-    # u = u_y_min, v = 0, dT/dy = 0 at y = y_min
-    # u = u_y_max, v = 0, T=T_inf at y = y_max
-    # Assume Dirichlet boundary conditions
-    u_s, v_s, T_s, Y_s, u_n, v_n, T_n, Y_n = u_y_min, v_y_min, T_y_min, Y_y_min, u_y_max, v_y_max, T_y_max, Y_y_max
-    # Neumann boundary at south. Derivatives using O(dy^2) 
-    # T_s = (4 * T[1, :] - T[2, :]) / 3 # dT/dy = 0
-    # Y_s = (4 * Y[1, :] - Y[2, :]) / 3 # dY/dy = 0
-    # # Neumann boundary at north. Derivatives using O(dy^2)
-    # T_n = (4 * T[-2, :] - T[-3, :]) / 3 # dT/dy = 0
-    # Y_n = (4 * Y[-2, :] - Y[-3, :]) / 3 # dY/dy = 0
-    # Boundary conditions on y=y_min
-    # u[0] = u_s
-    # v[0] = v_s
-    # T[0] = T_s 
-    # Y[0] = Y_s
-    # # Boundary conditions on y=y_max
-    # u[-1] = u_n
-    # v[-1] = v_n
-    # T[-1] = T_n
-    # Y[-1] = Y_n
     # IBM implementation #
     # Boundary on cut nodes
     # print(u_s.shape, u[cut_nodes].shape)
@@ -745,7 +716,6 @@ def boundary_conditions_2D(u: np.ndarray, v: np.ndarray, T: np.ndarray, Y: np.nd
         return boundary_conditions_2D_cavity(u, v, T, Y, params)
     elif experiment == 'cylinder':
         return boundary_conditions_2D_periodic(u, v, T, Y, params)
-    
 
 def boundary_conditions_3D(u: np.ndarray, v: np.ndarray, w: np.ndarray, T: np.ndarray, Y: np.ndarray, params: dict) -> np.ndarray:
     """
@@ -908,7 +878,7 @@ def solve_pde_2D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
             # Simulation 
             step_time_start = time.time()
             # z_tmp, p_tmp = solve_tn(t[n], z_tmp, dt, Phi_2D, boundary_conditions_2D, methods[method], params)
-            z_tmp, p_tmp = solve_tn(t[n], z_tmp, p_tmp, dt, Phi_2D, boundary_conditions_2D, methods[method], params, ((n+1) % NT == 0 or n == (Nt - 1)))
+            z_tmp, p_tmp = solve_tn(t[n], z_tmp, p_tmp, dt, Phi_2D, boundary_conditions_2D, methods[method], params)#, ((n+1) % NT == 0 or n == (Nt - 1)))
             step_time_end = time.time()
             step_elapsed_time = (step_time_end - step_time_start)
             if (n+1) % NT == 0 or n == (Nt - 1): # Save every NT steps and last step

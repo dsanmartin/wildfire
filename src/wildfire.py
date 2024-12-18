@@ -30,7 +30,7 @@ class Wildfire:
         # Extract parameters to initialize
         (x_min, x_max, Nx), (y_min, y_max, Ny), (t_min, t_max, Nt, NT) = self.domain
         # Create arrays
-        if experiment == 'fire':
+        if experiment in ['fire', 'cavity']:
             periodic = (True, False)
         elif experiment == 'cylinder':
             periodic = (True, True)
@@ -49,7 +49,7 @@ class Wildfire:
             T0_y_start, T0_y_end = self.parameters['T0_y_start'], self.parameters['T0_y_end']
             cut_nodes, dead_nodes = cavity(Xm, Ym, [T0_x_start, T0_x_end], dx, dy)
         elif experiment == 'cylinder':
-            x_0 = (x_max + x_min) / 2
+            x_0 = 2#(x_max + x_min) / 2
             y_0 = (y_max + y_min) / 2
             R = 1
             cut_nodes, dead_nodes = cylinder(Xm, Ym, x_0, y_0, R, dx, dy)

@@ -26,6 +26,7 @@ parser.add_argument('-v', '--visualization', type=str, default='vertical',
     help="Slice to show. Options: 'vertical', 'horizontal' or 'longitudinal'. Default: 'vertical'.")
 parser.add_argument('-b', '--bounds', type=int, default=1, help="Use scalar bounds in plots. Default: True.")
 parser.add_argument('-fps', '--fps', type=int, default=10, help="Frames per second for video. Default: 10.")
+parser.add_argument('-fs', '--fig-size', type=int, nargs=2, default=None, help="Figure size. Default: [6, 4].")
 args = parser.parse_args()
 
 # Default values
@@ -57,6 +58,7 @@ dpi = 200
 filename = None
 bounds = ticks = args.bounds
 fps = args.fps
+figsize = args.fig_size
 
 # Parameters for video or GIF
 if show != "plot":
@@ -68,7 +70,7 @@ if show != "plot":
     dpi = 400
 
 # Load data
-domain, data_plots = load_data_for_plots(data_path, parameters_path, plots, tn=None)
+domain, data_plots = load_data_for_plots(data_path, parameters_path, plots, tn=None, bounds=bounds)
 
 if len(domain) == 3:
     x, y, t = domain
@@ -110,7 +112,7 @@ for n in range(0, Nt, ts):
     plot_2D(n, domain, data_plots, plot_lims, visualization=visualization, title=True, 
             streamplot=streamplot, qs=qs, density=density, 
             filename=filename, dpi=dpi, 
-            bounds=bounds, ticks=ticks, slices=slices)
+            bounds=bounds, ticks=ticks, slices=slices, figsize=figsize)
 
 # Build video or GIF
 if show not in ["plot", "pdf"]:

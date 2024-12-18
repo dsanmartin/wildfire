@@ -22,10 +22,10 @@ if spatial_dims == 2:
         ])
     # Power law wind profile (FDS experiment)
     power_law_wind = lambda x, y: u_r * (y / z_r) ** alpha_u
-    constant = lambda x, y: u_r + x * y * 0
+    constant_wind = lambda x, y: u_r + x * 0
     # initial_u = power_law_wind if initial_u_type == 'power law' else log_wind
     if initial_u_type == 'constant':
-        initial_u = constant
+        initial_u = constant_wind
     elif initial_u_type == 'power law':
         initial_u = power_law_wind
     elif initial_u_type == 'log':

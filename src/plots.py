@@ -44,7 +44,7 @@ def get_variable(data: dict, variable: str, tn: int = None) -> tuple:
     phi_min, phi_max = phi.min(), phi.max() # Compute min and max
     return phi, phi_min, phi_max # Return variable, min, and max
 
-def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: int = None) -> tuple:
+def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: int = None, bounds: bool = False) -> tuple:
     """
     Load data from a given path and return arrays with the domain and a dictionary with the data to be plotted.
 
@@ -110,10 +110,15 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
     if 'T' in plots:
         T, T_min, T_max = get_variable(data, 'T', tn)
         T_mean = (T_min + T_max) / 2
+        ticks = np.linspace(T_min, T_max, 5)
+        if bounds:
+            T_min, T_max = T_min - 100 * 0, T_max + 100 * 0
+            ticks = np.array(np.ceil(np.linspace(T_min, T_max, 5, dtype=int) / 100.0) * 100, dtype=int)
         data_plots['T'] = {
             'data': T,
-            'bounds': [T_min - 100 * 0, T_max + 100 * 0],
-            'ticks': np.array(np.ceil(np.linspace(T_min, T_max, 5, dtype=int) / 100.0) * 100, dtype=int)
+            # 'bounds': [T_min - 100 * 0, T_max + 100 * 0],
+            'bounds': [T_min, T_max],
+            'ticks': ticks
             # 'ticks': [300, 475, 650, 825, 1000]
             # 'ticks': np.round(np.linspace(T_min, T_max, 5))
         }
@@ -164,10 +169,13 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
             modU = np.sqrt(u**2 + v**2)
             data_ = [modU, u, v]
         modU_min, modU_max = modU.min(), modU.max()
+        if bounds:
+            modU_min, modU_max = modU_min - 1*0, modU_max + 1e-6
+            ticks = np.round(np.linspace(modU_min, modU_max, 5), 1)
         data_plots['modU'] = {
             'data': data_,
-            'bounds': [modU_min - 1, modU_max + 1],
-            'ticks': np.round(np.linspace(modU_min, modU_max, 5), 1)
+            'bounds': [modU_min, modU_max],
+            'ticks': ticks
         }
     if 'divU' in plots:
         divU = compute_divergence_plots(U, dx, dy)
@@ -241,6 +249,7 @@ def plot_scalar_field(fig: plt.Figure, ax: plt.Axes, x: np.ndarray, y: np.ndarra
         m = plt.cm.ScalarMappable(cmap=cmap)
         m.set_array(z)
         m.set_clim(z_min, z_max)
+        ticks = None
         if plot_type == 'imshow':
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="1%", pad=0.1)
@@ -363,7 +372,7 @@ def plot_vector_field_3D(ax: plt.Axes, x: np.ndarray, y: np.ndarray, z: np.ndarr
 
 def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: str = 'vertical',
         title: bool = True, filename: str = None, dpi: int = 200, streamplot: bool = True, qs: int = 1, 
-        density: float = 1, bounds: bool = True, ticks: bool = True, slices: list = None) -> None:
+        density: float = 1, bounds: bool = True, ticks: bool = True, slices: list = None, figsize: tuple[int, int] = None) -> None:
     """
     Plot simulation data for time step `n`.
 
@@ -402,11 +411,13 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
     n_plots = len(plots)
     # figsize = (n_plots * 2, 12)
     if visualization == 'horizontal':
-        figsize = (n_plots * 4, 4)
+        if figsize is None:
+            figsize = (n_plots * 4, 4)
         fig, axes = plt.subplots(1, n_plots, sharey=True, figsize=figsize)#, dpi=dpi)
         # figsize = (n_plots * 2, 12)
     else:
-        figsize = (12, n_plots * 2)
+        if figsize is None:
+            figsize = (12, n_plots * 2)
         fig, axes = plt.subplots(n_plots, 1, sharex=True, figsize=figsize)#, dpi=dpi)
     
     

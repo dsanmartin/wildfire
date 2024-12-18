@@ -52,6 +52,7 @@ def log_params(params: dict, save: bool = False) -> None:
     bound = params['bound']
     T_min, T_max = params['T_min'], params['T_max']
     Y_min, Y_max = params['Y_min'], params['Y_max']
+    experiment = params['experiment']
     if 'z' in params:
         z_min, z_max = params['z'][0], params['z'][-1]
         Nz = params['Nz']
@@ -60,7 +61,7 @@ def log_params(params: dict, save: bool = False) -> None:
         T0_height = params['T0_height']
         T0_y_center = params['T0_y_center']
         T0_width = params['T0_width']
-    experiment = params['experiment']
+    
 
     # Non dimensional numbers calculation
     Re, Gr, Ra, Sr, Ste, St, Ze, Pe, Nu = non_dimensional_numbers(params)
@@ -72,8 +73,7 @@ def log_params(params: dict, save: bool = False) -> None:
         f = sys.stdout
 
     print("Simulation name:", sim_name, file=f)
-    if experiment is not None:
-        print("Experiment: %s" % experiment, file=f)
+    print("Experiment: %s" % experiment, file=f)
     if 'z' in params:
         print("Domain: [%.4f, %.4f] x [%.4f, %.4f] x [%.4f, %.4f] x [%.4f, %.4f]" % (x_min, x_max, y_min, y_max, z_min, z_max, t_min, t_max), file=f)
         print("Grid size: Nx: %d, Ny: %d, Nz: %d, Nt: %d" % (Nx, Ny, Nz, Nt), file=f)
