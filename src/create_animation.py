@@ -104,7 +104,7 @@ else:
 
 # Plot
 for n in range(0, Nt, ts):
-# for n in [0, Nt // 2, Nt - 1]:
+# for n in [-1]:
     if show != 'plot':
         print("Creating figure %d/%d" % (n+1, Nt))
         filename = output_dir + str(n) + ext 
