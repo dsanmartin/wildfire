@@ -191,6 +191,10 @@ if config.has_section("temperature"):
         t_source = config.getfloat("temperature", "t_source")
     if config.has_option("temperature", "shape"):
         T0_shape = config.get("temperature", "shape")
+    if config.has_option("temperature", "radiation"):
+        radiation = config.getboolean("temperature", "radiation")
+    if config.has_option("temperature", "delta"):
+        delta = config.getfloat("temperature", "delta")
 if config.has_section("parameters"):
     if config.has_option("parameters", "h"):
         h = config.getfloat("parameters", "h")
@@ -199,7 +203,19 @@ if config.has_section("wind"):
         u_r = config.getfloat("wind", "u_r")
     if config.has_option("wind", "shape"):
         initial_u_type = config.get("wind", "shape")
-
+        
+if config.has_section("pressure"):
+    if config.has_option("pressure", "tol"):
+        tol = config.getfloat("pressure", "tol")
+    if config.has_option("pressure", "max_iter"):
+        max_iter = config.getint("pressure", "max_iter")
+    if config.has_option("pressure", "log_solver"):
+        log_solver = config.getboolean("pressure", "log_solver")
+    
+if config.has_section("density"):
+    if config.has_option("density", "constant"):
+        density_constant = config.getboolean("density", "constant")
+        
 parameters = {
     # Domain
     'x': (x_min, x_max), 'y': (y_min, y_max), 't': (t_min, t_max),

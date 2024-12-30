@@ -110,6 +110,8 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
     if 'T' in plots:
         T, T_min, T_max = get_variable(data, 'T', tn)
         T_mean = (T_min + T_max) / 2
+        # T = np.transpose(T, axes=(0, 2, 1)) # [:,:,::-1]
+        # T = T[:,::-1]
         ticks = np.linspace(T_min, T_max, 5)
         if bounds:
             T_min, T_max = T_min - 100 * 0, T_max + 100 * 0
@@ -166,7 +168,14 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
             modU = np.sqrt(u**2 + v**2 + w**2)
             data_ = [modU, u, v, w]
         else:
+            # Hardcoded
+            # u_tmp = np.transpose(u, axes=(0, 2, 1)) # [:,:,::-1]
+            # v_tmp = np.transpose(v, axes=(0, 2, 1)) # [:,:,::-1]
+            # u = v_tmp#[:,::1,::-1]
+            # v = u_tmp#[:,::1,::-1]
+            # print(u.shape, v.shape)
             modU = np.sqrt(u**2 + v**2)
+            # modU = modU[:,::-1]
             data_ = [modU, u, v]
         modU_min, modU_max = modU.min(), modU.max()
         if bounds:
@@ -197,6 +206,8 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
         domain = (x, y, z, t)
     else:
         domain = (x, y, t)
+        # domain = (y, x, t)
+        # print(x.shape, y.shape)
     return domain, data_plots
 
 def plot_scalar_field(fig: plt.Figure, ax: plt.Axes, x: np.ndarray, y: np.ndarray, z: np.ndarray, cmap: plt.cm, 
@@ -419,7 +430,6 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
         if figsize is None:
             figsize = (12, n_plots * 2)
         fig, axes = plt.subplots(n_plots, 1, sharex=True, figsize=figsize)#, dpi=dpi)
-    
     
     if len(domain) == 3:
         x_min, x_max, y_min, y_max = plot_lims

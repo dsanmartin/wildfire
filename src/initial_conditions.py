@@ -1,5 +1,5 @@
 import numpy as np
-from topography import flat2D, hill2D, flat3D, hill3D
+from topography import flat2D, hill2D, flat3D, hill3D, slope2D
 from utils import create_plate, create_gaussian, create_plate_slope
 from arguments import initial_u_type, T_hot, topography_shape, spatial_dims, Y_h, u_r, T0_shape, T0_x_start, T0_x_end, T0_y_start, T0_y_end, T0_z_start, T0_z_end, T0_x_center, T0_y_center, T0_z_center, T0_length, T0_width, T0_height, T_cold # Parameters from command line
 from parameters import T_inf, u_ast, k, d, u_z_0, z_r, alpha_u
@@ -40,6 +40,8 @@ if spatial_dims == 2:
         topo = flat2D
     elif topography_shape == 'hill':
         topo = hill2D
+    elif topography_shape == 'slope':
+        topo = slope2D
     Y0 = lambda x, y: (y <= (topo(x) + Y_h)).astype(int) # 1 if y <= topo(x) + Y_h else 0
 
     # Initial temperature $T(x,y,0)$ #

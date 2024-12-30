@@ -4,7 +4,6 @@ from utils import domain_2D, domain_3D
 from initial_conditions import U0, T0, Y0, p0, F, topo
 from ibm import topography_nodes, topography_nodes_3D, topography_distance, topography_distance_3D, cavity, cylinder
 from pde import solve_pde_2D, solve_pde_3D
-from poisson import pre_computation
 from logs import log_params
 from input_output import save_approximation, save_parameters
 from plots import plot_initial_conditions, plot_initial_conditions_3D
@@ -30,10 +29,10 @@ class Wildfire:
         # Extract parameters to initialize
         (x_min, x_max, Nx), (y_min, y_max, Ny), (t_min, t_max, Nt, NT) = self.domain
         # Create arrays
-        if experiment in ['fire', 'cavity']:
-            periodic = (True, False)
-        elif experiment == 'cylinder':
+        if experiment == 'cylinder':
             periodic = (True, True)
+        else:
+            periodic = (True, False)
         x, y, t, Xm, Ym, dx, dy, dt = domain_2D(x_min, x_max, y_min, y_max, t_min, t_max, Nx, Ny, Nt, periodic)
         # Evaluate initial conditions
         u0, v0 = U0 
@@ -69,8 +68,8 @@ class Wildfire:
             T_0[dead_nodes] = dead_nodes_values[2]
             Y_0[dead_nodes] = dead_nodes_values[3]
         if self.parameters['show_ic']:
-            plot_lims = [[0, 200], [0, 20]]
-            plot_lims = [[x_min, x_max], [y_min, y_max]]
+            plot_lims = [[0, 200], [y_min, y_max]]
+            # plot_lims = [[x_min, x_max], [y_min, y_max]]
             # Add last columns to plot
             if experiment == 'fire' or experiment == 'cavity':
                 Xm_plot = np.c_[Xm, np.ones(Ny) * x_max]
@@ -93,9 +92,9 @@ class Wildfire:
                 'T': T_plot,
                 'Y': Y_plot
             }
-            selected_plots = ['s', 'T']
+            selected_plots = ['s', 'T', 'Y']
             plots_to_show = {key: value for key, value in all_plots.items() if key in selected_plots}
-            plot_initial_conditions(Xm_plot, Ym, plots_to_show, plot_lims=plot_lims, visualization='horizontal')
+            plot_initial_conditions(Xm_plot, Ym, plots_to_show, plot_lims=plot_lims, visualization='vertical')
         if self.parameters['debug']:  
             raise SystemExit()
         # We assume Dirichlet boundary conditions on the beginning

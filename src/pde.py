@@ -878,7 +878,7 @@ def solve_pde_2D(r_0: np.ndarray, params: dict) -> tuple[np.ndarray, np.ndarray]
             # Simulation 
             step_time_start = time.time()
             # z_tmp, p_tmp = solve_tn(t[n], z_tmp, dt, Phi_2D, boundary_conditions_2D, methods[method], params)
-            z_tmp, p_tmp = solve_tn(t[n], z_tmp, p_tmp, dt, Phi_2D, boundary_conditions_2D, methods[method], params)#, ((n+1) % NT == 0 or n == (Nt - 1)))
+            z_tmp, p_tmp = solve_tn(t[n], z_tmp, p_tmp, dt, Phi_2D, boundary_conditions_2D, methods[method], params, ((n+1) % NT == 0 or n == (Nt - 1)))
             step_time_end = time.time()
             step_elapsed_time = (step_time_end - step_time_start)
             if (n+1) % NT == 0 or n == (Nt - 1): # Save every NT steps and last step

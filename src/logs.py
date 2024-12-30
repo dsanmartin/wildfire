@@ -36,6 +36,7 @@ def log_params(params: dict, save: bool = False) -> None:
     S_top, S_bot, Sx = params['S_top'], params['S_bot'], params['Sx']
     source_filter = params['source_filter']
     radiation = params['radiation']
+    delta = params['delta']
     include_source = params['include_source']
     initial_u_type = params['initial_u_type']
     u_z_0, d, u_ast, kappa = params['u_z_0'], params['d'], params['u_ast'], params['kappa']
@@ -53,6 +54,8 @@ def log_params(params: dict, save: bool = False) -> None:
     T_min, T_max = params['T_min'], params['T_max']
     Y_min, Y_max = params['Y_min'], params['Y_max']
     experiment = params['experiment']
+    constant_density = params['density']
+    tol, max_iter = params['tol'], params['max_iter']
     if 'z' in params:
         z_min, z_max = params['z'][0], params['z'][-1]
         Nz = params['Nz']
@@ -88,6 +91,7 @@ def log_params(params: dict, save: bool = False) -> None:
     print("alpha: %.2e, C_p: %.4f, T_inf: %.4f, T_hot: %.4f" % (alpha, C_p, T_inf, T_hot), file=f)
     print("rho_0: %.4f, T_pc: %.4f, A: %.4f, T_act: %.4f" % (rho_0, T_pc, A, T_act), file=f)
     print("H_R: %.4f, h: %.4f, a_v: %.4f, Y_D: %.4f, Y_f: %.4f" % (H_R, h, a_v, Y_D, Y_f), file=f)
+    print("Constant density: %r" % constant_density, file=f)
     print("Initial u type: %s" % initial_u_type, file=f)
     if initial_u_type == 'log':
         print("z_0: %.4f, d: %.4f, u_ast: %.4f, kappa: %.4f" % (u_z_0, d, u_ast, kappa), file=f)
@@ -113,6 +117,8 @@ def log_params(params: dict, save: bool = False) -> None:
     print("Turbulence: %r" % turb, file=f)
     print("Conservative: %r" % conser, file=f)
     print("Radiation: %r" % radiation, file=f)
+    if radiation:
+        print("  Delta: %.4f" % delta, file=f)
     print("Sutherland's law: %r" % sutherland_law, file=f)
     if sutherland_law:
         print("  T_0: %.4f, k_0: %.4f, S_k: %.4f" % (S_T_0, S_k_0, S_k), file=f)
@@ -120,6 +126,9 @@ def log_params(params: dict, save: bool = False) -> None:
     if bound:
         print("  Temperature: [%.4f, %.4f]" % (T_min, T_max), file=f)
         print("  Fuel: [%.4f, %.4f]" % (Y_min, Y_max), file=f)
+    if not constant_density:
+        print("Pressure solver:")
+        print("  Tolerance: %.4e, Max iterations: %d" % (tol, max_iter), file=f)
     print("Reynolds: %.2e" %  Re, file=f)
     print("Prandtl: %.4f" % Pr, file=f)
     print("Grashof: %.2e" % Gr, file=f)

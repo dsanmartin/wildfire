@@ -34,7 +34,7 @@ k = 0.02476 # Thermal conductivity in W m^{-1} K^{-1} or kg m s^{-3} K ^{-1}  (A
 alpha = 2.07e-5 # Thermal diffusivity in m^2 s^{-1} (Air: 2.07e-5) 
 alpha = 2.009e-5 # Thermal diffusivity in m^2 s^{-1} (Air: 2.009e-5 at 15 °C - NASA)
 # alpha = k / (rho * C_p) # Thermal diffusivity in m^2 s^{-1}
-delta = 1 # Optical path length in m
+delta = 0.1 # Optical path length in m (FDS: 0.1 m)
 
 # Fluid equations parameters
 nu = 1.5e-5 # Kinematic viscosity in m^2 s^{-1} (Air: 1.5e-5)
@@ -158,7 +158,7 @@ periodic_axes = (False, True)
 output_dir = './data/output/'
 
 # Density variable or constant
-density_constant = False
+density_constant = True
 
 # Solver parameters
 tol = 1e-10

@@ -6,12 +6,11 @@ tn=-1;
 vis="vertical";
 xmin=0;
 xmax=200;
-ymin=0;
-ymax=200;
+ymin=0; 
+ymax=20;
 zmin=0;
-zmax=10;
+zmax=20;
 plots="modU,T,Y";
-plots="modU";
 bounds=1;
 # Parse arguments
 while getopts ":i:s:n:v:x:X:y:Y:z:Z:b:" opt; do

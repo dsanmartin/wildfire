@@ -10,10 +10,10 @@ warnings.filterwarnings("ignore") # To remove warnings from contourf using NaNs
 # Get arguments
 parser = argparse.ArgumentParser(description='Visualization of numerical simulations')
 parser.add_argument('-l', '--layout', type=str, help='Visualization layout. Options: "horizontal" or "vertical". Default: "vertical".', default="vertical")
-parser.add_argument('-p', '--plots', type=str, help='Plots to show. Options: u, v, modU, divU, curlU, T, Y, p. Default: modU,T,p.', default="modU,T,Y")
+parser.add_argument('-p', '--plots', type=str, help='Plots to show. Options: u, v, modU, divU, curlU, T, Y, p. Default: modU,T,Y.', default="modU,T,Y")
 parser.add_argument('-s', '--show', type=str, help='Show, PDF, video or GIF. Options: "plot", "pdf", "video" or "gif". Default: "plot".', default="plot")
 parser.add_argument('-ts', '--time-sample', type=int, help='Time sample step. Default 1', default=1)
-parser.add_argument('-tn', '--time-step', type=int, help='Show up to time step n. Default None (all data)', default=None)
+parser.add_argument('-tn', '--time-step', type=int, help='Show up to time step n. Default None (all data)', default=-1)
 parser.add_argument('-i', '--input', type=str, help='Simulation directory.', required=True)
 parser.add_argument('-o', '--output', type=str, help='Output directory.', default='')
 parser.add_argument('-xmin', '--x-min', type=float, default=0, help="Left boundary of domain in x.")
