@@ -260,7 +260,7 @@ def plot_scalar_field(fig: plt.Figure, ax: plt.Axes, x: np.ndarray, y: np.ndarra
         m = plt.cm.ScalarMappable(cmap=cmap)
         m.set_array(z)
         m.set_clim(z_min, z_max)
-        ticks = None
+        # ticks = None
         if plot_type == 'imshow':
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="1%", pad=0.1)

@@ -127,7 +127,7 @@ def log_params(params: dict, save: bool = False) -> None:
         print("  Temperature: [%.4f, %.4f]" % (T_min, T_max), file=f)
         print("  Fuel: [%.4f, %.4f]" % (Y_min, Y_max), file=f)
     if not constant_density:
-        print("Pressure solver:")
+        print("Pressure solver:", file=f)
         print("  Tolerance: %.4e, Max iterations: %d" % (tol, max_iter), file=f)
     print("Reynolds: %.2e" %  Re, file=f)
     print("Prandtl: %.4f" % Pr, file=f)
