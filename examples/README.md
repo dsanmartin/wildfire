@@ -10,7 +10,7 @@ A few experiments...
 
 ### Plume-dominated
 
-![Plume](./simulations/2d/plume_1.gif)
+![Plume](./simulations/2d/plume.gif)
 
 ## Topography
 
