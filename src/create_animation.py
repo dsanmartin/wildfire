@@ -27,6 +27,7 @@ parser.add_argument('-v', '--visualization', type=str, default='vertical',
 parser.add_argument('-b', '--bounds', type=int, default=1, help="Use scalar bounds in plots. Default: True.")
 parser.add_argument('-fps', '--fps', type=int, default=10, help="Frames per second for video. Default: 10.")
 parser.add_argument('-fs', '--fig-size', type=int, nargs=2, default=None, help="Figure size. Default: [6, 4].")
+parser.add_argument('-tit', '--title', type=int, default=1, help="Title. Default: True.")
 args = parser.parse_args()
 
 # Default values
@@ -59,6 +60,7 @@ filename = None
 bounds = ticks = args.bounds
 fps = args.fps
 figsize = args.fig_size
+title = args.title
 
 # Parameters for video or GIF
 if show != "plot":
@@ -68,6 +70,9 @@ if show != "plot":
     video_name = name + ".mp4"
     ext = '.png' if show in ['gif', 'video'] else '.pdf'
     dpi = 400
+
+if tn == -1:
+    tn = None
 
 # Load data
 domain, data_plots = load_data_for_plots(data_path, parameters_path, plots, tn=None, bounds=bounds)
@@ -97,7 +102,7 @@ if z is not None:
 filenames = []
 
 # Number of samples to show
-if tn == -1:
+if tn is None:
     Nt = t.shape[0]
 else:
     Nt = tn
@@ -109,7 +114,7 @@ for n in range(0, Nt, ts):
         print("Creating figure %d/%d" % (n+1, Nt))
         filename = output_dir + str(n) + ext 
         filenames.append(filename)
-    plot_2D(n, domain, data_plots, plot_lims, visualization=visualization, title=True, 
+    plot_2D(n, domain, data_plots, plot_lims, visualization=visualization, title=title, 
             streamplot=streamplot, qs=qs, density=density, 
             filename=filename, dpi=dpi, 
             bounds=bounds, ticks=ticks, slices=slices, figsize=figsize)

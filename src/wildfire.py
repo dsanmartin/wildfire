@@ -47,6 +47,10 @@ class Wildfire:
             T0_x_start, T0_x_end = self.parameters['T0_x_start'], self.parameters['T0_x_end']
             T0_y_start, T0_y_end = self.parameters['T0_y_start'], self.parameters['T0_y_end']
             cut_nodes, dead_nodes = cavity(Xm, Ym, [T0_x_start, T0_x_end], dx, dy)
+        elif experiment == 'cavity_diff':
+            T0_x_start, T0_x_end = self.parameters['T0_x_start'], self.parameters['T0_x_end']
+            T0_y_start, T0_y_end = self.parameters['T0_y_start'], self.parameters['T0_y_end']
+            cut_nodes, dead_nodes = cavity(Xm, Ym, [T0_x_start, T0_y_end], dx, dy)
         elif experiment == 'cylinder':
             x_0 = 2#(x_max + x_min) / 2
             y_0 = (y_max + y_min) / 2
@@ -69,20 +73,32 @@ class Wildfire:
             Y_0[dead_nodes] = dead_nodes_values[3]
         if self.parameters['show_ic']:
             plot_lims = [[0, 200], [y_min, y_max]]
-            # plot_lims = [[x_min, x_max], [y_min, y_max]]
-            # Add last columns to plot
-            if experiment == 'fire' or experiment == 'cavity':
-                Xm_plot = np.c_[Xm, np.ones(Ny) * x_max]
-                U_plot = np.c_[U_0, U_0[:,0]]
-                V_plot = np.c_[V_0, V_0[:,0]]
-                T_plot = np.c_[T_0, T_0[:,0]]
-                Y_plot = np.c_[Y_0, Y_0[:,0]]
-            else:
+            plot_lims = [[x_min, x_max], [y_min, y_max]]
+            if experiment == 'cylinder':
                 Xm_plot = Xm
                 U_plot = U_0
                 V_plot = V_0
                 T_plot = T_0
                 Y_plot = Y_0
+            else: # Add last columns to plot
+                Xm_plot = np.c_[Xm, np.ones(Ny) * x_max]
+                U_plot = np.c_[U_0, U_0[:,0]]
+                V_plot = np.c_[V_0, V_0[:,0]]
+                T_plot = np.c_[T_0, T_0[:,0]]
+                Y_plot = np.c_[Y_0, Y_0[:,0]]
+            # Add last columns to plot
+            # if experiment == 'fire' or experiment == 'cavity':
+            #     Xm_plot = np.c_[Xm, np.ones(Ny) * x_max]
+            #     U_plot = np.c_[U_0, U_0[:,0]]
+            #     V_plot = np.c_[V_0, V_0[:,0]]
+            #     T_plot = np.c_[T_0, T_0[:,0]]
+            #     Y_plot = np.c_[Y_0, Y_0[:,0]]
+            # else:
+            #     Xm_plot = Xm
+            #     U_plot = U_0
+            #     V_plot = V_0
+            #     T_plot = T_0
+            #     Y_plot = Y_0
             S_plot = np.sqrt(U_plot ** 2 + V_plot ** 2)
             # Plots
             all_plots = {
@@ -92,7 +108,7 @@ class Wildfire:
                 'T': T_plot,
                 'Y': Y_plot
             }
-            selected_plots = ['s', 'T', 'Y']
+            selected_plots = ['s', 'T']#, 'Y']
             plots_to_show = {key: value for key, value in all_plots.items() if key in selected_plots}
             plot_initial_conditions(Xm_plot, Ym, plots_to_show, plot_lims=plot_lims, visualization='vertical')
         if self.parameters['debug']:  

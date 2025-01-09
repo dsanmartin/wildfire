@@ -615,7 +615,7 @@ def boundary_conditions_2D_cavity(u: np.ndarray, v: np.ndarray, T: np.ndarray, Y
     T_y_min, T_y_max = bc_on_y[2]
     Y_y_min, Y_y_max = bc_on_y[3]
     cut_nodes = params['cut_nodes']
-    cut_nodes_y, cut_nodes_x = cut_nodes # For FD in BC
+    # cut_nodes_y, cut_nodes_x = cut_nodes # For FD in BC
     dead_nodes = params['dead_nodes']
     u_dn, v_dn, T_dn, Y_dn = params['dead_nodes_values']
     # Boundary conditions on x: Nothing to do because Phi includes them
@@ -624,12 +624,13 @@ def boundary_conditions_2D_cavity(u: np.ndarray, v: np.ndarray, T: np.ndarray, Y
     # u = u_y_max, v = 0, T=T_inf at y = y_max
     # Assume Dirichlet boundary conditions
     u_s, v_s, T_s, Y_s, u_n, v_n, T_n, Y_n = u_y_min, v_y_min, T_y_min, Y_y_min, u_y_max, v_y_max, T_y_max, Y_y_max
-    # Neumann boundary at south. Derivatives using O(dy^2) 
-    # T_s = (4 * T[1, :] - T[2, :]) / 3 # dT/dy = 0
-    # Y_s = (4 * Y[1, :] - Y[2, :]) / 3 # dY/dy = 0
-    # # Neumann boundary at north. Derivatives using O(dy^2)
-    # T_n = (4 * T[-2, :] - T[-3, :]) / 3 # dT/dy = 0
-    # Y_n = (4 * Y[-2, :] - Y[-3, :]) / 3 # dY/dy = 0
+    if params['experiment'] == 'cavity_diff':
+        # Neumann boundary at south. Derivatives using O(dy^2) 
+        T_s = (4 * T[1, :] - T[2, :]) / 3 # dT/dy = 0
+        # Y_s = (4 * Y[1, :] - Y[2, :]) / 3 # dY/dy = 0
+        # # Neumann boundary at north. Derivatives using O(dy^2)
+        T_n = (4 * T[-2, :] - T[-3, :]) / 3 # dT/dy = 0
+        # Y_n = (4 * Y[-2, :] - Y[-3, :]) / 3 # dY/dy = 0
     # Boundary conditions on y=y_min
     u[0] = u_s
     v[0] = v_s
@@ -712,7 +713,7 @@ def boundary_conditions_2D(u: np.ndarray, v: np.ndarray, T: np.ndarray, Y: np.nd
     experiment = params['experiment']
     if experiment == 'fire':
         return boundary_conditions_2D_fire(u, v, T, Y, params)
-    elif experiment == 'cavity':
+    elif experiment == 'cavity' or experiment == 'cavity_diff':
         return boundary_conditions_2D_cavity(u, v, T, Y, params)
     elif experiment == 'cylinder':
         return boundary_conditions_2D_periodic(u, v, T, Y, params)

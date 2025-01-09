@@ -163,6 +163,8 @@ if config.has_section("fuel"):
         a_v = config.getfloat("fuel", "a_v")
     if config.has_option("fuel", "Y_f"):
         Y_f = config.getfloat("fuel", "Y_f")
+    if config.has_option("fuel", "H_R"):
+        H_R = config.getfloat("fuel", "H_R")
 if config.has_section("temperature"):
     if config.has_option("temperature", "T_hot"):
         T_hot = config.getfloat("temperature", "T_hot")
@@ -215,7 +217,7 @@ if config.has_section("pressure"):
 if config.has_section("density"):
     if config.has_option("density", "constant"):
         density_constant = config.getboolean("density", "constant")
-        
+
 parameters = {
     # Domain
     'x': (x_min, x_max), 'y': (y_min, y_max), 't': (t_min, t_max),

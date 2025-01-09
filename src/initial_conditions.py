@@ -1,7 +1,7 @@
 import numpy as np
 from topography import flat2D, hill2D, flat3D, hill3D, slope2D
 from utils import create_plate, create_gaussian, create_plate_slope
-from arguments import initial_u_type, T_hot, topography_shape, spatial_dims, Y_h, u_r, T0_shape, T0_x_start, T0_x_end, T0_y_start, T0_y_end, T0_z_start, T0_z_end, T0_x_center, T0_y_center, T0_z_center, T0_length, T0_width, T0_height, T_cold # Parameters from command line
+from arguments import initial_u_type, T_hot, topography_shape, spatial_dims, Y_h, u_r, T0_shape, T0_x_start, T0_x_end, T0_y_start, T0_y_end, T0_z_start, T0_z_end, T0_x_center, T0_y_center, T0_z_center, T0_length, T0_width, T0_height, T_cold, experiment # Parameters from command line
 from parameters import T_inf, u_ast, k, d, u_z_0, z_r, alpha_u
 
 def load_initial_condition(data_path: str, ndim: int = 2) -> callable:
@@ -53,12 +53,13 @@ if spatial_dims == 2:
     #     shape = create_plate((T0_x_start, T0_x_end), (T0_z_start, T0_z_end)) 
     T0 = lambda x, y: T_inf + (shape(x, y)) * (T_hot - T_inf)
     if T0_shape == 'cavity':
-        shape1 = create_plate((T0_x_start, T0_x_end), (T0_y_start, T0_y_end))
-        shape2 = create_plate((T0_x_start, T0_x_end), (T0_x_end - T0_y_end, T0_x_end - T0_y_start))
-        # eps = 0.01
-        # shape1 = create_plate_slope(T0_x_start, T0_x_end, T0_y_end, T0_y_end + eps)
-        # shape2 = create_plate_slope(T0_x_start, T0_x_end, T0_x_end -T0_y_end - eps, T0_x_end - T0_y_end, True) 
-        T0 = lambda x, y: T_inf + (shape1(x, y)) * (T_hot - T_inf) + (shape2(x, y)) * (T_cold - T_inf)
+        if experiment == 'cavity':
+            shape1 = create_plate((T0_x_start, T0_x_end), (T0_y_start, T0_y_end))
+            shape2 = create_plate((T0_x_start, T0_x_end), (T0_x_end - T0_y_end, T0_x_end - T0_y_start))
+        else:
+            shape1 = create_plate((T0_x_start, T0_x_end), (T0_y_start, T0_y_end))
+            shape2 = create_plate((T0_y_end - T0_x_end, T0_y_end - T0_x_start), (T0_y_start, T0_y_end))
+        T0 = lambda x, y: T_inf + shape1(x, y) * (T_hot - T_inf) + shape2(x, y) * (T_cold - T_inf)
 
     # Initial pressure $p(x, y, 0)$ #
     p0 = lambda x, y: x * y * 0 

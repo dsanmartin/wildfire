@@ -112,10 +112,10 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
         T_mean = (T_min + T_max) / 2
         # T = np.transpose(T, axes=(0, 2, 1)) # [:,:,::-1]
         # T = T[:,::-1]
-        ticks = np.linspace(T_min, T_max, 5)
+        # ticks = np.linspace(T_min, T_max, 5)
+        ticks = np.array(np.ceil(np.linspace(T_min, T_max, 5, dtype=int) / 100.0) * 100, dtype=int)
         if bounds:
             T_min, T_max = T_min - 100 * 0, T_max + 100 * 0
-            ticks = np.array(np.ceil(np.linspace(T_min, T_max, 5, dtype=int) / 100.0) * 100, dtype=int)
         data_plots['T'] = {
             'data': T,
             # 'bounds': [T_min - 100 * 0, T_max + 100 * 0],
@@ -173,9 +173,7 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
             # v_tmp = np.transpose(v, axes=(0, 2, 1)) # [:,:,::-1]
             # u = v_tmp#[:,::1,::-1]
             # v = u_tmp#[:,::1,::-1]
-            # print(u.shape, v.shape)
             modU = np.sqrt(u**2 + v**2)
-            # modU = modU[:,::-1]
             data_ = [modU, u, v]
         modU_min, modU_max = modU.min(), modU.max()
         if bounds:

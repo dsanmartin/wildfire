@@ -1,7 +1,7 @@
 import numpy as np
 # from arguments import T_act, A, H_R, h, alpha, S_top, S_bot, k, Y_D # Parameters from command line
-from parameters import T_pc, T_inf, g, n_arrhenius, h_rad, C_p, rho_0, a_v, S_T_0, S_k_0, S_k, sigma, sutherland_law, include_source, source_filter # Default parameters
-from arguments import T_act, A, H_R, h, alpha, S_top, S_bot, k, Y_D, density_constant, delta, radiation
+from parameters import T_pc, T_inf, g, n_arrhenius, h_rad, C_p, rho_0, S_T_0, S_k_0, S_k, sigma, sutherland_law, include_source, source_filter # Default parameters
+from arguments import T_act, A, H_R, h, a_v, alpha, S_top, S_bot, k, Y_D, density_constant, delta, radiation
 
 # A lot of useful functions #
 G2D = lambda x, y, x0, y0, sx, sy, A: A * np.exp(-((x - x0) ** 2 / sx ** 2 + (y - y0) ** 2 / sy ** 2)) # 2D Gaussian function

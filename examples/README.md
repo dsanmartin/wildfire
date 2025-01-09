@@ -27,7 +27,3 @@ A few experiments...
 ### Rayleigh–Bénard convection
 
 ![Rayleigh-Benard](./simulations/2d/rb_convection.gif)
-
-### Heated cavity
-
-![Cavity](./simulations/2d/cavity.gif)
