@@ -22,12 +22,12 @@ parser.add_argument('-ymin', '--y-min', type=float, default=0, help="Bottom boun
 parser.add_argument('-ymax', '--y-max', type=float, default=20, help="Top boundary of domain in y.")
 parser.add_argument('-zmin', '--z-min', type=float, default=-1, help="Bottom boundary of domain in z.")
 parser.add_argument('-zmax', '--z-max', type=float, default=-1, help="Top boundary of domain in z.")
-parser.add_argument('-v', '--visualization', type=str, default='vertical', 
-    help="Slice to show. Options: 'vertical', 'horizontal' or 'longitudinal'. Default: 'vertical'.")
+parser.add_argument('-v', '--visualization', type=str, default='vertical', help="Slice to show. Options: 'vertical', 'horizontal' or 'longitudinal'. Default: 'vertical'.")
 parser.add_argument('-b', '--bounds', type=int, default=1, help="Use scalar bounds in plots. Default: True.")
 parser.add_argument('-fps', '--fps', type=int, default=10, help="Frames per second for video. Default: 10.")
 parser.add_argument('-fs', '--fig-size', type=int, nargs=2, default=None, help="Figure size. Default: [6, 4].")
 parser.add_argument('-tit', '--title', type=int, default=1, help="Title. Default: True.")
+parser.add_argument('-den', '--density', type=float, default=0.6, help="Streamplot density.")
 args = parser.parse_args()
 
 # Default values
@@ -43,6 +43,8 @@ if visualization == "longitudinal" or visualization == "horizontal":
     density = 5
 else:
     density = 0.6 
+density = args.density
+# density = 1
 qs = 1 # Quiver samples
 ts = args.time_sample # Time samples
 tn = args.time_step # Up to time step. -1 for all
@@ -106,10 +108,34 @@ if tn is None:
     Nt = t.shape[0]
 else:
     Nt = tn
+    
+ 
+# T_min, T_max = data_plots['T']['data'].min(), data_plots['T']['data'].max()
+# modU_min, modU_max = data_plots['modU']['data'][0].min(), data_plots['modU']['data'][0].max()
+# print("T: min = %.2f, max = %.2f" % (T_min, T_max))
+# print("modU: min = %.2f, max = %.2f" % (modU_min, modU_max))
+# print(asd)
 
+mod_U_ticks = [0, 5, 10, 15] # slope
+mod_U_ticks = [0, 3, 6, 9, 12] # gaussian hill
+mod_U_ticks = [0, 3, 6, 9] # Wind driven
+mod_U_ticks = [0, 3, 6, 9, 12] # Plume
+T_ticks = [300, 600, 900, 1200, 1500] # slope
+T_ticks = [300, 600, 900, 1200] # gaussian
+T_ticks = [300, 500, 700, 900, 1100] # wind driven
+T_ticks = [300, 500, 700, 900] # Plume
+# Ticks per field
+ticks_per_field = {
+    'modU': mod_U_ticks,
+    'T': T_ticks,
+}
+
+# print(np.argwhere(np.abs(t - 56)< 0.5))
+# print(asd)
 # Plot
-for n in range(0, Nt, ts):
-# for n in [-1]:
+ns = range(0, Nt, ts)
+# ns = [50]
+for n in ns:
     if show != 'plot':
         print("Creating figure %d/%d" % (n+1, Nt))
         filename = output_dir + str(n) + ext 
@@ -117,7 +143,7 @@ for n in range(0, Nt, ts):
     plot_2D(n, domain, data_plots, plot_lims, visualization=visualization, title=title, 
             streamplot=streamplot, qs=qs, density=density, 
             filename=filename, dpi=dpi, 
-            bounds=bounds, ticks=ticks, slices=slices, figsize=figsize)
+            bounds=bounds, ticks=ticks, slices=slices, figsize=figsize, ticks_per_field=ticks_per_field)
 
 # Build video or GIF
 if show not in ["plot", "pdf"]:

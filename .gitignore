@@ -137,6 +137,7 @@ docs/
 src_gpu/
 src_cupy/
 src_cunumeric/
+examples/simulations/2d/backup
 
 # Script
 scripts/run_gpu.sh

@@ -381,7 +381,8 @@ def plot_vector_field_3D(ax: plt.Axes, x: np.ndarray, y: np.ndarray, z: np.ndarr
 
 def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: str = 'vertical',
         title: bool = True, filename: str = None, dpi: int = 200, streamplot: bool = True, qs: int = 1, 
-        density: float = 1, bounds: bool = True, ticks: bool = True, slices: list = None, figsize: tuple[int, int] = None) -> None:
+        density: float = 1, bounds: bool = True, ticks: bool = True, slices: list = None, 
+        figsize: tuple[int, int] = None, ticks_per_field: dict = None) -> None:
     """
     Plot simulation data for time step `n`.
 
@@ -596,6 +597,10 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
             modU_bounds = [modU.min(), modU.max()]
         if ticks:
             modU_ticks = plots['modU']['ticks']
+            if ticks_per_field is not None:
+                if 'modU' in ticks_per_field:
+                    modU_ticks = ticks_per_field['modU']
+                    modU_bounds = [modU_ticks[0], modU_ticks[-1]]
         else:
             modU_ticks = None
         plot_scalar_field(
@@ -669,6 +674,10 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
             T_bounds = [T.min(), T.max()]
         if ticks:
             T_ticks = plots['T']['ticks']
+            if ticks_per_field is not None:
+                if 'T' in ticks_per_field:
+                    T_ticks = ticks_per_field['T']
+                    T_bounds = [T_ticks[0], T_ticks[-1]]
         else:
             T_ticks = None
         plot_scalar_field(

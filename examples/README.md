@@ -6,21 +6,21 @@ A few experiments...
 
 ### Wind-driven 
 
-![Wind](./simulations/2d/flat.gif)
+![Wind](./simulations/2d/wind_driven.gif)
 
 ### Plume-dominated
 
-![Plume](./simulations/2d/plume.gif)
+![Plume](./simulations/2d/plume_dominated.gif)
 
 ## Topography
 
 ### Triangular hill
 
-![Slope](./simulations/2d/slope.gif)
+![Slope](./simulations/2d/triangular_hill.gif)
 
 ### Gaussian hill
 
-![Hill](./simulations/2d/hill.gif)
+![Hill](./simulations/2d/gaussian_hill.gif)
 
 ## Validation
 
