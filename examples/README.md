@@ -6,24 +6,24 @@ A few experiments...
 
 ### Wind-driven 
 
-![Wind](./simulations/2d/wind_driven.gif)
+![Wind](./simulations/2D/wind_driven.gif)
 
 ### Plume-dominated
 
-![Plume](./simulations/2d/plume_dominated.gif)
+![Plume](./simulations/2D/plume_dominated.gif)
 
 ## Topography
 
 ### Triangular hill
 
-![Slope](./simulations/2d/triangular_hill.gif)
+![Slope](./simulations/2D/triangular_hill.gif)
 
 ### Gaussian hill
 
-![Hill](./simulations/2d/gaussian_hill.gif)
+![Hill](./simulations/2D/gaussian_hill.gif)
 
 ## Validation
 
 ### Rayleigh–Bénard convection
 
-![Rayleigh-Benard](./simulations/2d/rb_convection.gif)
+![Rayleigh-Benard](./simulations/2D/rb_convection.gif)
