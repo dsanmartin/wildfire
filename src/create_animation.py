@@ -65,8 +65,8 @@ figsize = args.fig_size
 title = args.title
 
 # Parameters for video or GIF
+sim_id = input_dir.split("/")[-2]
 if show != "plot":
-    sim_id = input_dir.split("/")[-2]
     name = output_dir + sim_id + "_" + visualization[0]
     gif_name = name + ".gif"
     video_name = name + ".mp4"
@@ -109,31 +109,51 @@ if tn is None:
 else:
     Nt = tn
     
- 
+ns = range(0, Nt, ts)
 # T_min, T_max = data_plots['T']['data'].min(), data_plots['T']['data'].max()
 # modU_min, modU_max = data_plots['modU']['data'][0].min(), data_plots['modU']['data'][0].max()
 # print("T: min = %.2f, max = %.2f" % (T_min, T_max))
 # print("modU: min = %.2f, max = %.2f" % (modU_min, modU_max))
 # print(asd)
-
-mod_U_ticks = [0, 5, 10, 15] # slope
-mod_U_ticks = [0, 3, 6, 9, 12] # gaussian hill
-mod_U_ticks = [0, 3, 6, 9] # Wind driven
-mod_U_ticks = [0, 3, 6, 9, 12] # Plume
-T_ticks = [300, 600, 900, 1200, 1500] # slope
-T_ticks = [300, 600, 900, 1200] # gaussian
-T_ticks = [300, 500, 700, 900, 1100] # wind driven
-T_ticks = [300, 500, 700, 900] # Plume
-# Ticks per field
-ticks_per_field = {
-    'modU': mod_U_ticks,
-    'T': T_ticks,
-}
+# Hardcoded values
+# mod_U_ticks = [0, 5, 10, 15] # slope
+# mod_U_ticks = [0, 3, 6, 9, 12] # gaussian hill
+# mod_U_ticks = [0, 3, 6, 9] # Wind driven
+# mod_U_ticks = [0, 3, 6, 9, 12] # Plume
+# T_ticks = [300, 600, 900, 1200, 1500] # slope
+# T_ticks = [300, 600, 900, 1200] # gaussian
+# T_ticks = [300, 500, 700, 900, 1100] # wind driven
+# T_ticks = [300, 500, 700, 900] # Plume
+ticks_per_field = None
+if sim_id in ["20241224094934", "20250103050307", "20241227080722", "20250103121420"]:
+    mod_U_ticks = [0, 3, 6, 9, 12]
+    T_ticks = [300, 500, 700, 900, 1100]
+    if sim_id == "20241224094934":
+        mod_U_ticks = mod_U_ticks[:-1]
+        if show != "video" != "gif":
+            ns = [40]
+    if sim_id == "20250103050307":
+        T_ticks = T_ticks[:-1]
+        if show != "video" != "gif":
+            ns = [50]
+    if sim_id == "20241227080722":
+        mod_U_ticks = [0, 5, 10, 15] # slope
+        T_ticks = [300, 600, 900, 1200, 1500] # gaussian
+        if show != "video" != "gif":
+            ns = [20]
+    if sim_id == "20250103121420":
+        T_ticks = [300, 600, 900, 1200] # Plume
+        if show != "video" != "gif":
+            ns = [30]
+    # Ticks per field
+    ticks_per_field = {
+        'modU': mod_U_ticks,
+        'T': T_ticks,
+    }
 
 # print(np.argwhere(np.abs(t - 56)< 0.5))
 # print(asd)
 # Plot
-ns = range(0, Nt, ts)
 # ns = [50]
 for n in ns:
     if show != 'plot':

@@ -127,16 +127,19 @@ def load_data_for_plots(data_path: str, parameters_path: str, plots: list, tn: i
     if 'Y' in plots:
         Y, Y_min, Y_max = get_variable(data, 'Y', tn)
         # Fix boundaries for Y
-        Y[0, :, 0] = 0
-        Y[0, :,-1] = 0
-        if 'z' in data:
-            Y[0, 0, :, :] = 0
-            Y[0,-1, :, :] = 0
+        # Y[0, :, 0] = 0
+        # Y[0, :,-1] = 0
+        # if 'z' in data:
+        #     Y[0, 0, :, :] = 0
+        #     Y[0,-1, :, :] = 0
         # Get IBM nodes
         dead_nodes = parameters['dead_nodes']
+        cut_nodes = parameters['cut_nodes']
         terrain = np.zeros_like(Y[0])
         terrain[:] = np.nan
         terrain[dead_nodes] = 1
+        # Fill nodes inside Y
+        Y[:,terrain == 1] = 1
         data_plots['Y'] = {
             'data': [Y, terrain],
             'bounds': [Y_min, Y_max], #[Y_min - 0.01, Y_max + 0.01],
