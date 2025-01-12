@@ -1,6 +1,6 @@
 # Numerical simulations
 
-A few experiments... 
+A few experiments.
 
 ## Flat terrain
 
