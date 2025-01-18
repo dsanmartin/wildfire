@@ -134,6 +134,7 @@ dmypy.json
 data/
 others/
 docs/
+src_bk/
 src_gpu/
 src_cupy/
 src_cunumeric/
