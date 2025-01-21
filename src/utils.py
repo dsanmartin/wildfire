@@ -412,6 +412,8 @@ def f(U: tuple, T: np.ndarray, Y: np.ndarray) -> list:
         g_y = g_z
         mod_U = np.sqrt(u ** 2 + v ** 2)
         return [
+            # - g_x * (T - T_inf) / T - Y_D * a_v * Y * mod_U * u,
+            # - g_y * (T - T_inf) / T - Y_D * a_v * Y * mod_U * v
             - g_x * (T - T_inf) / T - Y_D * a_v * Y * mod_U * u,
             - g_y * (T - T_inf) / T - Y_D * a_v * Y * mod_U * v
         ]
