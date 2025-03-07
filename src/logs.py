@@ -28,11 +28,11 @@ def log_params(params: dict, save: bool = False) -> None:
     # U_0, V_0, T_0 = params['u0'], params['v0'], params['T0']
     sim_name = params['sim_name']
     method = params['method']
-    rho_0, T_hot, T_inf, T_pc = params['rho_0'], params['T_hot'], params['T_inf'], params['T_pc']
-    nu, k, alpha, Pr, g = params['nu'], params['k'], params['alpha'], params['Pr'], params['g']
+    rho_inf, T_hot, T_inf, T_pc = params['rho_inf'], params['T_hot'], params['T_inf'], params['T_pc']
+    nu, kappa, alpha, Pr, g = params['nu'], params['kappa'], params['alpha'], params['Pr'], params['g']
     mu = params['mu']
     A, T_act, H_R, h, a_v = params['A'], params['T_act'], params['H_R'], params['h'], params['a_v']
-    Y_f, Y_D, C_p = params['Y_f'], params['Y_D'], params['C_p']
+    Y_f, Y_D, c_p = params['Y_f'], params['Y_D'], params['c_p']
     turb, conser = params['turbulence'], params['conservative']
     S_top, S_bot, Sx = params['S_top'], params['S_bot'], params['Sx']
     source_filter = params['source_filter']
@@ -40,7 +40,7 @@ def log_params(params: dict, save: bool = False) -> None:
     delta = params['delta']
     include_source = params['include_source']
     initial_u_type = params['initial_u_type']
-    u_z_0, d, u_ast, kappa = params['u_z_0'], params['d'], params['u_ast'], params['kappa']
+    u_z_0, d, u_ast, von_karman = params['u_z_0'], params['d'], params['u_ast'], params['von_karman']
     u_r, z_r, alpha_u = params['u_r'], params['z_r'], params['alpha_u']
     T0_shape = params['T0_shape']
     T0_x_start, T0_x_end, T0_y_start, T0_y_end = params['T0_x_start'], params['T0_x_end'], params['T0_y_start'], params['T0_y_end']
@@ -68,7 +68,7 @@ def log_params(params: dict, save: bool = False) -> None:
     
 
     # Non dimensional numbers calculation
-    Re, Gr, Ra, Sr, Ste, St, Ze, Pe, Nu = non_dimensional_numbers(params)
+    Re, Gr, Ra, Sr, Ste, St, Ze, Pe, Nu, Fr = non_dimensional_numbers(params)
 
     if save: # Print to file
         create_simulation_folder(dir_path) # Create simulation folder if it doesn't exist
@@ -89,13 +89,13 @@ def log_params(params: dict, save: bool = False) -> None:
     print("Time integration: %s" % method, file=f)
     print("Time samples: %d" % NT, file=f)
     print("nu: %.2e, mu: %.2e, g: (%.4f, %.4f, %.4f)" % (nu, mu, *g), file=f)
-    print("alpha: %.2e, k: %.2e, C_p: %.4f, T_inf: %.4f, T_hot: %.4f" % (alpha, k, C_p, T_inf, T_hot), file=f)
-    print("rho_0: %.4f, T_pc: %.4f, A: %.4f, T_act: %.4f" % (rho_0, T_pc, A, T_act), file=f)
+    print("alpha: %.2e, kappa: %.2e, c_p: %.4f, T_inf: %.4f, T_hot: %.4f" % (alpha, kappa, c_p, T_inf, T_hot), file=f)
+    print("rho_inf: %.4f, T_pc: %.4f, A: %.4f, T_act: %.4f" % (rho_inf, T_pc, A, T_act), file=f)
     print("H_R: %.4f, h: %.4f, a_v: %.4f, Y_D: %.4f, Y_f: %.4f" % (H_R, h, a_v, Y_D, Y_f), file=f)
     print("Constant density: %r" % constant_density, file=f)
     print("Initial u type: %s" % initial_u_type, file=f)
     if initial_u_type == 'log':
-        print("z_0: %.4f, d: %.4f, u_ast: %.4f, kappa: %.4f" % (u_z_0, d, u_ast, kappa), file=f)
+        print("z_0: %.4f, d: %.4f, u_ast: %.4f, Von Karman: %.4f" % (u_z_0, d, u_ast, von_karman), file=f)
     else:
         print("  u_r: %.4f, z_r: %.4f, alpha_u: %.4f" % (u_r, z_r, alpha_u), file=f)
     print("Initial temperature shape: %s" % T0_shape, file=f)
@@ -134,6 +134,7 @@ def log_params(params: dict, save: bool = False) -> None:
     print("Prandtl: %.4f" % Pr, file=f)
     print("Grashof: %.2e" % Gr, file=f)
     print("Rayleigh: %.2e" % Ra, file=f)
+    print("Froude: %.4f" % Fr, file=f)
     print("Strouhal: %.2e" % Sr, file=f)
     print("Peclet: %.2e" % Pe, file=f)
     print("Nusselt: %.4f" % Nu, file=f)

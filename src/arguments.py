@@ -197,9 +197,13 @@ if config.has_section("temperature"):
         radiation = config.getboolean("temperature", "radiation")
     if config.has_option("temperature", "delta"):
         delta = config.getfloat("temperature", "delta")
-if config.has_section("parameters"):
-    if config.has_option("parameters", "h"):
-        h = config.getfloat("parameters", "h")
+    if config.has_option("temperature", "h_conv"):
+        h = config.getfloat("temperature", "h_conv")
+    if config.has_option("temperature", "T_pc"):
+        T_pc = config.getfloat("temperature", "T_pc")
+# if config.has_section("parameters"):
+#     if config.has_option("parameters", "h"):
+#         h = config.getfloat("parameters", "h")
 if config.has_section("wind"):
     if config.has_option("wind", "u_r"):
         u_r = config.getfloat("wind", "u_r")
@@ -223,7 +227,7 @@ parameters = {
     'x': (x_min, x_max), 'y': (y_min, y_max), 't': (t_min, t_max),
     'Nx': Nx, 'Ny': Ny, 'Nt': Nt, 'NT': NT,
     # Fluid
-    'nu': nu, 'rho_0': rho_0, 'g': g, 'T_inf': T_inf, 'mu': mu, # Fluid
+    'nu': nu, 'rho_inf': rho_inf, 'g': g, 'T_inf': T_inf, 'mu': mu, # Fluid
     'Pr': Pr, 'C_s': C_s, # Turbulence
     'C_D': C_D, 'a_v': a_v, # Drag force
     'turbulence': turb,
@@ -231,7 +235,7 @@ parameters = {
     'radiation': radiation,
     'include_source': include_source,
     # Temperature
-    'k': k, 'C_p': C_p, 'alpha': alpha, # Thermal
+    'kappa': kappa, 'c_p': c_p, 'alpha': alpha, # Thermal
     'delta': delta, 'sigma': sigma, # Radiation
     # Fuel 
     'A': A, 'T_act': T_act, 'T_pc': T_pc, 'H_R': H_R, 'h': h, 'Y_D': Y_D, 'Y_f': Y_f,
@@ -254,7 +258,7 @@ parameters = {
     'u_z_0': u_z_0,
     'd': d,
     'u_ast': u_ast,
-    'kappa': k,
+    'von_karman': von_karman,
     'u_r': u_r,
     'z_r': z_r,
     'alpha_u': alpha_u,

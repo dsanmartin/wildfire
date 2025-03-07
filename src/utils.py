@@ -1,9 +1,11 @@
 import numpy as np
 # from arguments import T_act, A, H_R, h, alpha, S_top, S_bot, k, Y_D # Parameters from command line
-from parameters import T_pc, T_inf, g, n_arrhenius, h_rad, C_p, rho_0, S_T_0, S_k_0, S_k, sigma, sutherland_law, include_source, source_filter # Default parameters
-from arguments import T_act, A, H_R, h, a_v, alpha, S_top, S_bot, k, Y_D, density_constant, delta, radiation
+from parameters import T_inf, g, n_arrhenius, h_rad, c_p, rho_inf, S_T_0, S_k_0, S_k, sigma, sutherland_law, include_source, source_filter # Default parameters
+from arguments import T_act, A, H_R, h, a_v, alpha, S_top, S_bot, Y_D, density_constant, delta, radiation, kappa, T_pc
+from derivatives import compute_gradient_2D
 
 # A lot of useful functions #
+rho = lambda T: rho_inf if density_constant else rho_inf * T_inf / T # Density
 G2D = lambda x, y, x0, y0, sx, sy, A: A * np.exp(-((x - x0) ** 2 / sx ** 2 + (y - y0) ** 2 / sy ** 2)) # 2D Gaussian function
 G3D = lambda x, y, z, x0, y0, z0, sx, sy, sz, A: A * np.exp(-(((x - x0) / sx) ** 2  + ((y - y0) / sy) ** 2 + ((z - z0) / sz) ** 2)) # 3D Gaussian function
 K = lambda T: A * np.exp(-T_act / T) # Arrhenius-like equation 
@@ -13,19 +15,23 @@ CV = lambda x, T_pc: 2 * x / T_pc - 1 # Variable change
 Sg = lambda x, x0, k: 1 / (1 + np.exp(-2 * k * (x - x0))) # Sigmoid function (to smooth the step function)
 HS2 = lambda x, x0, k: .5 * (1 + np.tanh(k * (x - x0))) # Hyperbolic tangent function (to smooth the step function) 
 HS3 = lambda x, x0, k, T_pc: Sg(CV(x, T_pc), x0, k) # Hyperbolic tangent function (to smooth the step function)
-Q_rad = lambda T: h_rad * (T ** 4 - T_inf ** 4) / (rho_0 * C_p) # Radiative heat flux
-# rho = lambda T: rho_0 * T_inf / T # Density
-source = lambda T, Y: H_R * Y * K(T) * H(T) / C_p # Source term
-sink = lambda T: -h * a_v * (T - T_inf) / (rho_0 * C_p) # Sink term
-sutherland = lambda T: S_k_0 * (T / S_T_0) ** 1.5 * (S_T_0 + S_k) / (T + S_k) / (rho_0 * C_p) # Sutherland's law
-sutherland_T = lambda T: 1.5 * S_k_0 * (S_T_0 + S_k) / T ** 1.5 * (T ** .5 * (T + S_k) - T ** 1.5) / (T + S_k) ** 2 / (rho_0 * C_p) # Sutherland's law derivative
-stefan_radiation = lambda T: 4 * sigma * delta * T ** 3 / (rho_0 * C_p) # Stefan-Boltzmann law
-stefan_radiation_T = lambda T: 12 * sigma * delta * T ** 2 / (rho_0 * C_p) # Stefan-Boltzmann law derivative
+Q_rad = lambda T: h_rad * (T ** 4 - T_inf ** 4) / (rho_inf * c_p) # Radiative heat flux
+# rho = lambda T: rho_inf * T_inf / T # Density
+source = lambda T, Y: H_R * Y * K(T) * H(T) / c_p # Source term
+sink = lambda T: -h * a_v * (T - T_inf) / (rho(T) * c_p) # Sink term
+sutherland = lambda T: S_k_0 * (T / S_T_0) ** 1.5 * (S_T_0 + S_k) / (T + S_k) / (rho_inf * c_p) # Sutherland's law
+sutherland_T = lambda T: 1.5 * S_k_0 * (S_T_0 + S_k) / T ** 1.5 * (T ** .5 * (T + S_k) - T ** 1.5) / (T + S_k) ** 2 / (rho_inf * c_p) # Sutherland's law derivative
+# stefan_radiation = lambda T: 4 * sigma * delta * T ** 3 / (rho_inf * c_p) # Stefan-Boltzmann law
+# stefan_radiation_T = lambda T: 12 * sigma * delta * T ** 2 / (rho_inf * c_p) # Stefan-Boltzmann law derivative
 gamma = lambda r, s, dz, Nx, Ny: - (2 + (2 * np.pi * dz) ** 2 * ((r / Nx) ** 2 + (s / Ny) ** 2))
-if density_constant:
-    rho = lambda T: rho_0 # Constant density
-else:
-    rho = lambda T: rho_0 * T_inf / T
+stefan_radiation = lambda T: 4 * sigma * delta * T ** 3 # Stefan-Boltzmann law
+stefan_radiation_T = lambda T: 12 * sigma * delta * T ** 2 # Stefan-Boltzmann law derivative
+k = lambda T: (kappa + stefan_radiation(T)) / (rho(T) * c_p) 
+kT = lambda T: stefan_radiation_T(T) / (rho(T) * c_p) 
+# if density_constant:
+#     rho = lambda T: rho_inf # Constant density
+# else:
+#     rho = lambda T: rho_inf * T_inf / T #rho_inf * (1-(T-T_inf)/T + ((T-T_inf)/(2*T))** 2-((T-T_inf)/(6*T))**3) #rho = lambda T: rho_inf * T_inf / T
 # # Convective heat transfer coefficient
 if h < 0:
     hv = lambda v: np.piecewise(v, [v < 2, v >= 2], [
@@ -309,7 +315,7 @@ def non_dimensional_numbers(parameters: dict) -> tuple[float, float, float, floa
         - 'nu': float : kinematic viscosity
         - 'Pr': float : Prandtl number
         - 'rho': float : density
-        - 'C_p': float : specific heat capacity
+        - 'c_p': float : specific heat capacity
         - 'h': float : heat transfer coefficient
         - 'A': float : characteristic length
         - 'g': List[float] : gravitational acceleration
@@ -335,10 +341,10 @@ def non_dimensional_numbers(parameters: dict) -> tuple[float, float, float, floa
     x_dim, y_dim = x_max - x_min, y_max - y_min
     # t_min, t_max = parameters['t'][0], parameters['t'][-1]
     nu, Pr = parameters['nu'], parameters['Pr']
-    rho_0, C_p, h = parameters['rho_0'], parameters['C_p'], parameters['h']
+    rho_inf, c_p, h = parameters['rho_inf'], parameters['c_p'], parameters['h']
     A = parameters['A']
     g = parameters['g']
-    alpha, k = parameters['alpha'], parameters['k']
+    alpha, kappa = parameters['alpha'], parameters['kappa']
     u0, v0, T0 = parameters['u0'], parameters['v0'], parameters['T0']
     L_v = y_dim
     L_c = x_dim * L_v
@@ -363,6 +369,8 @@ def non_dimensional_numbers(parameters: dict) -> tuple[float, float, float, floa
         U = 1e-14
     # Reynolds
     Re = U * L / nu
+    # Froude
+    Fr = U / np.sqrt(abs(g[-1]) * L_v)
     # Grashof
     Gr = abs(g[-1]) * alpha_T * dT * L_v ** 3 / nu ** 2 
     # Rayleigh
@@ -370,17 +378,17 @@ def non_dimensional_numbers(parameters: dict) -> tuple[float, float, float, floa
     # Strouhal
     Sr = A * L / U
     # Stefan 
-    Ste = C_p * dT / h
+    Ste = c_p * dT / h
     # Stanton
-    St = h * L / (rho_0 * C_p * U)
+    St = h * L / (rho_inf * c_p * U)
     # Zeldovich
     Ze = T_avg * dT / T ** 2
     # Peclét
     Pe = U * L / alpha
     # Nusselt
-    Nu = h * L / k
+    Nu = h * L / kappa
     # Return
-    return Re, Gr, Ra, Sr, Ste, St, Ze, Pe, Nu
+    return Re, Gr, Ra, Sr, Ste, St, Ze, Pe, Nu, Fr
 
 def f(U: tuple, T: np.ndarray, Y: np.ndarray) -> list:
     """
@@ -411,11 +419,12 @@ def f(U: tuple, T: np.ndarray, Y: np.ndarray) -> list:
         u, v = U
         g_y = g_z
         mod_U = np.sqrt(u ** 2 + v ** 2)
+        # buoyancy = (T - T_inf) / T  - ((T - T_inf) / T) ** 2 / 2 + ((T - T_inf) / T) ** 3 / 6 
         return [
-            # - g_x * (T - T_inf) / T - Y_D * a_v * Y * mod_U * u,
-            # - g_y * (T - T_inf) / T - Y_D * a_v * Y * mod_U * v
             - g_x * (T - T_inf) / T - Y_D * a_v * Y * mod_U * u,
             - g_y * (T - T_inf) / T - Y_D * a_v * Y * mod_U * v
+            # - g_x * buoyancy - Y_D * a_v * Y * mod_U * u,
+            # - g_y * buoyancy - Y_D * a_v * Y * mod_U * v
         ]
     elif ndims == 3:
         u, v, w = U
@@ -464,47 +473,47 @@ def S(T: np.ndarray, Y: np.ndarray) -> np.ndarray:
     else:
         return 0
 
-def k(T: np.ndarray) -> np.ndarray:
-    """
-    Calculate the thermal conductivity.
+# def k(T: np.ndarray) -> np.ndarray:
+#     """
+#     Calculate the thermal conductivity.
 
-    Parameters
-    ----------
-    T : np.ndarray
-        Array of temperatures.
+#     Parameters
+#     ----------
+#     T : np.ndarray
+#         Array of temperatures.
 
-    Returns
-    -------
-    np.ndarray
-        Array of thermal conductivities.
+#     Returns
+#     -------
+#     np.ndarray
+#         Array of thermal conductivities.
 
-    Notes
-    -----
-    The thermal conductivity is calculated as the sum of the convective
-    thermal conductivity (k_c) and the radiative thermal conductivity (k_r).
-    The convective thermal conductivity is determined by the Sutherland's law
-    if `sutherland_law` is True, otherwise it is set to `alpha`.
-    The radiative thermal conductivity is calculated using the Stefan-Boltzmann
-    law if `radiation` is True, otherwise it is set to 0.
-    """
-    k_c = sutherland(T) if sutherland_law else alpha
-    k_r = stefan_radiation(T) if radiation else 0
-    return k_c + k_r
+#     Notes
+#     -----
+#     The thermal conductivity is calculated as the sum of the convective
+#     thermal conductivity (k_c) and the radiative thermal conductivity (k_r).
+#     The convective thermal conductivity is determined by the Sutherland's law
+#     if `sutherland_law` is True, otherwise it is set to `alpha`.
+#     The radiative thermal conductivity is calculated using the Stefan-Boltzmann
+#     law if `radiation` is True, otherwise it is set to 0.
+#     """
+#     k_c = sutherland(T) if sutherland_law else kappa #alpha
+#     k_r = stefan_radiation(T) if radiation else 0
+#     return k_c + k_r
 
-def kT(T: np.ndarray) -> np.ndarray:
-    """
-    Calculate the thermal conductivity derivative with respect to temperature.
+# def kT(T: np.ndarray) -> np.ndarray:
+#     """
+#     Calculate the thermal conductivity derivative with respect to temperature.
 
-    Parameters
-    ----------
-    T : np.ndarray
-        Array of temperatures.
+#     Parameters
+#     ----------
+#     T : np.ndarray
+#         Array of temperatures.
 
-    Returns
-    -------
-    np.ndarray
-        Array of thermal conductivities derivatives.
-    """
-    kT_c = sutherland_T(T) if sutherland_law else 0
-    kT_r = stefan_radiation_T(T) if radiation else 0
-    return kT_c + kT_r
+#     Returns
+#     -------
+#     np.ndarray
+#         Array of thermal conductivities derivatives.
+#     """
+#     kT_c = sutherland_T(T) if sutherland_law else 0
+#     kT_r = stefan_radiation_T(T) if radiation else 0
+#     return kT_c + kT_r

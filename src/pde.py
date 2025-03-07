@@ -2,7 +2,7 @@ import time
 import numpy as np
 from datetime import timedelta
 from derivatives import compute_gradient, compute_laplacian, compute_first_derivative_upwind, compute_first_derivative
-from poisson import solve_pressure
+from pressure import solve_pressure
 from turbulence import turbulence
 from utils import f, S, k, kT, K, H, rho
 from logs import log_time_step
@@ -98,11 +98,13 @@ def solve_tn(t_n: float, y_n: np.ndarray, p: np.ndarray, dt: float, Phi: callabl
     y_np1 = method(t_n, y_n, dt, Phi, params)
     # Solve Pressure problem
     if density_constant:
-        p = solve_pressure(tuple(y_np1[:-2]), y_np1[-2], None, params)
+        # p = solve_pressure(tuple(y_np1[:-2]), y_np1[-2], None, params)
+        p = solve_pressure(tuple(y_np1[:-2]), y_n[-2], None, params)
     else:
         for i in range(max_iter):
             p_tmp = p.copy()
-            p = solve_pressure(tuple(y_np1[:-2]), y_np1[-2], p, params)            
+            # p = solve_pressure(tuple(y_np1[:-2]), y_np1[-2], p, params)    
+            p = solve_pressure(tuple(y_np1[:-2]), y_n[-2], p, y_n[-1], params)            
             if log_fp and show_fp_iter:
                 l2_norm = np.linalg.norm(p.flatten() - p_tmp.flatten())
                 l_inf_norm = np.linalg.norm(p.flatten() - p_tmp.flatten(), np.inf)
@@ -112,8 +114,9 @@ def solve_tn(t_n: float, y_n: np.ndarray, p: np.ndarray, dt: float, Phi: callabl
     grad_p = grad_pressure(p, params)
     # Velocity correction (Chorin's projection method)
     # T_inf = params['T_inf']
-    # rho_v = rho_0 * T_inf / y_np1[-2]
-    rho_v = rho(y_np1[-2])
+    # rho_v = rho_inf * T_inf / y_np1[-2]
+    # rho_v = rho(y_np1[-2])
+    rho_v = rho(y_n[-2])
     y_np1[:-2] = y_np1[:-2] - dt / rho_v * grad_p
     # y_np1[:-2] = y_np1[:-2] - dt / rho * grad_p
     # Update boundary conditions
@@ -352,12 +355,15 @@ def Phi_2D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     dx, dy = params['dx'], params['dy']
     nu = params['nu']
     Y_f = params['Y_f']
+    T_inf = params['T_inf']
     turb = params['turbulence']
     conservative = params['conservative']
+    mu = params['mu']
     # Get variables
     u, v, T, Y = R
     # Forces
     F_x, F_y = f((u, v), T, Y)
+    nu = mu / rho(T)
     # Derivatives #
     # First partial derivatives 
     if conservative: # Conservative form for convection        
@@ -377,6 +383,11 @@ def Phi_2D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     lap_u = compute_laplacian(u, (dx, dy), (True, False))
     lap_v = compute_laplacian(v, (dx, dy), (True, False))
     lap_T = compute_laplacian(T, (dx, dy), (True, False))
+    # New terms
+    tmp = (kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T + S(T, Y)) / T
+    grad_div_u, grad_div_v = compute_gradient(tmp, (dx, dy), (True, False))
+    F_x += nu * grad_div_u / 3
+    F_y += nu * grad_div_v / 3
     # Turbulence
     sgs_x = sgs_y = sgs_T = 0
     if turb:
@@ -386,7 +397,7 @@ def Phi_2D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     u_ = nu * lap_u - (uux + vuy) + F_x - sgs_x 
     v_ = nu * lap_v - (uvx + vvy) + F_y - sgs_y 
     # Temperature: \dfrac{\partial k(T)}{\partial T}||\nabla T||^2 + k(T)\nabla^2 T - (\mathbf{u}\cdot\nabla T) + S(T, Y) 
-    T_ = kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T - (u * Tx + v * Ty) + S(T, Y) - sgs_T 
+    T_ = kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T + S(T, Y) - (u * Tx + v * Ty) - sgs_T 
     # T_ = kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T - (uTx  + vTy) + S(T, Y) - sgs_T 
     # Combustion model: -Y_f K(T) H(T) Y
     Y_ = -Y_f * K(T) * H(T) * Y 

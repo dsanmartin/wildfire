@@ -18,28 +18,28 @@ R = 8.31446261815324 # Universal gas constant in J mol^{-1} K^{-1} or kg m^2 s^{
 sigma = 5.670374419e-8 # Stefan-Boltzmann constant in W m^{-2} K^{-4} or kg s^{-3} K^{-4}
 
 # Gas properties
-C_p = 1005 # Specific heat capacity (constant pressure) in J kg^{-1} K^{-1} or m^2 s^{-2} K^{-1} (Air: 1005)
-C_p = 1007 # Specific heat capacity (constant pressure) in J kg^{-1} K^{-1} or m^2 s^{-2} K^{-1} (Air: 1007 at 15 °C, NASA - Cengel 2018)
+c_p = 1005 # Specific heat capacity (constant pressure) in J kg^{-1} K^{-1} or m^2 s^{-2} K^{-1} (Air: 1005)
+c_p = 1007 # Specific heat capacity (constant pressure) in J kg^{-1} K^{-1} or m^2 s^{-2} K^{-1} (Air: 1007 at 15 °C, NASA - Cengel 2018)
 C_V =  717 # Specific heat capacity (constant volume) in J kg^{-1} K^{-1} or m^2 s^{-2} K^{-1} (Air: 717)
 # rho = 1.293 # Density in kg m^{-3} (Air: 1.293)
 # rho = 1.229 # Density in kg m^{-3} (Air: 1.229 at 15 °C - NASA)
 # rho = 1.225 # Density in kg m^{-3} (Air: 1.225 at 15 °C - Cengel 2018)
-rho_0 = 1.225 # Reference density in kg m^{-3} (Air: 1.225)
+rho_inf = 1.225 # Reference density in kg m^{-3} (Air: 1.225)
 mu = 1.73e-5 # Dynamic viscosity in kg m^{-1} s^{-1} (Air: 1.73e-5)
 mu = 1.802e-5 # Dynamic viscosity in kg m^{-1} s^{-1} (Air: 1.802e-5, Cengel 2018)
 
 # Temperaure equation parameters
-k = 0.024 # Thermal conductivity in W m^{-1} K^{-1} or kg m s^{-3} K ^{-1}  (Air: 0.024)
-k = 0.02476 # Thermal conductivity in W m^{-1} K^{-1} or kg m s^{-3} K ^{-1}  (Air: 0.02476 at 15 °C, NASA - Cengel 2018)
+kappa = 0.024 # Thermal conductivity in W m^{-1} K^{-1} or kg m s^{-3} K ^{-1}  (Air: 0.024)
+kappa = 0.02476 # Thermal conductivity in W m^{-1} K^{-1} or kg m s^{-3} K ^{-1}  (Air: 0.02476 at 15 °C, NASA - Cengel 2018)
 alpha = 2.07e-5 # Thermal diffusivity in m^2 s^{-1} (Air: 2.07e-5) 
 alpha = 2.009e-5 # Thermal diffusivity in m^2 s^{-1} (Air: 2.009e-5 at 15 °C - NASA)
-# alpha = k / (rho * C_p) # Thermal diffusivity in m^2 s^{-1}
+# alpha = k / (rho * c_p) # Thermal diffusivity in m^2 s^{-1}
 delta = 0.1 # Optical path length in m (FDS: 0.1 m)
 
 # Fluid equations parameters
 nu = 1.5e-5 # Kinematic viscosity in m^2 s^{-1} (Air: 1.5e-5)
 # nu = mu / rho # Kinematic viscosity in m^2 s^{-1} (Air: 1.47e-5, Cengel 2018)
-nu = mu / rho_0 # Kinematic viscosity in m^2 s^{-1} (Air: 1.47e-5)
+nu = mu / rho_inf # Kinematic viscosity in m^2 s^{-1} (Air: 1.47e-5)
 nu = 1.47e-5
 T_inf = 293.15 # Temperature of the environment in K (Ambient temperature: 20°C - 293.15 K)
 T_inf = 288.15 # Temperature of the environment in K (Ambient temperature: 15°C - 288.15 K, NASA - Cengel 2018)
@@ -78,7 +78,7 @@ radiation = False
 sutherland_law = False
 debug_pde = False
 bound = True
-T_min, T_max = T_inf, 1500
+T_min, T_max = T_inf, 3000
 # T_min, T_max = -10000, 10000
 Y_min, Y_max = 0, 1
 # Temperature source for t time
@@ -91,7 +91,7 @@ initial_u_type = 'power law' # 'power law' or 'log'
 u_z_0 = 0.05 # Surface roughness in m
 d = 0 #0.1 # Zero-plane displacement in m
 u_ast = .1#.5 # .1 Friction velocity in ms^{-1}
-k = 0.41 # Von Karman constant in 1
+von_karman = 0.41 # Von Karman constant in 1
 # Power law (used by FDS)
 u_r = 4.8 # Reference speed in ms^{-1}
 z_r = 2 # Reference height in m

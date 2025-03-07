@@ -2,7 +2,7 @@ import numpy as np
 from topography import flat2D, hill2D, flat3D, hill3D, slope2D
 from utils import create_plate, create_gaussian, create_plate_slope
 from arguments import initial_u_type, T_hot, topography_shape, spatial_dims, Y_h, u_r, T0_shape, T0_x_start, T0_x_end, T0_y_start, T0_y_end, T0_z_start, T0_z_end, T0_x_center, T0_y_center, T0_z_center, T0_length, T0_width, T0_height, T_cold, experiment # Parameters from command line
-from parameters import T_inf, u_ast, k, d, u_z_0, z_r, alpha_u
+from parameters import T_inf, u_ast, von_karman, d, u_z_0, z_r, alpha_u
 
 def load_initial_condition(data_path: str, ndim: int = 2) -> callable:
     data = np.load(data_path)
@@ -17,7 +17,7 @@ if spatial_dims == 2:
     # Initial fluid flow vector field $\mathbf{u}=(u, v)$ at t=0 #
     # Log wind profile
     log_wind = lambda x, y: np.piecewise(y, [y > 0, y == 0], [ # Piecewise is used for y=0
-            lambda y: u_ast / k * np.log((y - d) / u_z_0), # Log wind profile if y > 0
+            lambda y: u_ast / von_karman * np.log((y - d) / u_z_0), # Log wind profile if y > 0
             lambda y: y * 0 # 0 if y = 0
         ])
     # Power law wind profile (FDS experiment)
@@ -74,7 +74,7 @@ elif spatial_dims == 3:
     # Initial fluid flow vector field $\mathbf{u}=(u, v, w)$ at t=0 #
     # Log wind profile
     log_wind = lambda x, y, z: np.piecewise(z, [z > 0, z == 0], [ # Piecewise is used for y=0
-            lambda z: u_ast / k * np.log((z - d) / u_z_0), # Log wind profile if y > 0
+            lambda z: u_ast / von_karman * np.log((z - d) / u_z_0), # Log wind profile if y > 0
             lambda z: z * 0 # 0 if y = 0
         ])
     # Power law wind profile (FDS experiment)
