@@ -31,7 +31,7 @@ def log_params(params: dict, save: bool = False) -> None:
     rho_inf, T_hot, T_inf, T_pc = params['rho_inf'], params['T_hot'], params['T_inf'], params['T_pc']
     nu, kappa, alpha, Pr, g = params['nu'], params['kappa'], params['alpha'], params['Pr'], params['g']
     mu = params['mu']
-    A, T_act, H_R, h, a_v = params['A'], params['T_act'], params['H_R'], params['h'], params['a_v']
+    A, T_act, H_R, h_c, a_v = params['A'], params['T_act'], params['H_R'], params['h_c'], params['a_v']
     Y_f, Y_D, c_p = params['Y_f'], params['Y_D'], params['c_p']
     turb, conser = params['turbulence'], params['conservative']
     S_top, S_bot, Sx = params['S_top'], params['S_bot'], params['Sx']
@@ -91,7 +91,7 @@ def log_params(params: dict, save: bool = False) -> None:
     print("nu: %.2e, mu: %.2e, g: (%.4f, %.4f, %.4f)" % (nu, mu, *g), file=f)
     print("alpha: %.2e, kappa: %.2e, c_p: %.4f, T_inf: %.4f, T_hot: %.4f" % (alpha, kappa, c_p, T_inf, T_hot), file=f)
     print("rho_inf: %.4f, T_pc: %.4f, A: %.4f, T_act: %.4f" % (rho_inf, T_pc, A, T_act), file=f)
-    print("H_R: %.4f, h: %.4f, a_v: %.4f, Y_D: %.4f, Y_f: %.4f" % (H_R, h, a_v, Y_D, Y_f), file=f)
+    print("H_R: %.4f, h_c: %.4f, a_v: %.4f, Y_D: %.4f, Y_f: %.4f" % (H_R, h_c, a_v, Y_D, Y_f), file=f)
     print("Constant density: %r" % constant_density, file=f)
     print("Initial u type: %s" % initial_u_type, file=f)
     if initial_u_type == 'log':

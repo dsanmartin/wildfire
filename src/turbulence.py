@@ -10,6 +10,114 @@ f_w2 = lambda z, u_tau, nu: (1 - np.exp(-(z * u_tau / 25 / nu) ** 3)) ** 0.5
 # def f_w1(z, u_tau, nu):
 #     return 1 - np.exp(-z * u_tau / 25 / nu)
 
+def turbulence_2D(U: tuple[np.ndarray, np.ndarray] , T: np.ndarray, args: dict) -> np.ndarray:
+    """
+    Computes the subgrid-scale (SGS) stresses and SGS thermal energy
+    for a turbulent flow.
+
+    Parameters
+    ----------
+    U : numpy.ndarray (2, Ny, Nx)
+        Velocity vector field U = (u, v).
+    T : numpy.ndarray (Ny, Nx)
+        Temperature.
+    args : dict
+        Dictionary containing the parameters of the simulation.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array containing the SGS stresses and SGS thermal energy in the
+        following order: [sgs_x, sgs_y, sgs_T].
+    """
+    dx, dy = args['dx'], args['dy']
+    C_s = args['C_s'] 
+    Pr = args['Pr']
+    c_p = args['c_p']
+    rho_inf = args['rho_inf']
+    Ym = args['Ym']
+    nu = args['nu']
+    mu = args['mu']
+    Delta = (dx * dy) ** (1/2)
+    u, v = U
+    rho_v = rho(T)
+
+    # Compute derivatives #
+    # First derivatives
+    ux, uy = compute_gradient(u, (dx, dy), (True, False))
+    vx, vy = compute_gradient(v, (dx, dy), (True, False))
+    Tx, Ty = compute_gradient(T, (dx, dy), (True, False))
+    # rhox, rhoy = compute_gradient(rho_v, (dx, dy), (True, False))
+    # Second derivatives
+    # uxx = compute_second_derivative(u, dx, 1)
+    # uyy = compute_second_derivative(u, dy, 0, False)
+    # vxx = compute_second_derivative(v, dx, 1)
+    # vyy = compute_second_derivative(v, dy, 0, False)
+    Txx = compute_second_derivative(T, dx, 1)
+    Tyy = compute_second_derivative(T, dy, 0, False)
+    # Mixed derivatives
+    # vxy = compute_first_derivative(vx, dy, 0, False)
+    # uyx = compute_first_derivative(uy, dx, 1)
+    # vyx = compute_first_derivative(vy, dx, 1)
+    # uxy = compute_first_derivative(ux, dy, 0, False) 
+    
+    # |S'|
+    mod_S = (2 * (ux ** 2 + vy ** 2) + (uy + vx) ** 2 - 2 / 3 * (ux + vy) ** 2) ** (1 / 2) #+ 1e-16
+
+    # S' tensor
+    S11 = 2/3 * ux - 1/3 * vy
+    S12 = 0.5 * (uy + vx)
+    S21 = S12
+    S22 = 2/3 * vy - 1/3 * ux
+
+    # Wall damping function
+    tau_w = ((mu * uy[0]) ** 2) ** 0.5
+    u_tau = (tau_w / rho_v) ** 0.5
+    delta_nu = mu /(rho_v * u_tau)
+    y_plus = Ym / delta_nu
+    fw = 1 - np.exp(-y_plus / 26)
+    
+    # Length scale
+    l = C_s * Delta * fw
+    
+    # Subgrid viscosity
+    nu_sgs = rho_v * l ** 2 * mod_S
+
+    # Intermediary terms
+    # # grad(rho * f_w * |S|)
+    # grad_rho_fw_modS = compute_gradient(rho_v * fw * mod_S, (dx, dy), (True, False))
+    # grad(nu_sgs)
+    grad_nu_sgs = compute_gradient(nu_sgs, (dx, dy), (True, False))
+    # div(S')
+    div_S_x = compute_first_derivative(S11, dx, 1) + compute_first_derivative(S21, dy, 0, False)
+    div_S_y = compute_first_derivative(S12, dx, 1) + compute_first_derivative(S22, dy, 0, False)
+    
+
+    # SGS stresses
+    sgs_x = -2 * (
+        grad_nu_sgs[0] * S11 + grad_nu_sgs[1] * S12 +
+        nu_sgs * div_S_x
+    )
+    sgs_y = -2 * (
+        grad_nu_sgs[0] * S21 + grad_nu_sgs[1] * S22 +
+        nu_sgs * div_S_y
+    )
+    # SGS thermal energy
+    sgs_T = -c_p / Pr * (
+        grad_nu_sgs[0] * Tx + grad_nu_sgs[1] * Ty +
+        nu_sgs * (Txx + Tyy)
+    )
+
+    # Divide by rho for momentum and rho * c_p for energy
+    # sgs_x /= rho_inf
+    # sgs_y /= rho_inf
+    # sgs_T /= (rho_inf * c_p)
+    sgs_x /= rho_v
+    sgs_y /= rho_v
+    sgs_T /= (rho_v * c_p)
+
+    return np.array([sgs_x, sgs_y, sgs_T])
+
 def turbulence_2D_test(U: tuple[np.ndarray, np.ndarray] , T: np.ndarray, args: dict) -> np.ndarray:
     """
     Computes the subgrid-scale (SGS) stresses and SGS thermal energy
@@ -37,6 +145,7 @@ def turbulence_2D_test(U: tuple[np.ndarray, np.ndarray] , T: np.ndarray, args: d
     rho_inf = args['rho_inf']
     Ym = args['Ym']
     nu = args['nu']
+    mu = args['mu']
     Delta = (dx * dy) ** (1/2)
     u, v = U
     rho_v = rho(T)
@@ -62,20 +171,42 @@ def turbulence_2D_test(U: tuple[np.ndarray, np.ndarray] , T: np.ndarray, args: d
 
     # |S|
     mod_S = (2 * (ux ** 2 + vy ** 2) + (uy + vx) ** 2) ** (1 / 2) + 1e-16
+    # mod_S = (2 * (ux ** 2 + vy ** 2) + (uy + vx) ** 2 - 2 / 3 * (ux + vy) ** 2) ** (1 / 2) + 1e-16
+    # div_U_extra = 1 / 3 * (ux + vy)
+    # div_div_U_x = 1 / 3 * (uxx + vyx)
+    # div_div_U_y = 1 / 3 * (uyx + vyy)
+    
 
     # 'psi_x' and 'psi_y'
     psi_x = 4 * (ux * uxx + vy * vyx) + 2 * (uy + vx) * (uyx + vxx) 
     psi_y = 4 * (ux * uxy + vy * vyy) + 2 * (uy + vx) * (uyy + vxy)
+    # psi_x = 4 * (ux * uxx + vy * vyx) + 2 * (uy + vx) * (uyx + vxx) - 4 / 3 * (ux + vy) * (uxx + vyx) 
+    # psi_y = 4 * (ux * uxy + vy * vyy) + 2 * (uy + vx) * (uyy + vxy) - 4 / 3 * (ux + vy) * (uxy + vyy)
 
     # Wall damping function
     #tau_w = 1e-1
     #u_tau = (tau_w / rho) ** 0.5
-    tau_p = ((0.5 * nu * (uy + vx)[0]) ** 2) ** 0.5 
-    u_tau = (tau_p) ** 0.5
+    # tau_p = ((0.5 * nu * (uy + vx)[0]) ** 2) ** 0.5 
+    # u_tau = (tau_p) ** 0.5 # Incompressible
+    # u_tau = (tau_p / rho_v) ** 0.5 # Compressible
+    # u_tau = 0
+    # tau_w = ((0.5 * mu * (uy + vx)[0]) ** 2) ** 0.5 
+    tau_w = ((mu * uy[0]) ** 2) ** 0.5
+    u_tau = (tau_w / rho_v) ** 0.5
+    delta_nu = mu /(rho_v * u_tau)
+    y_plus = Ym / delta_nu
+    # print(np.max(y_plus), np.min(y_plus))
+    # if y_plus < 11.81:
+    #     u_plus = y_plus
+    # else:
+    #     u_plus = np.log(y_plus) / 0.41 + 5.2
+    # u_tau = u_plus * delta_nu
     l = C_s * Delta 
 
     # Damping stuff
-    fw = f_w1(Ym, u_tau, nu) 
+    # fw = f_w1(Ym, u_tau, nu) 
+    
+    fw = 1 - np.exp(-y_plus / 26)
     fwx = compute_first_derivative(fw, dx, 1)
     fwy = compute_first_derivative(fw, dy, 0, False)
 
@@ -100,10 +231,13 @@ def turbulence_2D_test(U: tuple[np.ndarray, np.ndarray] , T: np.ndarray, args: d
     sgs_x /= rho_inf
     sgs_y /= rho_inf
     sgs_T /= (rho_inf * c_p)
+    # sgs_x /= rho_v
+    # sgs_y /= rho_v
+    # sgs_T /= (rho_v * c_p)
 
     return np.array([sgs_x, sgs_y, sgs_T])
 
-def turbulence_2D(U: tuple[np.ndarray, np.ndarray] , T: np.ndarray, args: dict) -> np.ndarray:
+def turbulence_2D_v1(U: tuple[np.ndarray, np.ndarray] , T: np.ndarray, args: dict) -> np.ndarray:
     """
     Computes the subgrid-scale (SGS) stresses and SGS thermal energy
     for a turbulent flow.
@@ -364,7 +498,7 @@ def turbulence(U: tuple, T: np.ndarray, args: dict) -> np.ndarray:
     # Get ndims
     ncomp = len(U)
     if ncomp == 2:
-        return turbulence_2D_test(U, T, args)
+        return turbulence_2D(U, T, args)
     elif ncomp == 3:
         return turbulence_3D(U, T, (args['dx'], args['dy'], args['dz']), args['C_s'], args['Pr'], args['nu'], args['Zm'])
     else:

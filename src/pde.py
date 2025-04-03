@@ -4,7 +4,7 @@ from datetime import timedelta
 from derivatives import compute_gradient, compute_laplacian, compute_first_derivative_upwind, compute_first_derivative
 from pressure import solve_pressure
 from turbulence import turbulence
-from utils import f, S, k, kT, K, H, rho
+from utils import f, k, dkdT, K, H, rho, q
 from logs import log_time_step
 
 def grad_pressure(p: np.ndarray, params: dict) -> np.ndarray:
@@ -36,11 +36,14 @@ def grad_pressure(p: np.ndarray, params: dict) -> np.ndarray:
     if ndims == 2: # 2D case
         hs = (params['dx'], params['dy'])
         periodic = (True, False)
+        types = ('central', 'central')
     elif ndims == 3: # 3D case
         hs = (params['dx'], params['dy'], params['dz'])
         periodic = (True, True, False)
+        types = ('central', 'central', 'central')
     # Compute grad(p)
-    grad_p = np.array(compute_gradient(p, hs, periodic))
+    # grad_p = np.array(compute_gradient(p, hs, periodic))
+    grad_p = np.array(compute_gradient(p, hs, periodic, types=types))
     return grad_p
 
 # def solve_tn(t_n: float, y_n: np.ndarray, dt: float, Phi: callable, boundary_conditions: callable, method: callable, params: dict) -> tuple[np.ndarray, np.ndarray]:
@@ -104,7 +107,9 @@ def solve_tn(t_n: float, y_n: np.ndarray, p: np.ndarray, dt: float, Phi: callabl
         for i in range(max_iter):
             p_tmp = p.copy()
             # p = solve_pressure(tuple(y_np1[:-2]), y_np1[-2], p, params)    
-            p = solve_pressure(tuple(y_np1[:-2]), y_n[-2], p, y_n[-1], params)            
+            # p = solve_pressure(tuple(y_np1[:-2]), y_n[-2], p, y_n[-1], params)          
+            # p = solve_pressure(tuple(y_np1[:-2]), y_np1[-2], p, y_np1[-1], params)  
+            p = solve_pressure(tuple(y_np1[:-2]), y_n[-2], y_np1[-2], p, y_np1[-1], params)       
             if log_fp and show_fp_iter:
                 l2_norm = np.linalg.norm(p.flatten() - p_tmp.flatten())
                 l_inf_norm = np.linalg.norm(p.flatten() - p_tmp.flatten(), np.inf)
@@ -359,6 +364,8 @@ def Phi_2D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     turb = params['turbulence']
     conservative = params['conservative']
     mu = params['mu']
+    c_p = params['c_p']
+    Ym = params['Ym']
     # Get variables
     u, v, T, Y = R
     # Forces
@@ -384,7 +391,7 @@ def Phi_2D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     lap_v = compute_laplacian(v, (dx, dy), (True, False))
     lap_T = compute_laplacian(T, (dx, dy), (True, False))
     # New terms
-    tmp = (kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T + S(T, Y)) / T
+    tmp = (dkdT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T + q(T, Y)) / (c_p * rho(T) * T)
     grad_div_u, grad_div_v = compute_gradient(tmp, (dx, dy), (True, False))
     F_x += nu * grad_div_u / 3
     F_y += nu * grad_div_v / 3
@@ -397,8 +404,8 @@ def Phi_2D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     u_ = nu * lap_u - (uux + vuy) + F_x - sgs_x 
     v_ = nu * lap_v - (uvx + vvy) + F_y - sgs_y 
     # Temperature: \dfrac{\partial k(T)}{\partial T}||\nabla T||^2 + k(T)\nabla^2 T - (\mathbf{u}\cdot\nabla T) + S(T, Y) 
-    T_ = kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T + S(T, Y) - (u * Tx + v * Ty) - sgs_T 
-    # T_ = kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T - (uTx  + vTy) + S(T, Y) - sgs_T 
+    T_ = dkdT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T + q(T, Y) - (u * Tx + v * Ty) - sgs_T 
+    # T_ = dkdT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T - (uTx  + vTy) + S(T, Y) - sgs_T 
     # Combustion model: -Y_f K(T) H(T) Y
     Y_ = -Y_f * K(T) * H(T) * Y 
     # Boundary conditions
@@ -497,7 +504,7 @@ def Phi_3D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
     w_ = nu * lap_w - (uwx + vwy + wwz) + F_z - sgs_z
     # Temperature: \dfrac{\partial k(T)}{\partial T}||\nabla T||^2 + k(T)\nabla^2 T - (\mathbf{u}\cdot\nabla T) + S(T, Y) 
     #T_ = kT(T) * (Tx ** 2 + Ty ** 2 + Tz ** 2) + k(T) * lap_T - (u * Tx  + v * Ty + w * Tz) #+ S(T, Y)*0 - sgs_T 
-    T_ = params['alpha'] * lap_T - (u * Tx + v * Ty + w * Tz) + S(T, Y) - sgs_T
+    T_ = params['alpha'] * lap_T - (u * Tx + v * Ty + w * Tz) + q(T, Y) - sgs_T
     # Combustion model: -Y_f K(T) H(T) Y
     Y_ = -Y_f * K(T) * H(T) * Y 
     # Boundary conditions

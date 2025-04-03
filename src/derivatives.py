@@ -241,7 +241,11 @@ def compute_second_derivative(phi: np.ndarray, h: float, axis: int, periodic: bo
             phi_hh[:, :,-1] = (2 * phi[:,:,-1] - 5 * phi[:,: ,-2] + 4 * phi[:, :,-3] - phi[:, :,-4]) / h ** 2
     return phi_hh
 
-def compute_gradient_2D(phi: np.ndarray, dx: float, dy: float, periodic_axes: tuple[bool, bool]) -> np.ndarray:
+def compute_gradient_2D(phi: np.ndarray, dx: float, dy: float, 
+                        periodic_axes: tuple[bool, bool],
+                        types: tuple[str, str] = ('central', 'central'),
+                        orders: tuple[int, int] = (2, 2)
+                    ) -> np.ndarray:
     """
     Compute the gradient of a 2D scalar field.
 
@@ -266,8 +270,8 @@ def compute_gradient_2D(phi: np.ndarray, dx: float, dy: float, periodic_axes: tu
         Gradient of `phi`.
     """
     # Compute derivatives
-    dphi_x = compute_first_derivative(phi, dx, axis=1, periodic=periodic_axes[0]) # dphi/dx
-    dphi_y = compute_first_derivative(phi, dy, axis=0, periodic=periodic_axes[1]) # dphi/dy
+    dphi_x = compute_first_derivative(phi, dx, axis=1, periodic=periodic_axes[0], type=types[0], order=orders[0]) # dphi/dx
+    dphi_y = compute_first_derivative(phi, dy, axis=0, periodic=periodic_axes[1], type=types[1], order=orders[1]) # dphi/dy
     gradient = np.array([dphi_x, dphi_y]) # 2D in space case
     return gradient
 
@@ -275,7 +279,7 @@ def compute_gradient_3D(phi: np.ndarray,
                         dx: float, dy: float, dz: float, 
                         periodic_axes: tuple[bool, bool, bool], 
                         types: tuple[str, str, str] = ('central', 'central', 'central'),
-                        orders: tuple[int, int, int] = (1, 1, 1)
+                        orders: tuple[int, int, int] = (2, 2, 2)
                         ) -> tuple:
     """
     Compute the gradient of a 3D scalar field.

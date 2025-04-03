@@ -24,8 +24,8 @@ parser.add_argument('-YD', '--fuel-threshold', type=float, default=Y_D,
     help="Solid fuel threshold force. Default: {}".format(Y_D))
 parser.add_argument('-HR', '--heat-energy', type=float, default=H_R,
     help="Heat energy per unit of mass parameter. Default: {}".format(H_R))
-parser.add_argument('-hc', '--convective-coefficient', type=float, default=h,
-    help="Convective heat coefficient. Default: {}".format(h))
+parser.add_argument('-hc', '--convective-coefficient', type=float, default=h_c,
+    help="Convective heat coefficient. Default: {}".format(h_c))
 parser.add_argument('-Ta', '--activation-temperature', type=float, default=T_act,
     help="Activation energy. Default: {}".format(T_act))
 parser.add_argument('-A', '--pre-exponential-coefficient', type=float, default=A,
@@ -105,7 +105,7 @@ alpha = args.diffusivity
 Pr = args.prandtl
 Y_f = args.fuel_consumption
 H_R = args.heat_energy
-h = args.convective_coefficient
+h_c = args.convective_coefficient
 A = args.pre_exponential_coefficient
 T_act = args.activation_temperature
 Y_D = args.fuel_threshold
@@ -154,6 +154,7 @@ if config.has_option("domain", "z_min") and config.has_option("domain", "z_max")
 if config.has_section("topography"):
     if config.has_option("topography", "shape"):
         topography_shape = config.get("topography", "shape")
+# Fuel parameters #
 if config.has_section("fuel"):
     if config.has_option("fuel", "Y_D"):
         Y_D = config.getfloat("fuel", "Y_D")
@@ -165,6 +166,7 @@ if config.has_section("fuel"):
         Y_f = config.getfloat("fuel", "Y_f")
     if config.has_option("fuel", "H_R"):
         H_R = config.getfloat("fuel", "H_R")
+# Temperature parameters #
 if config.has_section("temperature"):
     if config.has_option("temperature", "T_hot"):
         T_hot = config.getfloat("temperature", "T_hot")
@@ -197,19 +199,17 @@ if config.has_section("temperature"):
         radiation = config.getboolean("temperature", "radiation")
     if config.has_option("temperature", "delta"):
         delta = config.getfloat("temperature", "delta")
-    if config.has_option("temperature", "h_conv"):
-        h = config.getfloat("temperature", "h_conv")
+    if config.has_option("temperature", "h_c"):
+        h_c = config.getfloat("temperature", "h_c")
     if config.has_option("temperature", "T_pc"):
         T_pc = config.getfloat("temperature", "T_pc")
-# if config.has_section("parameters"):
-#     if config.has_option("parameters", "h"):
-#         h = config.getfloat("parameters", "h")
+# Velocity parameters #
 if config.has_section("wind"):
     if config.has_option("wind", "u_r"):
         u_r = config.getfloat("wind", "u_r")
     if config.has_option("wind", "shape"):
         initial_u_type = config.get("wind", "shape")
-        
+# Pressure solver parameters # 
 if config.has_section("pressure"):
     if config.has_option("pressure", "tol"):
         tol = config.getfloat("pressure", "tol")
@@ -217,11 +217,11 @@ if config.has_section("pressure"):
         max_iter = config.getint("pressure", "max_iter")
     if config.has_option("pressure", "log_solver"):
         log_solver = config.getboolean("pressure", "log_solver")
-    
+# Density parameters #
 if config.has_section("density"):
     if config.has_option("density", "constant"):
         density_constant = config.getboolean("density", "constant")
-
+# Save parameters #
 parameters = {
     # Domain
     'x': (x_min, x_max), 'y': (y_min, y_max), 't': (t_min, t_max),
@@ -238,7 +238,7 @@ parameters = {
     'kappa': kappa, 'c_p': c_p, 'alpha': alpha, # Thermal
     'delta': delta, 'sigma': sigma, # Radiation
     # Fuel 
-    'A': A, 'T_act': T_act, 'T_pc': T_pc, 'H_R': H_R, 'h': h, 'Y_D': Y_D, 'Y_f': Y_f,
+    'A': A, 'T_act': T_act, 'T_pc': T_pc, 'H_R': H_R, 'h_c': h_c, 'Y_D': Y_D, 'Y_f': Y_f,
     # IBM
     'dead_nodes_values': dead_nodes_values, 
     # 'Y_top': topo_distance,

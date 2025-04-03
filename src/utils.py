@@ -1,7 +1,7 @@
 import numpy as np
 # from arguments import T_act, A, H_R, h, alpha, S_top, S_bot, k, Y_D # Parameters from command line
 from parameters import T_inf, g, n_arrhenius, h_rad, c_p, rho_inf, S_T_0, S_k_0, S_k, sigma, sutherland_law, include_source, source_filter # Default parameters
-from arguments import T_act, A, H_R, h, a_v, alpha, S_top, S_bot, Y_D, density_constant, delta, radiation, kappa, T_pc
+from arguments import T_act, A, H_R, h_c, a_v, alpha, S_top, S_bot, Y_D, density_constant, delta, radiation, kappa, T_pc
 from derivatives import compute_gradient_2D
 
 # A lot of useful functions #
@@ -18,7 +18,9 @@ HS3 = lambda x, x0, k, T_pc: Sg(CV(x, T_pc), x0, k) # Hyperbolic tangent functio
 Q_rad = lambda T: h_rad * (T ** 4 - T_inf ** 4) / (rho_inf * c_p) # Radiative heat flux
 # rho = lambda T: rho_inf * T_inf / T # Density
 source = lambda T, Y: H_R * Y * K(T) * H(T) / c_p # Source term
-sink = lambda T: -h * a_v * (T - T_inf) / (rho(T) * c_p) # Sink term
+#sink = lambda T, Y: -h_c * a_v * (T - T_inf) * (Y > 0)/ (rho(T) * c_p) # Sink term
+# sink = lambda T, T_g: -h_c * a_v * (T - T_g) / (rho(T_g) * c_p) # Sink term
+sink = lambda T: -h_c * a_v * (T - T_inf) / (rho(T) * c_p) # Sink term
 sutherland = lambda T: S_k_0 * (T / S_T_0) ** 1.5 * (S_T_0 + S_k) / (T + S_k) / (rho_inf * c_p) # Sutherland's law
 sutherland_T = lambda T: 1.5 * S_k_0 * (S_T_0 + S_k) / T ** 1.5 * (T ** .5 * (T + S_k) - T ** 1.5) / (T + S_k) ** 2 / (rho_inf * c_p) # Sutherland's law derivative
 # stefan_radiation = lambda T: 4 * sigma * delta * T ** 3 / (rho_inf * c_p) # Stefan-Boltzmann law
@@ -27,19 +29,19 @@ gamma = lambda r, s, dz, Nx, Ny: - (2 + (2 * np.pi * dz) ** 2 * ((r / Nx) ** 2 +
 stefan_radiation = lambda T: 4 * sigma * delta * T ** 3 # Stefan-Boltzmann law
 stefan_radiation_T = lambda T: 12 * sigma * delta * T ** 2 # Stefan-Boltzmann law derivative
 k = lambda T: (kappa + stefan_radiation(T)) / (rho(T) * c_p) 
-kT = lambda T: stefan_radiation_T(T) / (rho(T) * c_p) 
+dkdT = lambda T: stefan_radiation_T(T) / (rho(T) * c_p) 
 # if density_constant:
 #     rho = lambda T: rho_inf # Constant density
 # else:
 #     rho = lambda T: rho_inf * T_inf / T #rho_inf * (1-(T-T_inf)/T + ((T-T_inf)/(2*T))** 2-((T-T_inf)/(6*T))**3) #rho = lambda T: rho_inf * T_inf / T
 # # Convective heat transfer coefficient
-if h < 0:
+if h_c < 0:
     hv = lambda v: np.piecewise(v, [v < 2, v >= 2], [
             lambda v: 0 * v, # No information
             lambda v: 12.12 - 1.16 * v + 11.6 * v ** 0.5 # Wind chill factor
     ])
 else:
-    hv = lambda v: h # Constant 17-18 W/m^2/K?
+    hv = lambda v: h_c # Constant 17-18 W/m^2/K?
 
 def domain_2D(x_min: float, x_max: float, y_min: float, y_max: float, t_min: float, t_max: float, Nx: int, Ny: int, Nt: int, periodic: tuple[bool, bool] = (True, False)) -> tuple:
     """
@@ -341,7 +343,7 @@ def non_dimensional_numbers(parameters: dict) -> tuple[float, float, float, floa
     x_dim, y_dim = x_max - x_min, y_max - y_min
     # t_min, t_max = parameters['t'][0], parameters['t'][-1]
     nu, Pr = parameters['nu'], parameters['Pr']
-    rho_inf, c_p, h = parameters['rho_inf'], parameters['c_p'], parameters['h']
+    rho_inf, c_p, h_c = parameters['rho_inf'], parameters['c_p'], parameters['h_c']
     A = parameters['A']
     g = parameters['g']
     alpha, kappa = parameters['alpha'], parameters['kappa']
@@ -366,7 +368,9 @@ def non_dimensional_numbers(parameters: dict) -> tuple[float, float, float, floa
     T_avg = np.max(T0)
     alpha_T = 1 / T_avg
     if U == 0:
-        U = 1e-14
+        U = 1e-16
+    if h_c == 0:
+        h_c = 1e-16
     # Reynolds
     Re = U * L / nu
     # Froude
@@ -378,15 +382,15 @@ def non_dimensional_numbers(parameters: dict) -> tuple[float, float, float, floa
     # Strouhal
     Sr = A * L / U
     # Stefan 
-    Ste = c_p * dT / h
+    Ste = c_p * dT / h_c
     # Stanton
-    St = h * L / (rho_inf * c_p * U)
+    St = h_c * L / (rho_inf * c_p * U)
     # Zeldovich
     Ze = T_avg * dT / T ** 2
     # Peclét
     Pe = U * L / alpha
     # Nusselt
-    Nu = h * L / kappa
+    Nu = h_c * L / kappa
     # Return
     return Re, Gr, Ra, Sr, Ste, St, Ze, Pe, Nu, Fr
 
@@ -420,11 +424,13 @@ def f(U: tuple, T: np.ndarray, Y: np.ndarray) -> list:
         g_y = g_z
         mod_U = np.sqrt(u ** 2 + v ** 2)
         # buoyancy = (T - T_inf) / T  - ((T - T_inf) / T) ** 2 / 2 + ((T - T_inf) / T) ** 3 / 6 
+        # fx = 0 - Y_D * a_v * Y * mod_U * u
+        # fy = g_y * (1 - T / T_inf) - Y_D * a_v * Y * mod_U * v
         return [
-            - g_x * (T - T_inf) / T - Y_D * a_v * Y * mod_U * u,
-            - g_y * (T - T_inf) / T - Y_D * a_v * Y * mod_U * v
-            # - g_x * buoyancy - Y_D * a_v * Y * mod_U * u,
-            # - g_y * buoyancy - Y_D * a_v * Y * mod_U * v
+            # - g_x * (T - T_inf) / T - Y_D * a_v * Y * mod_U * u,
+            # - g_y * (T - T_inf) / T - Y_D * a_v * Y * mod_U * v
+            g_x * (rho(T) - rho_inf) / rho(T) - Y_D * a_v * Y * mod_U * u,
+            g_y * (rho(T) - rho_inf) / rho(T) - Y_D * a_v * Y * mod_U * v
         ]
     elif ndims == 3:
         u, v, w = U
@@ -466,12 +472,20 @@ def S(T: np.ndarray, Y: np.ndarray) -> np.ndarray:
     """
     if include_source:
         S1 = source(T, Y)
-        S2 = sink(T)
+        S2 = sink(T, Y)
         if source_filter:
             S1[S1 >= S_top] = S_bot
         return S1 + S2
     else:
         return 0
+    
+def q(T: np.ndarray, Y: np.ndarray) ->np.ndarray:
+    mask_fuel = Y > 0
+    # Add one node in the row above the mask fuel
+    mask_fuel_plus_one = (np.roll(mask_fuel, 1, axis=0) + mask_fuel) > 0
+    T_g = T_inf + (T - T_inf) * mask_fuel_plus_one
+    # return source(T, Y) + sink(T * mask_fuel, T_g) * mask_fuel_plus_one 
+    return source(T, Y) + sink(T) #* mask_fuel_plus_one
 
 # def k(T: np.ndarray) -> np.ndarray:
 #     """

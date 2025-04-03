@@ -1,5 +1,5 @@
 import numpy as np
-from utils import gamma, rho, S, k, kT
+from utils import gamma, rho, q, k, dkdT
 from numba import jit, njit, prange
 from derivatives import compute_first_derivative_half_step, compute_gradient, compute_laplacian
 from multiprocessing import Pool
@@ -318,7 +318,7 @@ def fftfd_3D_debug(f: np.ndarray, params: dict, solver: callable = thomas_algori
     return p
 
 # def solve_pressure_2D(u: np.ndarray, v: np.ndarray, params: dict) -> np.ndarray:
-def solve_pressure_2D(u: np.ndarray, v: np.ndarray, T: np.ndarray, params: dict, p: np.ndarray = None, Y: np.ndarray = None) -> np.ndarray:
+def solve_pressure_2D(u: np.ndarray, v: np.ndarray, T_n: np.ndarray, T_np1: np.ndarray, params: dict, p: np.ndarray = None, Y: np.ndarray = None) -> np.ndarray:
     """
     Solves the pressure Poisson equation for a given temporal velocity field.
     Used to correct the velocity field to satisfy the continuity equation.
@@ -352,25 +352,26 @@ def solve_pressure_2D(u: np.ndarray, v: np.ndarray, T: np.ndarray, params: dict,
     # rho_inf = params['rho_inf']
     dx, dy, dt = params['dx'], params['dy'], params['dt']
     T_inf = params['T_inf']
+    c_p = params['c_p']
     # Compute ux and vy using half step to avoid odd-even decoupling
     ux = compute_first_derivative_half_step(u, dx, 1) 
     vy = compute_first_derivative_half_step(v, dy, 0, False)
     # Compute f
-    rho_v = rho(T)
-    f = rho_v / dt * (ux + vy)
+    rho_n = rho(T_n)
+    f = rho_n / dt * (ux + vy)
     # If density is not constant, add the term grad(rho)\cdot grad(p) / rho
     if p is not None:    
         # Extra term for the computation of div(\mathbf{u}^{n+1})
         if Y is not None:
-            Tx, Ty = compute_gradient(T, (dx, dy), (True, False))
-            lap_T = compute_laplacian(T, (dx, dy), (True, False))
-            term = (kT(T) * (Tx ** 2 + Ty ** 2) + k(T) * lap_T + S(T, Y)) / T#_inf
-            f = rho_v / dt * (ux + vy - term)    
-        rho_vx = compute_first_derivative_half_step(rho_v, dx, 1)
-        rho_vy = compute_first_derivative_half_step(rho_v, dy, 0, False)
+            Tx, Ty = compute_gradient(T_np1, (dx, dy), (True, False))
+            lap_T = compute_laplacian(T_np1, (dx, dy), (True, False))
+            term = (dkdT(T_np1) * (Tx ** 2 + Ty ** 2) + k(T_np1) * lap_T + q(T_np1, Y)) / (c_p * rho(T_np1) * T_np1)#_inf
+            f = rho_n / dt * (ux + vy - term)    
+        rho_vx = compute_first_derivative_half_step(rho_n, dx, 1)
+        rho_vy = compute_first_derivative_half_step(rho_n, dy, 0, False)
         px = compute_first_derivative_half_step(p, dx, 1)
         py = compute_first_derivative_half_step(p, dy, 0, False)
-        f += (rho_vx * px + rho_vy * py) / rho_v
+        f += (rho_vx * px + rho_vy * py) / rho_n
     # Solve using FFT-FD
     p = fftfd(f, params)
     # p = fftfd_parallel(f, params)
@@ -423,11 +424,11 @@ def solve_pressure_3D(u: np.ndarray, v: np.ndarray, w: np.ndarray, params: dict)
     p = fftfd_3D(f, params)
     return p
 
-def solve_pressure(U, T, p, Y, params):
+def solve_pressure(U, T_n, T_np1, p, Y, params):
     ndims = len(U)
     if ndims == 2:
         u, v = U
-        p = solve_pressure_2D(u, v, T, params, p, Y)
+        p = solve_pressure_2D(u, v, T_n, T_np1, params, p, Y)
     elif ndims == 3:
         u, v, w = U
         p = solve_pressure_3D(u, v, w, params)

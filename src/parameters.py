@@ -43,12 +43,13 @@ nu = mu / rho_inf # Kinematic viscosity in m^2 s^{-1} (Air: 1.47e-5)
 nu = 1.47e-5
 T_inf = 293.15 # Temperature of the environment in K (Ambient temperature: 20°C - 293.15 K)
 T_inf = 288.15 # Temperature of the environment in K (Ambient temperature: 15°C - 288.15 K, NASA - Cengel 2018)
-g = (0, 0, -9.81) # Acceleration due to gravity in m s^{-2} (Typical value: 9.81 m s^{-2})
+g = (0, 0, -9.807) # Acceleration due to gravity in m s^{-2} (Typical value: 9.81 m s^{-2}, 9.807 m s^{-2} Cengel 2018)
 turb = True # Turbulence model
 conser = False # Conservative equation for convection
 C_s = 0.173 # Smagorinsky constant
 C_s = 0.2 # Smagorinsky constant (McGrattan 2023)
 Pr = nu / alpha # Prandtl number 1. / (Air: ~.74)
+Pr = 0.7323 # Prandtl number (Air: ~.74 at 15 °C Cengel 2018)
 C_D = 1 # Drag coefficient "1 or near to unity according to works of Mell and Linn" 1
 a_v = 5.508 #6000 #1 #  Contact area per unit volume between the gas and the solid in m
 
@@ -62,7 +63,7 @@ n_arrhenius = 0 # Arrhenius-like parameter in 1. 1
 E_A = 150e3 # Activation energy in J mol^{-1} or kg m^2 s^{-2} mol^{-1}. E_A = 20e3 cal mol^{-1} according to (Asensio 2002).
 T_act = E_A / R # Activation temperature in K 
 T_act = 18040.8533 
-h = 1.147#3.3#18 # Convection coefficient in W m^{-2} K^{-1} or kg s^{-3} K^{-1}  (Air: 0.5-1000), (15.9 - 18.2, Maragkos 2021)
+h_c = 1.147#3.3#18 # Convection coefficient in W m^{-2} K^{-1} or kg s^{-3} K^{-1}  (Air: 0.5-1000), (15.9 - 18.2, Maragkos 2021)
 h_rad = 0*1e-7 #
 Y_D = 0.04 #.25 #.25 #.9 # Threshold to add solid fuel force
 Y_f = 1e2 # Extra parameter to control the fuel consumption rate
