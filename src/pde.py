@@ -489,9 +489,9 @@ def Phi_3D(t: float, R: np.ndarray, params: dict) -> np.ndarray:
         sgs_x, sgs_y, sgs_z, sgs_T = turbulence((u, v, w), T, params)
     # np.savez(params['save_path'] + 'sgs.npz', sgs_x=sgs_x, sgs_y=sgs_y, sgs_z=sgs_z, sgs_T=sgs_T)
     # PDE RHS
-    # Y_D = 1.0
+    # C_d = 1.0
     # a_v = 1.0
-    # F_x = - Y_D * a_v
+    # F_x = - C_d * a_v
     # Velocity: \nu \nabla^2 \mathb{u} - (\mathbf{u}\cdot\nabla) \mathbf{u} + \mathbf{f}
     # u_ = nu * lap_u - (uux + vuy + wuz) + F_x - sgs_x
     # v_ = nu * lap_v - (uvx + vvy + wvz) + F_y - sgs_y

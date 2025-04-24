@@ -608,7 +608,7 @@ def plot_2D(n: int, domain: tuple, plots: dict, plot_lims: list, visualization: 
             modU_ticks = None
         plot_scalar_field(
             fig, axes[i], x, y, modU, plt.cm.viridis, 
-            modU_bounds, modU_ticks, r'Velocity $\mathbf{u}$, Speed $||\mathbf{u}||_2$', r'm s$^{-1}$', .8
+            modU_bounds, modU_ticks, r'Velocity $\mathbf{u}$, Speed $||\mathbf{u}||_2$', r'm s$^{-1}$', 1
         )
         # Plot velocity
         plot_vector_field(

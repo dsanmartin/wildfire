@@ -71,7 +71,8 @@ def turbulence_2D(U: tuple[np.ndarray, np.ndarray] , T: np.ndarray, args: dict) 
     S22 = 2/3 * vy - 1/3 * ux
 
     # Wall damping function
-    tau_w = ((mu * uy[0]) ** 2) ** 0.5
+    # tau_w = ((mu * uy[0]) ** 2) ** 0.5 + 1e-16
+    tau_w = ((mu * (uy[0] + vx[0])) ** 2) ** 0.5 + 1e-16
     u_tau = (tau_w / rho_v) ** 0.5
     delta_nu = mu /(rho_v * u_tau)
     y_plus = Ym / delta_nu
@@ -81,13 +82,13 @@ def turbulence_2D(U: tuple[np.ndarray, np.ndarray] , T: np.ndarray, args: dict) 
     l = C_s * Delta * fw
     
     # Subgrid viscosity
-    nu_sgs = rho_v * l ** 2 * mod_S
+    mu_sgs = rho_v * l ** 2 * mod_S
 
     # Intermediary terms
     # # grad(rho * f_w * |S|)
     # grad_rho_fw_modS = compute_gradient(rho_v * fw * mod_S, (dx, dy), (True, False))
     # grad(nu_sgs)
-    grad_nu_sgs = compute_gradient(nu_sgs, (dx, dy), (True, False))
+    grad_mu_sgs = compute_gradient(mu_sgs, (dx, dy), (True, False))
     # div(S')
     div_S_x = compute_first_derivative(S11, dx, 1) + compute_first_derivative(S21, dy, 0, False)
     div_S_y = compute_first_derivative(S12, dx, 1) + compute_first_derivative(S22, dy, 0, False)
@@ -95,17 +96,17 @@ def turbulence_2D(U: tuple[np.ndarray, np.ndarray] , T: np.ndarray, args: dict) 
 
     # SGS stresses
     sgs_x = -2 * (
-        grad_nu_sgs[0] * S11 + grad_nu_sgs[1] * S12 +
-        nu_sgs * div_S_x
+        grad_mu_sgs[0] * S11 + grad_mu_sgs[1] * S12 +
+        mu_sgs * div_S_x
     )
     sgs_y = -2 * (
-        grad_nu_sgs[0] * S21 + grad_nu_sgs[1] * S22 +
-        nu_sgs * div_S_y
+        grad_mu_sgs[0] * S21 + grad_mu_sgs[1] * S22 +
+        mu_sgs * div_S_y
     )
     # SGS thermal energy
     sgs_T = -c_p / Pr * (
-        grad_nu_sgs[0] * Tx + grad_nu_sgs[1] * Ty +
-        nu_sgs * (Txx + Tyy)
+        grad_mu_sgs[0] * Tx + grad_mu_sgs[1] * Ty +
+        mu_sgs * (Txx + Tyy)
     )
 
     # Divide by rho for momentum and rho * c_p for energy

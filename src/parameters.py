@@ -11,7 +11,7 @@
 # NT = 100 # Number of samples to store. The simulation stores each NT timesteps
 
 # Time numerical method
-method = 'RK4'
+method = 'euler'
 
 # Constants
 R = 8.31446261815324 # Universal gas constant in J mol^{-1} K^{-1} or kg m^2 s^{-2} mol^{-1} K^{-1}
@@ -50,24 +50,31 @@ C_s = 0.173 # Smagorinsky constant
 C_s = 0.2 # Smagorinsky constant (McGrattan 2023)
 Pr = nu / alpha # Prandtl number 1. / (Air: ~.74)
 Pr = 0.7323 # Prandtl number (Air: ~.74 at 15 °C Cengel 2018)
-C_D = 1 # Drag coefficient "1 or near to unity according to works of Mell and Linn" 1
-a_v = 5.508 #6000 #1 #  Contact area per unit volume between the gas and the solid in m
+# C_D = 1 # Drag coefficient "1 or near to unity according to works of Mell and Linn" 1
+# a_v = 5.508 #6000 #1 #  Contact area per unit volume between the gas and the solid in m
+# alpha_s = 0.0012
+# sigma_s = 12240
+C_d = 0.15 # Drag coefficient (ForestFireFOAM: 0.1)
+# alpha_s = 0.00053 # Solid fuel fraction (ForestFireFOAM)
+# sigma_s = 7500 # Contact area per unit volume between the gas and the solid in m (ForestFireFOAM)
+alpha_s = 0.002
+sigma_s = 4000
 
 # Fuel and reaction parameters
 T_pc = (573 + 473) / 2 # Temperature of solid-gas phase change in K. (473 - 573 K)
-H_R = 21.2e6 # Heat energy per unit of mass (wood) in J kg^{-1} or m^2 s^{-2}. About 21.20e6 for wood according to https://en.wikipedia.org/wiki/Heat_of_combustion
-# H_R = 15.6e6 # 15.6 (Mell 2007 - FDS)
-# H_R = 19.4e6 # 19.4 (Dupuy 2011 - FIRETEC)
+#H_C = 21.2e6 # Heat energy per unit of mass (wood) in J kg^{-1} or m^2 s^{-2}. About 21.20e6 for wood according to https://en.wikipedia.org/wiki/Heat_of_combustion
+# H_C = 15.6e6 # 15.6 (Mell 2007 - FDS)
+# H_C = 19.4e6 # 19.4 (Dupuy 2011 - FIRETEC)
+H_C = 21e6 
 A = 1e9 # Pre-exponential factor in s^{-1}. (1e9, Asensio 2002)
 n_arrhenius = 0 # Arrhenius-like parameter in 1. 1
 E_A = 150e3 # Activation energy in J mol^{-1} or kg m^2 s^{-2} mol^{-1}. E_A = 20e3 cal mol^{-1} according to (Asensio 2002).
 T_act = E_A / R # Activation temperature in K 
 T_act = 18040.8533 
 h_c = 1.147#3.3#18 # Convection coefficient in W m^{-2} K^{-1} or kg s^{-3} K^{-1}  (Air: 0.5-1000), (15.9 - 18.2, Maragkos 2021)
+h_c = 1.42 # FDS factor
 h_rad = 0*1e-7 #
-Y_D = 0.04 #.25 #.25 #.9 # Threshold to add solid fuel force
-Y_f = 1e2 # Extra parameter to control the fuel consumption rate
-Y_f = 100
+Y_f = 70 # Extra parameter to control the fuel consumption rate
 T_hot = T_inf + 500 #500 #600 #450 #Temperature of fire in K
 T_cold = T_inf
 S_top = 3000 #3384 #S(800,1) ~ 3384 
@@ -75,11 +82,11 @@ S_bot = S_top
 Sx = -1
 include_source = True
 source_filter = False
-radiation = False
+# radiation = True
 sutherland_law = False
 debug_pde = False
 bound = True
-T_min, T_max = T_inf, 3000
+T_min, T_max = T_inf, 2500
 # T_min, T_max = -10000, 10000
 Y_min, Y_max = 0, 1
 # Temperature source for t time
@@ -126,8 +133,10 @@ Y_h = .51 #.5 # Height of fuel in m
 
 # Topography
 topography_shape = 'flat' # 'flat' or 'hill'
-hill_center_x = 100 / 2 # Center of hill in m
-hill_center_y = 100 / 2 # Center of hill in m
+# hill_center_x = 100 / 2 # Center of hill in m
+# hill_center_y = 100 / 2 # Center of hill in m
+hill_center_x = 40 # Center of hill in m
+hill_center_y = 40 # Center of hill in m
 hill_length = 20 # Length of hill in m
 hill_width = 20 # Width of hill in m
 hill_height = 2.5 # Height of hill in m
@@ -159,7 +168,7 @@ periodic_axes = (False, True)
 output_dir = './data/output/'
 
 # Density variable or constant
-density_constant = True
+density_constant = False
 
 # Solver parameters
 tol = 1e-10

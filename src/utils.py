@@ -1,7 +1,7 @@
 import numpy as np
-# from arguments import T_act, A, H_R, h, alpha, S_top, S_bot, k, Y_D # Parameters from command line
+# from arguments import T_act, A, H_C, h, alpha, S_top, S_bot, k, C_d # Parameters from command line
 from parameters import T_inf, g, n_arrhenius, h_rad, c_p, rho_inf, S_T_0, S_k_0, S_k, sigma, sutherland_law, include_source, source_filter # Default parameters
-from arguments import T_act, A, H_R, h_c, a_v, alpha, S_top, S_bot, Y_D, density_constant, delta, radiation, kappa, T_pc
+from arguments import T_act, A, H_C, h_c, alpha, S_top, S_bot, C_d, density_constant, delta, kappa, T_pc, alpha_s, sigma_s, y_max, y_min, Ny
 from derivatives import compute_gradient_2D
 
 # A lot of useful functions #
@@ -17,10 +17,12 @@ HS2 = lambda x, x0, k: .5 * (1 + np.tanh(k * (x - x0))) # Hyperbolic tangent fun
 HS3 = lambda x, x0, k, T_pc: Sg(CV(x, T_pc), x0, k) # Hyperbolic tangent function (to smooth the step function)
 Q_rad = lambda T: h_rad * (T ** 4 - T_inf ** 4) / (rho_inf * c_p) # Radiative heat flux
 # rho = lambda T: rho_inf * T_inf / T # Density
-source = lambda T, Y: H_R * Y * K(T) * H(T) / c_p # Source term
+source = lambda T, Y: H_C * Y * K(T) * H(T) / c_p # Source term
 #sink = lambda T, Y: -h_c * a_v * (T - T_inf) * (Y > 0)/ (rho(T) * c_p) # Sink term
-# sink = lambda T, T_g: -h_c * a_v * (T - T_g) / (rho(T_g) * c_p) # Sink term
-sink = lambda T: -h_c * a_v * (T - T_inf) / (rho(T) * c_p) # Sink term
+sink_2 = lambda T, T_g: -h_c * alpha_s * sigma_s * (T_g - T) / (rho(T_g) * c_p) # Sink term
+sink = lambda T: -h_c * alpha_s * sigma_s * (T - T_inf) / (rho(T) * c_p) # Sink term
+sink_fds = lambda T, T_g: -h_c * (y_max - y_min) * (np.abs(T_g - T) * (Ny-1) / (y_max-y_min)) **(1/4) * alpha_s * sigma_s * (T_g - T) / (rho(T_g) * c_p * (Ny-1)) # Sink term
+# sink = lambda T: -h_c * a_v * 15 * (T - T_inf) / (rho(T) * c_p) # Sink term
 sutherland = lambda T: S_k_0 * (T / S_T_0) ** 1.5 * (S_T_0 + S_k) / (T + S_k) / (rho_inf * c_p) # Sutherland's law
 sutherland_T = lambda T: 1.5 * S_k_0 * (S_T_0 + S_k) / T ** 1.5 * (T ** .5 * (T + S_k) - T ** 1.5) / (T + S_k) ** 2 / (rho_inf * c_p) # Sutherland's law derivative
 # stefan_radiation = lambda T: 4 * sigma * delta * T ** 3 / (rho_inf * c_p) # Stefan-Boltzmann law
@@ -424,13 +426,15 @@ def f(U: tuple, T: np.ndarray, Y: np.ndarray) -> list:
         g_y = g_z
         mod_U = np.sqrt(u ** 2 + v ** 2)
         # buoyancy = (T - T_inf) / T  - ((T - T_inf) / T) ** 2 / 2 + ((T - T_inf) / T) ** 3 / 6 
-        # fx = 0 - Y_D * a_v * Y * mod_U * u
-        # fy = g_y * (1 - T / T_inf) - Y_D * a_v * Y * mod_U * v
+        # fx = 0 - C_d * a_v * Y * mod_U * u
+        # fy = g_y * (1 - T / T_inf) - C_d * a_v * Y * mod_U * v
         return [
-            # - g_x * (T - T_inf) / T - Y_D * a_v * Y * mod_U * u,
-            # - g_y * (T - T_inf) / T - Y_D * a_v * Y * mod_U * v
-            g_x * (rho(T) - rho_inf) / rho(T) - Y_D * a_v * Y * mod_U * u,
-            g_y * (rho(T) - rho_inf) / rho(T) - Y_D * a_v * Y * mod_U * v
+            # - g_x * (T - T_inf) / T - C_d * a_v * Y * mod_U * u,
+            # - g_y * (T - T_inf) / T - C_d * a_v * Y * mod_U * v
+            g_x * (rho(T) - rho_inf) / rho(T) - 0.5 * C_d * alpha_s * sigma_s * Y * mod_U * u,
+            g_y * (rho(T) - rho_inf) / rho(T) - 0.5 * C_d * alpha_s * sigma_s * Y * mod_U * v
+            # - C_d * a_v * Y * mod_U * u,
+            # - g_y * (T - T_inf) / T_inf - C_d * a_v * Y * mod_U * v
         ]
     elif ndims == 3:
         u, v, w = U
@@ -439,16 +443,16 @@ def f(U: tuple, T: np.ndarray, Y: np.ndarray) -> list:
         # T_tmp = (T - T_inf) / T
         # mod_U = np.sqrt(np.power(u, 2) + np.power(v, 2) + np.power(w, 2))
         return np.array([
-            # - g_x * (T - T_inf) / T - Y_D * a_v * Y * mod_U * u,
-            # - g_y * (T - T_inf) / T - Y_D * a_v * Y * mod_U * v,
-            # - Y_D * a_v + u*0.0, # * a_v * Y * mod_U * u,
+            # - g_x * (T - T_inf) / T - C_d * a_v * Y * mod_U * u,
+            # - g_y * (T - T_inf) / T - C_d * a_v * Y * mod_U * v,
+            # - C_d * a_v + u*0.0, # * a_v * Y * mod_U * u,
             
-            # np.full_like(u, -Y_D * a_v),
-            # - Y_D * a_v * Y,
-            - Y_D * a_v * Y * mod_U * u,
-            - Y_D * a_v * Y * mod_U * v,
-            - g_z * (T - T_inf) / T - Y_D * a_v * Y * mod_U * w
-            # (T_inf / T - 1.0) * g_z - Y_D * a_v * Y * mod_U * w
+            # np.full_like(u, -C_d * a_v),
+            # - C_d * a_v * Y,
+            - 0.5 * C_d * alpha_s * sigma_s * Y * mod_U * u,
+            - 0.5 * C_d * alpha_s * sigma_s * Y * mod_U * v,
+            - g_z * (T - T_inf) / T - 0.5 * C_d * alpha_s * sigma_s * Y * mod_U * w
+            # (T_inf / T - 1.0) * g_z - C_d * a_v * Y * mod_U * w
         ])
     else:
         raise ValueError('Invalid number of dimensions of U')
@@ -484,8 +488,9 @@ def q(T: np.ndarray, Y: np.ndarray) ->np.ndarray:
     # Add one node in the row above the mask fuel
     mask_fuel_plus_one = (np.roll(mask_fuel, 1, axis=0) + mask_fuel) > 0
     T_g = T_inf + (T - T_inf) * mask_fuel_plus_one
-    # return source(T, Y) + sink(T * mask_fuel, T_g) * mask_fuel_plus_one 
-    return source(T, Y) + sink(T) #* mask_fuel_plus_one
+    # return source(T, Y) + sink_2(T * mask_fuel, T_g) * mask_fuel_plus_one 
+    return source(T, Y) + sink_fds(T * mask_fuel, T_g) * mask_fuel_plus_one 
+    # return source(T, Y) + sink(T) #* mask_fuel_plus_one
 
 # def k(T: np.ndarray) -> np.ndarray:
 #     """

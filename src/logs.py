@@ -29,14 +29,15 @@ def log_params(params: dict, save: bool = False) -> None:
     sim_name = params['sim_name']
     method = params['method']
     rho_inf, T_hot, T_inf, T_pc = params['rho_inf'], params['T_hot'], params['T_inf'], params['T_pc']
-    nu, kappa, alpha, Pr, g = params['nu'], params['kappa'], params['alpha'], params['Pr'], params['g']
+    nu, kappa, Pr, g = params['nu'], params['kappa'], params['Pr'], params['g']
     mu = params['mu']
-    A, T_act, H_R, h_c, a_v = params['A'], params['T_act'], params['H_R'], params['h_c'], params['a_v']
-    Y_f, Y_D, c_p = params['Y_f'], params['Y_D'], params['c_p']
+    A, T_act, H_C, h_c = params['A'], params['T_act'], params['H_C'], params['h_c']
+    Y_f, C_d, c_p = params['Y_f'], params['C_d'], params['c_p']
+    alpha_s, sigma_s = params['alpha_s'], params['sigma_s']
     turb, conser = params['turbulence'], params['conservative']
     S_top, S_bot, Sx = params['S_top'], params['S_bot'], params['Sx']
     source_filter = params['source_filter']
-    radiation = params['radiation']
+    # radiation = params['radiation']
     delta = params['delta']
     include_source = params['include_source']
     initial_u_type = params['initial_u_type']
@@ -89,9 +90,9 @@ def log_params(params: dict, save: bool = False) -> None:
     print("Time integration: %s" % method, file=f)
     print("Time samples: %d" % NT, file=f)
     print("nu: %.2e, mu: %.2e, g: (%.4f, %.4f, %.4f)" % (nu, mu, *g), file=f)
-    print("alpha: %.2e, kappa: %.2e, c_p: %.4f, T_inf: %.4f, T_hot: %.4f" % (alpha, kappa, c_p, T_inf, T_hot), file=f)
+    print("kappa: %.2e, c_p: %.4f, delta: %.4f, T_inf: %.4f, T_source: %.4f" % (kappa, c_p, delta, T_inf, T_hot), file=f)
     print("rho_inf: %.4f, T_pc: %.4f, A: %.4f, T_act: %.4f" % (rho_inf, T_pc, A, T_act), file=f)
-    print("H_R: %.4f, h_c: %.4f, a_v: %.4f, Y_D: %.4f, Y_f: %.4f" % (H_R, h_c, a_v, Y_D, Y_f), file=f)
+    print("H_C: %.4f, h_c: %.4f, alpha_s: %.4f, sigma_s: %.4f, C_d: %.4f, Y_f: %.4f" % (H_C, h_c, alpha_s, sigma_s, C_d, Y_f), file=f)
     print("Constant density: %r" % constant_density, file=f)
     print("Initial u type: %s" % initial_u_type, file=f)
     if initial_u_type == 'log':
@@ -111,18 +112,18 @@ def log_params(params: dict, save: bool = False) -> None:
     if topography_shape == 'hill':
         print("    Center: %.4f, Height: %.4f, Width: %.4f" % (hill_center, hill_height, hill_length), file=f)
     print("Fuel height: %.4f" % Y_h, file=f)
-    print("Include source: %r" % include_source, file=f)
-    print("Source filter: %r" % source_filter, file=f)
-    if source_filter:
-        print("  S_top: %.4f, S_bot: %.4f, Sx: %.4f" % (S_top, S_bot, Sx), file=f)
+    # print("Include source: %r" % include_source, file=f)
+    # print("Source filter: %r" % source_filter, file=f)
+    # if source_filter:
+    #     print("  S_top: %.4f, S_bot: %.4f, Sx: %.4f" % (S_top, S_bot, Sx), file=f)
     print("Turbulence: %r" % turb, file=f)
     print("Conservative: %r" % conser, file=f)
-    print("Radiation: %r" % radiation, file=f)
-    if radiation:
-        print("  Delta: %.4f" % delta, file=f)
-    print("Sutherland's law: %r" % sutherland_law, file=f)
-    if sutherland_law:
-        print("  T_0: %.4f, k_0: %.4f, S_k: %.4f" % (S_T_0, S_k_0, S_k), file=f)
+    # print("Radiation: %r" % radiation, file=f)
+    # if radiation:
+    #     print("  Delta: %.4f" % delta, file=f)
+    # print("Sutherland's law: %r" % sutherland_law, file=f)
+    # if sutherland_law:
+    #     print("  T_0: %.4f, k_0: %.4f, S_k: %.4f" % (S_T_0, S_k_0, S_k), file=f)
     print("Bound: %r" % bound, file=f)
     if bound:
         print("  Temperature: [%.4f, %.4f]" % (T_min, T_max), file=f)

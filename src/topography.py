@@ -9,9 +9,15 @@ hill3D = lambda x, y: G3D(x, y, 0, hill_center_x, hill_center_y, 0, hill_length,
 flat2D = lambda x: x * 0 
 flat3D = lambda x, y: x * y * 0
 # Slope
-slope2D = lambda x: np.piecewise(x, [x < 20, x >= 20, x >= 50, x > 80], [
+# slope2D = lambda x: np.piecewise(x, [x < 20, x >= 20, x >= 50, x > 80], [
+#     0, 
+#     lambda x: (x - 20) * 0.17632698070846498,
+#     lambda x: (80 - x) * 0.17632698070846498,
+#     0
+# ]) # 10 degrees
+slope2D = lambda x: np.piecewise(x, [x < 10, x >= 10, x >= 40, x > 70], [
     0, 
-    lambda x: (x - 20) * 0.17632698070846498,
-    lambda x: (80 - x) * 0.17632698070846498,
+    lambda x: (x - 10) * 0.17632698070846498,
+    lambda x: (70 - x) * 0.17632698070846498,
     0
 ]) # 10 degrees
