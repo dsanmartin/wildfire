@@ -74,7 +74,7 @@ T_act = 18040.8533
 h_c = 1.147#3.3#18 # Convection coefficient in W m^{-2} K^{-1} or kg s^{-3} K^{-1}  (Air: 0.5-1000), (15.9 - 18.2, Maragkos 2021)
 h_c = 1.42 # FDS factor
 h_rad = 0*1e-7 #
-Y_f = 70 # Extra parameter to control the fuel consumption rate
+Y_f = 70. # Extra parameter to control the fuel consumption rate
 T_hot = T_inf + 500 #500 #600 #450 #Temperature of fire in K
 T_cold = T_inf
 S_top = 3000 #3384 #S(800,1) ~ 3384 
@@ -86,9 +86,9 @@ source_filter = False
 sutherland_law = False
 debug_pde = False
 bound = True
-T_min, T_max = T_inf, 2500
+T_min, T_max = T_inf, 2500.
 # T_min, T_max = -10000, 10000
-Y_min, Y_max = 0, 1
+Y_min, Y_max = 0., 1.
 # Temperature source for t time
 t_source = -1 # If t_source < 0, then the temperature source is not used
 

@@ -269,7 +269,7 @@ def create_plate_slope(x_start: float, x_end: float, y_start: float, y_end: floa
     
     
 
-def create_gaussian(center: tuple, dimensions: tuple) -> callable:
+def create_gaussian(center: tuple, dimensions: tuple, slope: float = None) -> callable:
     """
     Create a half Gaussian function based on the number of dimensions. 
     This is used for temperature initial condition.
@@ -295,7 +295,12 @@ def create_gaussian(center: tuple, dimensions: tuple) -> callable:
     if ndims == 2: # For 2D
         x_center, y_center = center
         length, height = dimensions
-        half_gaussian = lambda x, y: G2D(x, y, x_center, y_center, length, height, 1)
+        if slope is None:
+            half_gaussian = lambda x, y: G2D(x, y, x_center, y_center, length, height, 1)
+        else:
+            c = np.cos(np.deg2rad(-slope))
+            s = np.sin(np.deg2rad(-slope))
+            half_gaussian = lambda x, y: G2D(c * x - s * y, s * x + c * y, x_center, y_center, length, height, 1)
     elif ndims == 3: # For 3D
         x_center, y_center, z_center = center
         length, width, height = dimensions

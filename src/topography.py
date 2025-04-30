@@ -15,9 +15,15 @@ flat3D = lambda x, y: x * y * 0
 #     lambda x: (80 - x) * 0.17632698070846498,
 #     0
 # ]) # 10 degrees
-slope2D = lambda x: np.piecewise(x, [x < 10, x >= 10, x >= 40, x > 70], [
+# slope2D = lambda x: np.piecewise(x, [x < 10, x >= 10, x >= 40, x > 70], [
+#     0, 
+#     lambda x: (x - 10) * 0.17632698070846498,
+#     lambda x: (70 - x) * 0.17632698070846498,
+#     0
+# ]) # 10 degrees
+slope2D = lambda x: np.piecewise(x, [x < 0, x >= 0, x >= 30, x > 60], [
     0, 
-    lambda x: (x - 10) * 0.17632698070846498,
-    lambda x: (70 - x) * 0.17632698070846498,
+    lambda x: (x - 0) * 0.17632698070846498,
+    lambda x: (60 - x) * 0.17632698070846498,
     0
 ]) # 10 degrees

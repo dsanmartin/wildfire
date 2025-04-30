@@ -47,8 +47,11 @@ if spatial_dims == 2:
     # Initial temperature $T(x,y,0)$ #
     if T0_shape == 'plate':
         shape = create_plate((T0_x_start, T0_x_end), (T0_z_start, T0_z_end)) 
-    elif T0_shape == 'gaussian':
-        shape = create_gaussian((T0_x_center, 0), (T0_length, T0_height)) 
+    elif T0_shape == 'gaussian':        
+        if topography_shape == 'slope':
+            shape = create_gaussian((T0_x_center, 0), (T0_length, T0_height), 10)
+        else:
+            shape = create_gaussian((T0_x_center, 0), (T0_length, T0_height)) 
     # else:
     #     shape = create_plate((T0_x_start, T0_x_end), (T0_z_start, T0_z_end)) 
     T0 = lambda x, y: T_inf + (shape(x, y)) * (T_hot - T_inf)

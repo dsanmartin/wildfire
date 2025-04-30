@@ -28,6 +28,7 @@ parser.add_argument('-fps', '--fps', type=int, default=10, help="Frames per seco
 parser.add_argument('-fs', '--fig-size', type=int, nargs=2, default=None, help="Figure size. Default: [6, 4].")
 parser.add_argument('-tit', '--title', type=int, default=1, help="Title. Default: True.")
 parser.add_argument('-den', '--density', type=float, default=0.6, help="Streamplot density.")
+parser.add_argument('-cav', '--cavity', type=int, default=0, help="Cavity. Default 0")
 args = parser.parse_args()
 
 # Default values
@@ -63,6 +64,7 @@ bounds = ticks = args.bounds
 fps = args.fps
 figsize = args.fig_size
 title = args.title
+cavity = args.cavity
 
 # Parameters for video or GIF
 sim_id = input_dir.split("/")[-2]
@@ -125,7 +127,7 @@ ns = range(0, Nt, ts)
 # T_ticks = [300, 500, 700, 900, 1100] # wind driven
 # T_ticks = [300, 500, 700, 900] # Plume
 ticks_per_field = None
-if sim_id in ["20241224094934", "20250103050307", "20241227080722", "20250103121420", "20250105184159"]:
+if sim_id in ["20241224094934", "20250103050307", "20241227080722", "20250103121420", "20250105184159", "20250427145345"] or cavity == 1:
     mod_U_ticks = [0, 3, 6, 9, 12]
     T_ticks = [300, 500, 700, 900, 1100]
     if sim_id == "20241224094934":
@@ -145,16 +147,27 @@ if sim_id in ["20241224094934", "20250103050307", "20241227080722", "20250103121
         T_ticks = [300, 600, 900, 1200] # Plume
         if show != "video" != "gif":
             ns = [30]
-    if sim_id == "20250105184159":
-        T_ticks = [250, 300, 350]
+    # if sim_id == "20250427145345": #"20250105184159": #rb
+    if cavity == 1:
+        print("RB")
+        # T_ticks = [250, 300, 350]
+        T_ticks = [200, 300, 400, 500]
         mod_U_ticks = [0, 0.5, 1]
         if show != "video" != "gif":
-            ns = [25]
+            ns = [-1]
     # Ticks per field
     ticks_per_field = {
         'modU': mod_U_ticks,
         'T': T_ticks,
     }
+    data_plots['modU']['ticks'] = mod_U_ticks
+    data_plots['T']['ticks'] = T_ticks
+    
+    
+if "modU" in data_plots:
+    data_plots['modU']['ticks'] = [0, 3, 6, 9, 12]
+if "T" in data_plots:
+    data_plots['T']['ticks'] = [300, 500, 700, 900, 1100]
 
 # print(np.argwhere(np.abs(t - 56)< 0.5))
 # print(asd)
