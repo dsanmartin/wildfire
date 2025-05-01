@@ -15,7 +15,7 @@ $$
     %
     \nabla\cdot\mathbf{u} & = \dfrac{1}{\rho c_p T}\left(\nabla\cdot(k\nabla T) + q\right),  \\
     \rho (T)&=\dfrac{\rho_\infty T_{\infty}}{T},
-    \\[1em] 
+    \\
     & + \text{Initial and boundary conditions}.
 \end{split}
 $$
