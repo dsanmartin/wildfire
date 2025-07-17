@@ -21,14 +21,16 @@ $$
 $$
 
 More details in:
-* **Simplified coupled atmosphere-fire model for simulation of 2D wildland fires** by Daniel San Martin & Claudio E. Torres. ***Preprint*** available at: https://dx.doi.org/10.2139/ssrn.4673376
+* San Martin, D., & Torres, C. E. (2025). **Simplified coupled atmosphere‑fire model for simulation of 2D wildland fires**. Computer Physics Communications. Available at: https://doi.org/10.1016/j.cpc.2025.109746
 
 ## Examples
-
-See more **[here](./examples/README.md)**
 
 ### Flat terrain
 ![Flat fire](./examples/simulations/2D/case_f19.gif)
 
 ### Simple hill
 ![Hill fire](./examples/simulations/2D/gaussian_hill.gif)
+
+### More
+See more **[here](./examples/README.md)**
+
