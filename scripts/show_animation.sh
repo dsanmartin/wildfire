@@ -35,7 +35,7 @@ if [ -z "$input_dir" ]; then
     usage;
 fi
 # Create animation
-python src/create_animation.py -i "${input_dir}" \
+python src_legacy/create_animation.py -i "${input_dir}" \
                                 -ts ${ts} \
                                 -tn ${tn} \
                                 -xmin ${xmin} \
