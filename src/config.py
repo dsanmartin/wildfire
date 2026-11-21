@@ -49,6 +49,7 @@ class Config:
     # Turbulence
     turbulence: bool = True
     C_s: float = 0.2
+    filter_width: float = None      # Smagorinsky filter width in m; None: (dx dz)^(1/2) or (dx dy dz)^(1/3)
     Pr: float = 0.7323
     # Fuel / reaction
     C_d: float = 0.15
@@ -62,7 +63,9 @@ class Config:
     Y_f: float = 70.0
     Y_h: float = 0.51
     reaction: str = 'exact'         # exact: fuel decay integrated exactly over dt; explicit: original rate
-    sink: str = 'ambient'           # ambient: natural convection fuel -> ambient air; legacy: original term
+    sink: str = 'surface'           # surface: top fuel node <-> gas node above; legacy: original term
+    fuel_threshold: float = 1e-3    # Y above which a node counts as fuel for the surface exchange
+    T_advection: str = 'koren'      # koren (limited third order), upwind (second order), central (original)
     fuel_x_start: float = None      # optional horizontal extent of the fuel bed
     fuel_x_end: float = None
     fuel_y_start: float = None
@@ -132,6 +135,7 @@ _KEYS = {
     ('fuel', 'sigma_s'): ('sigma_s', float), ('fuel', 'alpha_s'): ('alpha_s', float),
     ('fuel', 'reaction'): ('reaction', str), ('temperature', 'sink'): ('sink', str),
     ('temperature', 'T_inf'): ('T_inf', float), ('numerics', 'bound'): ('bound', bool),
+    ('numerics', 'T_advection'): ('T_advection', str), ('fuel', 'threshold'): ('fuel_threshold', float),
     ('fuel', 'x_start'): ('fuel_x_start', float), ('fuel', 'x_end'): ('fuel_x_end', float),
     ('fuel', 'y_start'): ('fuel_y_start', float), ('fuel', 'y_end'): ('fuel_y_end', float),
     ('temperature', 'T_hot'): ('T_hot', float), ('temperature', 'T_min'): ('T_min', float),
@@ -143,6 +147,7 @@ _KEYS = {
     ('pressure', 'log_solver'): ('log_solver', bool), ('pressure', 'poisson'): ('poisson', str),
     ('density', 'constant'): ('density_constant', bool),
     ('turbulence', 'enabled'): ('turbulence', bool), ('turbulence', 'C_s'): ('C_s', float),
+    ('turbulence', 'filter_width'): ('filter_width', float),
 }
 for _ax in 'xyz':  # ignition location: both 'x_start' (original reader) and 'T0_x_start' (used in some files)
     for _end in ('start', 'end'):
@@ -185,7 +190,9 @@ def load_config(path: str, **overrides) -> Config:
         if value is not None:
             setattr(cfg, key, value)
     if cfg.legacy:  # everything as in src_legacy/
-        cfg.reaction, cfg.sink = 'explicit', 'legacy'
-    if cfg.reaction not in ('exact', 'explicit') or cfg.sink not in ('ambient', 'legacy'):
-        raise ValueError("reaction must be 'exact' or 'explicit', sink must be 'ambient' or 'legacy'")
+        cfg.reaction, cfg.sink, cfg.T_advection = 'explicit', 'legacy', 'central'
+    for key, allowed in (('reaction', ('exact', 'explicit')), ('sink', ('surface', 'legacy')),
+                         ('T_advection', ('upwind', 'koren', 'central'))):
+        if getattr(cfg, key) not in allowed:
+            raise ValueError(f"{key} must be one of {allowed}, got '{getattr(cfg, key)}'")
     return cfg

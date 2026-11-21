@@ -12,6 +12,14 @@ from operators import Operators
 from pressure import PoissonSolver
 
 
+ENERGY_TERMS = {
+    'combustion': 'heat of the fuel actually burned',
+    'fuel_overshoot': 'extra heat released by burning more fuel than there was (Y < 0 reset to 0)',
+    'clip_low': 'energy added by raising T to T_min',
+    'clip_high': 'energy removed by lowering T to T_max',
+}
+
+
 class Model:
     def __init__(self, cfg, grid, device, dtype):
         self.cfg = cfg
@@ -26,7 +34,10 @@ class Model:
         # Distance to the wall for the turbulence damping (the original uses the height above z_min)
         self.wall_distance = self.Zm if cfg.legacy else to(np.clip(grid['Zm'] - grid['ground'], 0.0, None))
         self.gravity = [0.0] * (nd - 1) + [cfg.g]
-        self.Delta = float(np.prod(self.h)) ** (1.0 / nd)
+        # Filter width: tied to the grid by default, so the subgrid mixing length C_s Delta shrinks
+        # under refinement and the solution keeps changing. A fixed physical width makes the model
+        # independent of the grid, so results can converge as the grid is refined.
+        self.Delta = cfg.filter_width if cfg.filter_width else float(np.prod(self.h)) ** (1.0 / nd)
         self.Lz = cfg.z_max - cfg.z_min
         # Boundary data
         state0 = grid['state']
@@ -58,6 +69,9 @@ class Model:
         legacy_length = cfg.x_max if (cfg.legacy and nd == 2) else None
         self.poisson = PoissonSolver(self.shape, self.h, lengths, device, dtype, cfg.poisson, legacy_length)
         self.pressure_iterations = 0
+        # Energy budget, accumulated on the device (J per metre of depth in 2D, J in 3D)
+        self.dV = float(np.prod(self.h))
+        self.energy = {key: torch.zeros((), dtype=dtype, device=device) for key in ENERGY_TERMS}
 
     # ---------------------------------------------------------------- physics
     def rho(self, T):
@@ -94,13 +108,8 @@ class Model:
         """Combustion heat source plus convective heat loss, in K/s."""
         c = self.cfg
         source = c.H_C * Y * self.reaction(T) / c.c_p
-        if c.sink == 'ambient':
-            # Natural convection from the fuel elements (one temperature for gas and fuel) to the ambient
-            # air: h = h_c (|T - T_inf| / L)^(1/4) with L the fuel height, over the fuel surface area per
-            # unit volume alpha_s sigma_s Y that is left (same area as in the drag force).
-            dT = T - c.T_inf
-            h = c.h_c * (torch.abs(dT) / c.Y_h) ** (1 / 4)
-            return source - h * c.alpha_s * c.sigma_s * Y * dT / (self.rho(T) * c.c_p)
+        if c.sink == 'surface':
+            return source + self.surface_exchange(T, Y)
         # Original term: zero inside the fuel, and in the node above it a loss towards 0 K
         fuel = Y > 0
         fuel_plus_one = (torch.roll(fuel, 1, 0) | fuel).to(T.dtype)   # fuel nodes and the node above them
@@ -110,6 +119,32 @@ class Model:
         sink = (-c.h_c * self.Lz * (torch.abs(diff) * nz1 / self.Lz) ** (1 / 4) * c.alpha_s * c.sigma_s * diff
                 / (self.rho(T_g) * c.c_p * nz1))
         return source + sink * fuel_plus_one
+
+    def surface_exchange(self, T, Y):
+        """Natural convection between the top of the fuel bed and the gas above it, in K/s.
+
+        In every column the top fuel node (highest node with Y > fuel_threshold, so the surface moves
+        down as the fuel burns) exchanges a heat flux per unit ground area
+            Q = h (T_g - T_s),   h = h_c (|T_g - T_s| / Y_h)^(1/4)   [W/m^2]
+        with the gas node directly above it (T_s, T_g: temperatures of the two nodes). The flux is
+        spread over one cell height dz in each node: +Q / (rho c_p dz) in the fuel node and
+        -Q / (rho c_p dz) in the gas node, so energy is conserved and the total exchange does not
+        depend on the grid."""
+        c = self.cfg
+        nz = self.shape[0]
+        levels = torch.arange(nz, device=T.device).view((-1,) + (1,) * (self.nd - 1))
+        top = torch.where(Y > c.fuel_threshold, levels, -1).amax(0)          # (..., Nx), -1: no fuel
+        has = (top >= 0) & (top < nz - 1)
+        i_s = top.clamp(0, nz - 2).unsqueeze(0)
+        i_g = i_s + 1
+        T_s, T_g = T.gather(0, i_s)[0], T.gather(0, i_g)[0]
+        dT = T_g - T_s
+        Q = c.h_c * (torch.abs(dT) / c.Y_h) ** (1 / 4) * dT * has.to(T.dtype)
+        rho_cp_dz = self.rho(T) * c.c_p * self.h[-1]
+        out = torch.zeros_like(T)
+        out.scatter_add_(0, i_s, (Q / rho_cp_dz.gather(0, i_s)[0]).unsqueeze(0))
+        out.scatter_add_(0, i_g, (-Q / rho_cp_dz.gather(0, i_g)[0]).unsqueeze(0))
+        return out
 
     def sgs(self, vel, T, rho, grad_T, lap_T):
         """Smagorinsky subgrid terms with Van Driest wall damping. Returns ([sgs_u...], sgs_T)."""
@@ -175,14 +210,15 @@ class Model:
             if grad_div is not None:
                 force = force + nu * grad_div[i] / 3
             out[i] = nu * op.lap(vel[i]) - conv + force - sgs_u[i]
-        if c.legacy:   # central differences: oscillates at the fire front (cell Peclet number >> 1)
+        if c.T_advection == 'central':   # original: oscillates at the fire front (cell Peclet number >> 1)
             adv = vel[0] * grad_T[0]
             for j in range(1, nd):
                 adv = adv + vel[j] * grad_T[j]
-        else:          # second-order upwind, as for the momentum equations
-            adv = op.upwind(vel[0], T, 0)
+        else:          # Koren-limited third order (default) or second-order upwind (as for the momentum)
+            scheme = op.limited if c.T_advection == 'koren' else op.upwind
+            adv = scheme(vel[0], T, 0)
             for j in range(1, nd):
-                adv = adv + op.upwind(vel[j], T, j)
+                adv = adv + scheme(vel[j], T, j)
         out[nd] = heat - adv - sgs_T
         out[nd + 1] = -c.Y_f * self.reaction(T) * Y
         self.apply_bc(out, homogeneous=True)
@@ -190,19 +226,24 @@ class Model:
 
     # ----------------------------------------------------- boundary conditions
     def apply_bc(self, y, homogeneous=False):
-        """Bottom: velocity Dirichlet, dT/dz = dY/dz = 0. Top: zero vertical gradient for everything.
+        """Bottom: velocity Dirichlet, dT/dz = 0. Top: zero vertical gradient.
         Terrain: cut nodes behave like the bottom. Dead nodes have zero velocity and fuel, and the
         temperature of the surface node above them: the ground is adiabatic, as at z = z_min. (The
         original holds them at T_inf, an artificial density jump next to the fire that makes the
         pressure fixed point diverge.)
+        The fuel Y is not transported (its equation is a local ODE), so it gets no boundary condition.
+        The original extrapolated it like T, which overwrote the ground row with (4 Y_1 - Y_2) / 3
+        every step: fuel vanished without releasing heat, or went negative, wherever the bed burned
+        unevenly in z. ``legacy`` keeps that behaviour.
         ``homogeneous=True`` is the version for time derivatives (Dirichlet rows do not change)."""
         nd = self.nd
+        last = y.shape[0] if self.cfg.legacy else nd + 1     # rows nd .. last-1 get the Neumann condition
         y[:nd, 0] = 0.0 if homogeneous else self.vel_bottom
-        y[nd:, 0] = (4 * y[nd:, 1] - y[nd:, 2]) / 3
-        y[:, -1] = (4 * y[:, -2] - y[:, -3]) / 3
+        y[nd:last, 0] = (4 * y[nd:last, 1] - y[nd:last, 2]) / 3
+        y[:last, -1] = (4 * y[:last, -2] - y[:last, -3]) / 3
         if self.has_terrain:
             flat = y.view(y.shape[0], -1)
-            flat[nd:, self.cut] = (4 * flat[nd:, self.cut_up1] - flat[nd:, self.cut_up2]) / 3
+            flat[nd:last, self.cut] = (4 * flat[nd:last, self.cut_up1] - flat[nd:last, self.cut_up2]) / 3
             flat[:nd, self.cut] = 0.0 if homogeneous else self.vel_bottom.reshape(nd, -1)[:, self.cut_h]
             flat[:, self.dead] = 0.0 if homogeneous else self.dead_values
             if not self.cfg.legacy:
@@ -263,9 +304,20 @@ class Model:
             raise ValueError(f"unknown time method '{c.method}'")
         p = self.project(y1, y[nd], p)
         self.apply_bc(y1)
+        heat_per_fuel = c.H_C / c.Y_f if c.Y_f > 0 else 0.0     # J/kg released per unit decrease of Y
         if c.bound:
+            T_raw, Y_raw = y1[nd].clone(), y1[nd + 1].clone()
             y1[nd].clamp_(c.T_min, c.T_max)
             y1[nd + 1].clamp_(c.Y_min, c.Y_max)
+            # Energy the bounds add or remove: rho c_p dT for the gas left in the node, and for
+            # Y < 0 the heat that the reaction term released from fuel that did not exist
+            rho1 = self.rho(y1[nd])
+            dT = y1[nd] - T_raw
+            self.energy['clip_low'] += (rho1 * dT.clamp(min=0)).sum() * (c.c_p * self.dV)
+            self.energy['clip_high'] += (rho1 * dT.clamp(max=0)).sum() * (c.c_p * self.dV)
+            self.energy['fuel_overshoot'] += (rho1 * (-Y_raw).clamp(min=0)).sum() * (heat_per_fuel * self.dV)
+        burned = (y[nd + 1] - y1[nd + 1]).clamp(min=0)
+        self.energy['combustion'] += (self.rho(y1[nd]) * burned).sum() * (heat_per_fuel * self.dV)
         if t_n <= c.t_source:
             y1[nd][self.source_mask] = self.T0[self.source_mask]
         return y1, p

@@ -61,6 +61,40 @@ def upwind_vertical(a, phi, h, legacy=False):
     return torch.clamp(a, min=0) * backward + torch.clamp(a, max=0) * forward
 
 
+def _koren(num, d):
+    """phi(r) * d with r = num / d and the Koren limiter phi(r) = max(0, min(2r, (1 + 2r) / 3, 2)),
+    written without the division (zero where d = 0)."""
+    s = torch.sign(d)
+    return s * torch.clamp(torch.minimum(torch.minimum(2 * s * num, (s * d + 2 * s * num) / 3), 2 * s * d), min=0)
+
+
+def _limited_faces(a_l, a_r, p_m1, p_0, p_p1, p_p2):
+    """Value at the face between p_0 and p_p1, reconstructed from the upwind side with the
+    third-order upwind-biased (kappa = 1/3) scheme and the Koren limiter."""
+    d = p_p1 - p_0
+    from_left = p_0 + 0.5 * _koren(p_0 - p_m1, d)
+    from_right = p_p1 - 0.5 * _koren(p_p2 - p_p1, d)
+    return torch.where(0.5 * (a_l + a_r) >= 0, from_left, from_right)
+
+
+def limited_periodic(a, phi, h, axis):
+    """a * dphi/dx along a periodic axis with Koren-limited face values: third order where phi is
+    smooth, first-order upwind at extrema and sharp fronts, so phi stays bounded (no new extrema)."""
+    r = lambda f, k: torch.roll(f, -k, axis)          # f_{i+k}
+    F = _limited_faces(a, r(a, 1), r(phi, -1), phi, r(phi, 1), r(phi, 2))   # face i+1/2
+    return a * (F - r(F, -1)) / h
+
+
+def limited_vertical(a, phi, h):
+    """Same along axis 0. Two ghost rows at each end copy the boundary row (zero gradient), which
+    makes the reconstruction first order at the boundaries."""
+    P = torch.cat([phi[:1], phi[:1], phi, phi[-1:], phi[-1:]], 0)
+    A = torch.cat([a[:1], a, a[-1:]], 0)
+    n = phi.shape[0]
+    F = _limited_faces(A[:n + 1], A[1:n + 2], P[:n + 1], P[1:n + 2], P[2:n + 3], P[3:n + 4])   # faces -1/2 .. n-1/2
+    return a * (F[1:] - F[:-1]) / h
+
+
 def half_periodic(phi, h, axis):
     """(phi_{i+1/2} - phi_{i-1/2}) / h with averaged half-node values (algebraically the central difference)."""
     return (0.5 * (torch.roll(phi, -1, axis) + phi) - 0.5 * (torch.roll(phi, 1, axis) + phi)) / h
@@ -96,6 +130,10 @@ class Operators:
         if axis == 0:
             return upwind_vertical(a, phi, self.h[j], self.legacy)
         return upwind_periodic(a, phi, self.h[j], axis)
+
+    def limited(self, a, phi, j):
+        axis = self.ndim - 1 - j
+        return limited_vertical(a, phi, self.h[j]) if axis == 0 else limited_periodic(a, phi, self.h[j], axis)
 
     def half(self, phi, j):
         axis = self.ndim - 1 - j

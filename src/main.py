@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from config import load_config
 from setup import build
-from model import Model
+from model import Model, ENERGY_TERMS
 
 
 def pick_device(name):
@@ -49,6 +49,8 @@ def run(cfg, verbose=True):
         model.apply_bc(y)
     p = torch.zeros(model.shape, dtype=dtype, device=device)
     frames, pressures, times = [y.cpu().numpy()], [p.cpu().numpy()], [t[0]]
+    unit = 'kJ/m' if nd == 2 else 'kJ'
+    energy = {key: [0.0] for key in ENERGY_TERMS}
     start = last = time.perf_counter()
     with torch.no_grad():
         for n in range(Nt):
@@ -63,6 +65,16 @@ def run(cfg, verbose=True):
                     f"Pressure iterations: {model.pressure_iterations}, "
                     f"mean step time: {(now - last) / ((n % NT) + 1):.6f} s")
                 last = now
+                E = {key: float(v) / 1e3 for key, v in model.energy.items()}
+                dE = {key: E[key] - energy[key][-1] for key in E}
+                ratio = lambda key, d: f"{100 * d[key] / d['combustion']:.1f}%" if d['combustion'] > 0 else "n/a"
+                say(f"Energy since start [{unit}]: combustion {E['combustion']:.4g}, fuel overshoot {E['fuel_overshoot']:.4g} "
+                    f"({ratio('fuel_overshoot', E)}), clip low {E['clip_low']:.4g} ({ratio('clip_low', E)}), "
+                    f"clip high {E['clip_high']:.4g} ({ratio('clip_high', E)})",
+                    f"Energy since last output: clip low {ratio('clip_low', dE)}, fuel overshoot {ratio('fuel_overshoot', dE)} "
+                    f"of combustion")
+                for key in E:
+                    energy[key].append(E[key])
                 if not np.isfinite(T_max):
                     say("Non-finite temperature: stopping")
                     break
@@ -78,6 +90,9 @@ def run(cfg, verbose=True):
     data = {name: np.stack([with_periodic_ends(f) for f in z[:, i]]) for i, name in enumerate(names)}
     data['p'] = np.stack([with_periodic_ends(f) for f in pressures])
     data['x'], data['t'] = grid['x'], np.array(times)
+    n_saved = len(times)
+    for key, values in energy.items():      # cumulative, in J (per metre in 2D), at the saved times
+        data['E_' + key] = np.array(values[:n_saved]) * 1e3
     if nd == 2:
         data['y'] = grid['z']                                        # the vertical axis is called y in 2D
     else:
