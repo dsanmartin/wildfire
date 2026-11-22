@@ -39,7 +39,8 @@ class Config:
     experiment: str = 'fire'
     # Gas
     c_p: float = 1007.0
-    cp_model: str = 'constant'      # constant (c_p) or variable: c_p(T) of air from ideal-gas tables
+    cp_model: str = 'constant'      # constant (c_p); variable: c_p(T) of air; mixture: species-weighted c_p(T)
+    transport: str = 'constant'     # constant mu and kappa, or sutherland: mu(T), kappa(T) (Sutherland's law)
     rho_inf: float = 1.225
     mu: float = 1.802e-5
     kappa: float = 0.02476
@@ -189,7 +190,7 @@ _KEYS = {
     ('fuel', 'T_pyr_end'): ('T_pyr_end', float), ('combustion', 's_O2'): ('s_O2', float),
     ('combustion', 'tau_mix'): ('tau_mix', float), ('combustion', 'Y_O2_amb'): ('Y_O2_amb', float),
     ('temperature', 'T_inf'): ('T_inf', float), ('numerics', 'bound'): ('bound', bool),
-    ('gas', 'cp_model'): ('cp_model', str),
+    ('gas', 'cp_model'): ('cp_model', str), ('gas', 'transport'): ('transport', str),
     ('numerics', 'T_advection'): ('T_advection', str), ('fuel', 'threshold'): ('fuel_threshold', float),
     ('fuel', 'x_start'): ('fuel_x_start', float), ('fuel', 'x_end'): ('fuel_x_end', float),
     ('fuel', 'y_start'): ('fuel_y_start', float), ('fuel', 'y_end'): ('fuel_y_end', float),
@@ -247,6 +248,8 @@ def load_config(path: str, **overrides) -> Config:
         cfg.z_min, cfg.z_max, cfg.Nz = cfg.y_min, cfg.y_max, cfg.Ny
     if cfg.experiment != 'fire':
         raise NotImplementedError(f"experiment '{cfg.experiment}' is not ported; only 'fire' is (use src_legacy/ for the others)")
+    if cfg.cp_model == 'mixture' and not cfg.solid_temperature:
+        raise ValueError("cp_model = mixture needs the species of the extended model (solid_temperature = True)")
     for name, box in cfg.buildings:
         if len(box) != (3 if cfg.ndim == 2 else 5):
             raise ValueError(f"[buildings] {name}: expected {'x0, x1, height' if cfg.ndim == 2 else 'x0, x1, y0, y1, height'}")
@@ -260,11 +263,12 @@ def load_config(path: str, **overrides) -> Config:
     if cfg.legacy:  # everything as in src_legacy/
         cfg.reaction, cfg.sink, cfg.T_advection = 'explicit', 'legacy', 'central'
         cfg.solid_temperature, cfg.radiation, cfg.projection, cfg.cp_model = False, 'diffusion', 'nodal', 'constant'
+        cfg.transport = 'constant'
     for key, allowed in (('reaction', ('exact', 'explicit')), ('sink', ('surface', 'legacy')),
                          ('T_advection', ('upwind', 'koren', 'central')),
                          ('radiation', ('transport', 'diffusion')), ('pyrolysis', ('linear', 'arrhenius')),
                          ('model', ('vertical', 'planview')), ('projection', ('face', 'nodal')),
-                         ('cp_model', ('constant', 'variable'))):
+                         ('cp_model', ('constant', 'variable', 'mixture')), ('transport', ('constant', 'sutherland'))):
         if getattr(cfg, key) not in allowed:
             raise ValueError(f"{key} must be one of {allowed}, got '{getattr(cfg, key)}'")
     return cfg

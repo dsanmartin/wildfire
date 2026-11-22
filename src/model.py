@@ -22,6 +22,19 @@ CP_AIR_T = np.array([250.0, 300, 400, 500, 600, 800, 1000, 1200, 1500, 2000, 250
 CP_AIR = np.array([1003.0, 1005, 1013, 1029, 1051, 1099, 1142, 1173, 1211, 1253, 1286, 1312])
 
 
+# Molar specific heats, J/(mol K), of N2, O2, CO2 and H2O (JANAF tables, rounded), for cp_model = mixture
+CP_SPECIES_T = np.array([300.0, 500, 1000, 1500, 2000, 2500, 3000])
+CP_SPECIES = {   # (molar mass kg/mol, cp at CP_SPECIES_T)
+    'N2': (0.028013, [29.12, 29.58, 32.70, 34.85, 36.00, 36.60, 37.00]),
+    'O2': (0.031999, [29.39, 31.09, 34.88, 36.56, 37.78, 39.00, 40.00]),
+    'CO2': (0.04401, [37.22, 44.63, 54.31, 58.38, 60.35, 61.50, 62.20]),
+    'H2O': (0.018015, [33.60, 35.23, 41.27, 46.98, 51.18, 54.00, 55.70]),
+}
+# Products of burning cellulose, C6H10O5 + 6 O2 -> 6 CO2 + 5 H2O: mass fractions of CO2 and H2O
+PRODUCT_CO2, PRODUCT_H2O = 264.06 / 354.15, 90.08 / 354.15
+SUTHERLAND_MU, SUTHERLAND_KAPPA = 110.4, 194.0     # Sutherland constants (K) of air
+
+
 ENERGY_TERMS = {
     'combustion': 'heat of the fuel actually burned',
     'fuel_overshoot': 'extra heat released by burning more fuel than there was (Y < 0 reset to 0)',
@@ -164,20 +177,56 @@ class Model:
             flat[k, self.wall_idx] = (flat[k][self.wall_nb] * self.wall_w).sum(1)
 
     # ---------------------------------------------------------------- physics
-    def cp(self, T):
-        """Specific heat of the gas: constant, or c_p(T) of air interpolated linearly in the table
-        CP_AIR (clamped at its ends). With c_p(T) the energy equation rho c_p(T) DT/Dt = q and the
-        low-Mach constraint div(u) = q / (rho c_p T) keep their form."""
-        if self.cfg.cp_model == 'constant':
-            return self.cfg.c_p
-        if not hasattr(self, '_cp_table'):
-            self._cp_table = (torch.as_tensor(CP_AIR_T, dtype=T.dtype, device=T.device),
-                              torch.as_tensor(CP_AIR, dtype=T.dtype, device=T.device))
-        Tt, ct = self._cp_table
+    @staticmethod
+    def _interp(T, Tt, values):
+        """Linear interpolation in a table (clamped at its ends). Tt, values: 1D tensors."""
         Tc = T.clamp(Tt[0], Tt[-1])
         i = torch.searchsorted(Tt, Tc.contiguous()).clamp(1, len(Tt) - 1)
-        T0, T1, c0, c1 = Tt[i - 1], Tt[i], ct[i - 1], ct[i]
+        T0, T1, c0, c1 = Tt[i - 1], Tt[i], values[i - 1], values[i]
         return c0 + (c1 - c0) * (Tc - T0) / (T1 - T0)
+
+    def cp(self, T, y=None):
+        """Specific heat of the gas, J/(kg K).
+        constant: c_p. variable: c_p(T) of air (table CP_AIR). mixture: sum_k Y_k c_p,k(T) over N2, O2,
+        CO2 and H2O (JANAF), with the products inferred from the oxygen consumed: the deficit
+        Y_O2,amb (1 - Y_F) - Y_O2 (dilution by the fuel gas accounted for) burned (1 + 1/s) kg of products
+        per kg of oxygen, split into CO2 and H2O by the cellulose stoichiometry; the fuel gas and the
+        rest are counted as N2. The energy equation rho c_p DT/Dt = q and the low-Mach constraint
+        div(u) = q / (rho c_p T) keep their form."""
+        c = self.cfg
+        if c.cp_model == 'constant':
+            return c.c_p
+        if not hasattr(self, '_cp_tables'):
+            mk = lambda a: torch.as_tensor(np.asarray(a, dtype=np.float64), dtype=T.dtype, device=T.device)
+            self._cp_tables = {'air': (mk(CP_AIR_T), mk(CP_AIR))}
+            for k, (M, values) in CP_SPECIES.items():
+                self._cp_tables[k] = (mk(CP_SPECIES_T), mk(np.asarray(values) / M))
+        if c.cp_model == 'variable' or y is None:
+            return self._interp(T, *self._cp_tables['air'])
+        nd = self.nd
+        Y_F, Y_O = y[nd + 4].clamp(0, 1), y[nd + 5].clamp(0, 1)
+        Y_P = ((c.Y_O2_amb * (1 - Y_F) - Y_O).clamp(min=0) * (1 + 1 / c.s_O2)).clamp(max=1)
+        Y_CO2, Y_H2O = PRODUCT_CO2 * Y_P, PRODUCT_H2O * Y_P
+        Y_N2 = (1 - Y_O - Y_CO2 - Y_H2O).clamp(min=0)
+        cp = lambda k: self._interp(T, *self._cp_tables[k])
+        return Y_N2 * cp('N2') + Y_O * cp('O2') + Y_CO2 * cp('CO2') + Y_H2O * cp('H2O')
+
+    def _sutherland(self, T, ref, S):
+        """Sutherland's law scaled to the value ref at T_inf; returns the value and its derivative."""
+        T0 = self.cfg.T_inf
+        v = ref * (T / T0) ** 1.5 * (T0 + S) / (T + S)
+        return v, v * (1.5 / T - 1 / (T + S))
+
+    def viscosity(self, T):
+        c = self.cfg
+        return c.mu if c.transport == 'constant' else self._sutherland(T, c.mu, SUTHERLAND_MU)[0]
+
+    def conductivity(self, T):
+        """Molecular thermal conductivity and its temperature derivative."""
+        c = self.cfg
+        if c.transport == 'constant':
+            return c.kappa, 0.0
+        return self._sutherland(T, c.kappa, SUTHERLAND_KAPPA)
 
     def rho(self, T):
         if self.cfg.density_constant:
@@ -194,19 +243,20 @@ class Model:
         sink of the published model (``q``) are used."""
         c, nd = self.cfg, self.nd
         T, Y = y[nd], y[nd + 1]
-        rho_cp = rho * self.cp(T)
+        rho_cp = rho * self.cp(T, y)
+        kap, dkap = self.conductivity(T)                         # molecular conduction: div(kap grad T)
+        grad2 = grad_T[0] ** 2
+        for g in grad_T[1:]:
+            grad2 = grad2 + g ** 2
         if c.radiation == 'diffusion':
-            k = (c.kappa + 4 * c.sigma * c.delta * T ** 3) / rho_cp
-            dkdT = 12 * c.sigma * c.delta * T ** 2 / rho_cp
-            grad2 = grad_T[0] ** 2
-            for g in grad_T[1:]:
-                grad2 = grad2 + g ** 2
+            k = (kap + 4 * c.sigma * c.delta * T ** 3) / rho_cp
+            dkdT = (dkap + 12 * c.sigma * c.delta * T ** 2) / rho_cp
             out = dkdT * grad2 + k * lap_T
         else:
             kappa_g = c.kappa_gas
             if not c.solid_temperature:   # one temperature: the fuel absorbs and emits at T as well
                 kappa_g = kappa_g + c.alpha_s * c.sigma_s * Y.clamp(min=0) / 4
-            out = c.kappa / rho_cp * lap_T + kappa_g * (self.G - 4 * c.sigma * T ** 4) / rho_cp
+            out = (kap * lap_T + dkap * grad2) / rho_cp + kappa_g * (self.G - 4 * c.sigma * T ** 4) / rho_cp
         if c.solid_temperature:
             s = solid if solid is not None else self.solid_rates(y, rho)
             return out + (s['Q_comb'] - s['Q_conv']) / rho_cp
@@ -219,10 +269,10 @@ class Model:
         fluxes = [F[j] * face_values(F[j], phi, nd - 1 - j, nd - 1 - j == 0) for j in range(nd)]
         return self.face_proj.divergence(fluxes) - phi * divF
 
-    def dilatation(self, heat, rho, T, solid):
+    def dilatation(self, heat, rho, T, solid, y=None):
         """div(u) imposed by the low Mach number approximation: thermal expansion heat / (rho c_p T),
         plus the volume of gas produced by pyrolysis, mdot / rho."""
-        out = heat / (self.cp(T) * rho * T)
+        out = heat / (self.cp(T, y) * rho * T)
         if solid is not None:
             out = out + solid['mdot'] / rho
         return out
@@ -249,9 +299,15 @@ class Model:
             speed2 = speed2 + u ** 2
         a = c.alpha_s * c.sigma_s * Y
         diameter = 4 / c.sigma_s
-        Re = torch.sqrt(speed2) * diameter * rho / c.mu
         dT = T - T_s
-        h = torch.maximum(c.kappa / diameter * 0.683 * Re ** 0.466 * c.Pr ** (1 / 3),
+        if c.transport == 'sutherland':   # gas properties at the film temperature
+            T_film = 0.5 * (T + T_s)
+            Re = torch.sqrt(speed2) * diameter * self.rho(T_film) / self.viscosity(T_film)
+            k_film = self.conductivity(T_film)[0]
+        else:
+            Re = torch.sqrt(speed2) * diameter * rho / c.mu
+            k_film = c.kappa
+        h = torch.maximum(k_film / diameter * 0.683 * Re ** 0.466 * c.Pr ** (1 / 3),
                           c.h_c * torch.abs(dT) ** (1 / 3))
         has = (Y > c.fuel_threshold) | (W > 0)
         Q_conv = h * a * dT * has
@@ -368,9 +424,11 @@ class Model:
         tau2 = at_wall(G[0][w] + G[w][0]) ** 2
         if nd == 3:
             tau2 = tau2 + at_wall(G[1][w] + G[w][1]) ** 2
-        tau_w = c.mu * torch.sqrt(tau2) + 1e-16
+        mu = self.viscosity(T)
+        mu_wall = at_wall(mu) if torch.is_tensor(mu) else mu
+        tau_w = mu_wall * torch.sqrt(tau2) + 1e-16
         u_tau = torch.sqrt(tau_w / rho)
-        z_plus = self.wall_distance * rho * u_tau / c.mu
+        z_plus = self.wall_distance * rho * u_tau / mu
         fw = 1 - torch.exp(-z_plus / 26)
         mu_sgs = rho * (c.C_s * self.Delta * fw) ** 2 * mod_S
         grad_mu = op.grad(mu_sgs)
@@ -391,7 +449,7 @@ class Model:
         c, op, nd = self.cfg, self.op, self.nd
         vel, T, Y = y[:nd], y[nd], y[nd + 1]
         rho = self.rho(T)
-        nu = c.mu / rho
+        nu = self.viscosity(T) / rho                                  # d(mu)/dx terms neglected
         grad_T, lap_T = op.grad(T), op.lap(T)
         solid = self.solid_rates(y, rho) if c.solid_temperature else None
         if solid is not None and self._first_stage:
@@ -403,7 +461,7 @@ class Model:
         drag = 0.5 * c.C_d * c.alpha_s * c.sigma_s * Y * torch.sqrt(speed2)
         buoyancy = (rho - c.rho_inf) / rho
         # Viscous term of the dilatation: nu / 3 * grad(div u), with div u from the energy equation
-        grad_div = None if c.density_constant else op.grad(self.dilatation(heat, rho, T, solid))
+        grad_div = None if c.density_constant else op.grad(self.dilatation(heat, rho, T, solid, y))
         sgs_u, sgs_T = self.sgs(vel, T, rho, grad_T, lap_T) if c.turbulence else ([0.0] * nd, 0.0)
         out = torch.empty_like(y)
         face_mode = c.projection == 'face'
@@ -439,7 +497,7 @@ class Model:
             # Fuel gas and oxygen: transported like T (same scheme, unit Lewis number, turbulent
             # Schmidt number = Pr), produced by pyrolysis and consumed by combustion
             scheme = op.limited if c.T_advection == 'koren' else op.upwind
-            D = c.kappa / (rho * self.cp(T))
+            D = self.conductivity(T)[0] / (rho * self.cp(T, y))
             # The pyrolysis gas is added mass: it brings fuel gas and dilutes what is already there
             mdot, omega = solid['mdot'], solid['omega']
             sources = {nd + 4: (mdot * (1 - y[nd + 4]) - omega) / rho,
@@ -517,7 +575,7 @@ class Model:
             if not c.density_constant:
                 rho1 = self.rho(T1)
                 solid1 = self.solid_rates(y1, rho1) if c.solid_temperature else None
-                target = self.dilatation(self.heat(y1, rho1, op.grad(T1), op.lap(T1), solid1), rho1, T1, solid1)
+                target = self.dilatation(self.heat(y1, rho1, op.grad(T1), op.lap(T1), solid1), rho1, T1, solid1, y1)
             P = self.face_proj
             F_star = P.to_faces(y1[:nd])
             F, p, its = P.project(y1[:nd], rho_n, target, dt, c.tol, max(c.max_iter, 200), p0=p)
@@ -538,7 +596,7 @@ class Model:
             # Low Mach number: div(u^{n+1}) is prescribed by the energy equation
             rho1 = self.rho(T1)
             solid1 = self.solid_rates(y1, rho1) if c.solid_temperature else None
-            target = self.dilatation(self.heat(y1, rho1, op.grad(T1), op.lap(T1), solid1), rho1, T1, solid1)
+            target = self.dilatation(self.heat(y1, rho1, op.grad(T1), op.lap(T1), solid1), rho1, T1, solid1, y1)
             f0 = rho_n / dt * (div - target)
             grad_rho = [g / rho_n for g in op.grad_half(rho_n)]
             # Fixed point on the variable-coefficient term grad(rho) . grad(p) / rho
@@ -631,7 +689,7 @@ class Model:
             # Y < 0 the heat that the reaction term released from fuel that did not exist
             rho1 = self.rho(y1[nd])
             dT = y1[nd] - T_raw
-            rcp = rho1 * self.cp(y1[nd])
+            rcp = rho1 * self.cp(y1[nd], y1)
             self.energy['clip_low'] += (rcp * dT.clamp(min=0)).sum() * self.dV
             self.energy['clip_high'] += (rcp * dT.clamp(max=0)).sum() * self.dV
             self.energy['fuel_overshoot'] += (fuel_density(y1[nd]) * (-Y_raw).clamp(min=0)).sum() * self.dV

@@ -106,7 +106,21 @@ and the subgrid stresses $\boldsymbol{\tau}_{sgs}$ of Section~\ref{sec:turbulenc
 The specific heat $c_p$ is constant by default; with \code{[gas] cp\_model = variable} it is the
 temperature-dependent value of air from ideal-gas tables (1005~J\,kg$^{-1}$K$^{-1}$ at 300~K, 1142 at
 1000~K, 1253 at 2000~K, interpolated linearly), used in the energy equation, the low-Mach constraint
-\eqref{eq:div} and the energy budget. Combustion products have somewhat higher values.
+\eqref{eq:div} and the energy budget. With \code{cp\_model = mixture} (extended model) it is weighted
+by composition, $c_p=\sum_kY_kc_{p,k}(T)$ over N$_2$, O$_2$, CO$_2$ and H$_2$O (rounded JANAF values). The
+products are inferred from the oxygen consumed: the deficit $Y_{O_2,\infty}(1-\Yf)-\YO$ corresponds to
+$(1+1/s)$~kg of products per kg of oxygen, split into CO$_2$ and H$_2$O by the cellulose stoichiometry
+C$_6$H$_{10}$O$_5$ + 6\,O$_2$ $\to$ 6\,CO$_2$ + 5\,H$_2$O; the fuel gas and the rest are counted as N$_2$.
+Fully burned gas has $c_p\approx1480$~J\,kg$^{-1}$K$^{-1}$ at 2000~K, 18\% more than air.
+
+Transport properties are constant by default. With \code{[gas] transport = sutherland} the viscosity
+and the conductivity follow Sutherland's law, $\mu(T)=\mu_\infty(T/T_\infty)^{3/2}(T_\infty+S)/(T+S)$,
+with $S=110.4$~K for $\mu$ and 194~K for $\kappa$, scaled to the constant values at $T_\infty$. The
+conduction term is then $\nabla\cdot(\kappa\nabla T)=\kappa\nabla^2T+\kappa'|\nabla T|^2$, the gradient of
+$\mu$ is neglected in the momentum equation, and the convective heat transfer to the fuel uses the
+gas properties at the film temperature $(T+T_s)/2$. Molecular transport is several orders of
+magnitude smaller than the subgrid transport at the resolutions used, so its main effect is on the
+heat transfer to the fuel.
 \begin{equation}\label{eq:energy}
   \frac{\partial T}{\partial t} + \vu\cdot\nabla T = \frac{\dot q}{\rho c_p} - q_{sgs}(T).
 \end{equation}
@@ -531,7 +545,8 @@ Key & Default & Meaning \\
 \code{[density] constant} & \code{False} & constant density (incompressible) \\
 \multicolumn{3}{l}{\emph{Gas and turbulence}}\\
 $c_p$, $\rho_\infty$, $\mu$, $\kappa$ & 1007, 1.225, $1.802\times10^{-5}$, 0.02476 & SI units (not in the input file) \\
-\code{[gas] cp\_model} & \code{constant} & \code{constant} or \code{variable} ($c_p(T)$ of air) \\
+\code{[gas] cp\_model} & \code{constant} & \code{constant}, \code{variable} ($c_p(T)$ of air), \code{mixture} \\
+\code{[gas] transport} & \code{constant} & \code{constant} or \code{sutherland} \\
 \code{[temperature] T\_inf} & 288.15 K & ambient temperature \\
 \code{[turbulence] enabled} & \code{True} & Smagorinsky model \\
 \code{[turbulence] C\_s} & 0.2 & Smagorinsky constant \\
