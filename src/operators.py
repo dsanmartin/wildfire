@@ -77,6 +77,17 @@ def _limited_faces(a_l, a_r, p_m1, p_0, p_p1, p_p2):
     return torch.where(0.5 * (a_l + a_r) >= 0, from_left, from_right)
 
 
+def face_values(F, phi, axis, vertical):
+    """Koren-limited value of phi at the faces i+1/2 (stored at index i), upwinded with the face
+    velocity F. Vertical axis: replicated end values (faces of the last row are unused)."""
+    if not vertical:
+        r = lambda k: torch.roll(phi, -k, axis)
+        return _limited_faces(F, F, r(-1), phi, r(1), r(2))
+    n = phi.shape[0]
+    P = torch.cat([phi[:1], phi, phi[-1:], phi[-1:]], 0)
+    return _limited_faces(F, F, P[0:n], P[1:n + 1], P[2:n + 2], P[3:n + 3])
+
+
 def limited_periodic(a, phi, h, axis):
     """a * dphi/dx along a periodic axis with Koren-limited face values: third order where phi is
     smooth, first-order upwind at extrema and sharp fronts, so phi stays bounded (no new extrema)."""

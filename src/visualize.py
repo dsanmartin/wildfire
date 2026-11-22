@@ -117,6 +117,12 @@ def save_anim(anim, out_dir, name, args, ffmpegs):
     print('wrote', path)
 
 
+def solids(ax, X, Z, mask):
+    """Grey fill of the building nodes in a plane."""
+    if mask is not None and mask.any():
+        ax.contourf(X, Z, mask.astype(float), levels=[0.5, 1.5], colors=['0.55'], zorder=3)
+
+
 def arrows(ax, X, Z, U, V, xlim, zlim, scale):
     """Velocity arrows in the plane, about 40 x 14 of them over the visible window, same scale for all frames."""
     ix = np.flatnonzero((X >= xlim[0]) & (X <= xlim[1]))
@@ -206,6 +212,7 @@ def render(d, name, args, out_dir, ffmpeg):
             ax.clear()
             m = ax.pcolormesh(x, z, F[n], cmap=cmap, vmin=vmin, vmax=vmax, shading='auto')
             ax.contour(x, z, d['Y'][n], levels=[0.5], colors='w', linewidths=0.8)
+            solids(ax, x, z, d.get('solid'))
             if args.arrows:
                 arrows(ax, x, z, d['u'][n], d['v'][n], xlim, zlim, arrow_scale)
             ax.set_xlim(xlim); ax.set_ylim(zlim); ax.set_ylabel('z [m]')
@@ -235,12 +242,18 @@ def render(d, name, args, out_dir, ffmpeg):
     col = d['fuel_column']
     frac = col / np.where(col[0] > 0, col[0], np.nan)
     zs, ys = float(d['z_slice']), float(d['y_slice'])
+    solid = d.get('solid')
+    j_plane, k_plane = int(np.argmin(np.abs(y - ys))), int(np.argmin(np.abs(z - zs)))
 
     def draw(axs, n):
         for ax in axs:
             ax.clear()
         m = axs[0].pcolormesh(x, y, planes['xy'][n], cmap=cmap, vmin=vmin, vmax=vmax, shading='auto')
         axs[0].contour(x, y, np.nan_to_num(frac[n], nan=1.0), levels=[0.5], colors='w', linewidths=0.8)
+        if solid is not None:
+            ix = int(np.argmin(np.abs(x - d['yz_x'][n])))
+            solids(axs[0], x, y, solid[k_plane]); solids(axs[1], x, z, solid[:, j_plane, :])
+            solids(axs[2], y, z, solid[:, :, ix])
         if args.arrows:
             arrows(axs[0], x, y, d['xy_u'][n], d['xy_v'][n], xlim, ylim, arrow_scale)
             arrows(axs[1], x, z, d['xz_u'][n], d['xz_w'][n], xlim, zlim, arrow_scale)

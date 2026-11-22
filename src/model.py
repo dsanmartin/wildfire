@@ -12,6 +12,8 @@ import torch
 from operators import Operators
 from pressure import PoissonSolver
 from radiation import Radiation
+from projection import FaceProjection
+from operators import face_values
 
 
 ENERGY_TERMS = {
@@ -67,6 +69,13 @@ class Model:
             # Surface node above every dead node: dead nodes copy its temperature (see apply_bc)
             dead_flat = np.flatnonzero(dead)
             self.dead_surface = idx(surface.reshape(-1)[dead_flat % row] * row + dead_flat % row)
+        self._init_solids(grid, to)
+        # Face-based projection (default): discretely conservative face fluxes, also used for transport
+        self.faces = None
+        if cfg.projection == 'face':
+            self.face_proj = FaceProjection(self.shape, self.h, device, dtype,
+                                            grid['solid'] if self.has_solids else None)
+        self.max_divergence = 0.0
         # Pressure solver
         lengths = [cfg.x_max - cfg.x_min] + ([cfg.y_max - cfg.y_min] if nd == 3 else [])
         legacy_length = cfg.x_max if (cfg.legacy and nd == 2) else None
@@ -92,6 +101,61 @@ class Model:
         # Energy budget, accumulated on the device (J per metre of depth in 2D, J in 3D)
         self.dV = float(np.prod(self.h))
         self.energy = {key: torch.zeros((), dtype=dtype, device=device) for key in ENERGY_TERMS}
+
+    def _init_solids(self, grid, to):
+        """Buildings: direct-forcing immersed boundary on the grid nodes.
+
+        Solid nodes have zero velocity. Solid nodes with at least one fluid face neighbour ('wall
+        nodes') take, for T and the gas species, the average of their fluid neighbours: zero normal
+        gradient, i.e. adiabatic, impermeable walls. Interior solid nodes hold ambient values.
+        """
+        solid = grid.get('solid')
+        self.has_solids = solid is not None and bool(solid.any())
+        if not self.has_solids:
+            return
+        cfg, nd = self.cfg, self.nd
+        shape, N = solid.shape, solid.size
+        fluid = ~solid
+        index = np.arange(N).reshape(shape)
+        neighbours, is_fluid = [], []
+        for axis in range(nd):
+            for s in (1, -1):
+                nb = np.roll(index, -s, axis=axis)
+                valid = np.ones(shape, dtype=bool)
+                if axis == 0:                                     # vertical: no wrap-around
+                    (valid[-1] if s == 1 else valid[0])[...] = False
+                neighbours.append(nb.ravel())
+                is_fluid.append((fluid.ravel()[nb.ravel()] & valid.ravel()))
+        neighbours, is_fluid = np.stack(neighbours, 1), np.stack(is_fluid, 1)
+        wall = solid.ravel() & is_fluid.any(1)
+        weights = is_fluid[wall].astype(np.float64)
+        idx = lambda a: torch.as_tensor(a, dtype=torch.long, device=self.device)
+        self.solid_idx = idx(np.flatnonzero(solid))
+        self.wall_idx = idx(np.flatnonzero(wall))
+        self.wall_nb = idx(neighbours[wall])
+        self.wall_w = to(weights / weights.sum(1, keepdims=True))
+        values = [0.0] * nd + [cfg.T_inf, 0.0] + ([cfg.T_inf, 0.0, 0.0, cfg.Y_O2_amb] if cfg.solid_temperature else [])
+        self.solid_values = to(values).unsqueeze(1)
+        self.solid_mask = torch.as_tensor(solid, device=self.device)
+        self.fluid_mask = to(fluid.astype(np.float64))
+        near = np.zeros(N, dtype=bool)                            # fluid nodes touching a wall
+        near[neighbours[wall].ravel()[is_fluid[wall].ravel()]] = True
+        self.near_wall = torch.as_tensor(near.reshape(shape), device=self.device)
+        # Wall distance for the turbulence damping: also the distance to the nearest building
+        try:
+            from scipy.ndimage import distance_transform_edt
+            d = distance_transform_edt(fluid, sampling=self.h[::-1])
+            self.wall_distance = torch.minimum(self.wall_distance, to(d))
+        except ImportError:
+            print("scipy not available: turbulence wall damping ignores building walls")
+        self.wall_divergence = 0.0
+
+    def apply_solids(self, y, homogeneous=False):
+        """Wall conditions of the buildings (see _init_solids)."""
+        flat = y.view(y.shape[0], -1)
+        flat[:, self.solid_idx] = 0.0 if homogeneous else self.solid_values
+        for k in self.neumann:
+            flat[k, self.wall_idx] = (flat[k][self.wall_nb] * self.wall_w).sum(1)
 
     # ---------------------------------------------------------------- physics
     def rho(self, T):
@@ -126,6 +190,13 @@ class Model:
             s = solid if solid is not None else self.solid_rates(y, rho)
             return out + (s['Q_comb'] - s['Q_conv']) / rho_cp
         return out + self.q(T, Y)
+
+    def flux_advection(self, phi, F, divF):
+        """u . grad(phi) in conservative form with the face fluxes F: div(F phi_face) - phi div(F),
+        phi_face Koren-limited and upwinded with F. Exact for a uniform phi and conservative."""
+        nd = self.nd
+        fluxes = [F[j] * face_values(F[j], phi, nd - 1 - j, nd - 1 - j == 0) for j in range(nd)]
+        return self.face_proj.divergence(fluxes) - phi * divF
 
     def dilatation(self, heat, rho, T, solid):
         """div(u) imposed by the low Mach number approximation: thermal expansion heat / (rho c_p T),
@@ -192,6 +263,9 @@ class Model:
         if self.has_terrain:                                      # terrain: opaque, at its own temperature
             kappa = torch.where(self.dead_mask, torch.full_like(kappa, 1e3), kappa)
             Ib = torch.where(self.dead_mask, c.sigma * T ** 4 / np.pi, Ib)
+        if self.has_solids:                                       # buildings: opaque, at their wall temperature
+            kappa = torch.where(self.solid_mask, torch.full_like(kappa, 1e3), kappa)
+            Ib = torch.where(self.solid_mask, c.sigma * T ** 4 / np.pi, Ib)
         I_ground = c.sigma * T[0] ** 4 / np.pi
         self.G = self.rad.solve(kappa, Ib, I_ground, c.sigma * c.T_inf ** 4 / np.pi)
 
@@ -311,15 +385,25 @@ class Model:
         grad_div = None if c.density_constant else op.grad(self.dilatation(heat, rho, T, solid))
         sgs_u, sgs_T = self.sgs(vel, T, rho, grad_T, lap_T) if c.turbulence else ([0.0] * nd, 0.0)
         out = torch.empty_like(y)
+        face_mode = c.projection == 'face'
+        if face_mode:
+            F = self.faces if self.faces is not None else self.face_proj.to_faces(vel)
+            divF = self.face_proj.divergence(F)
+            self._F, self._divF = F, divF
         for i in range(nd):
-            conv = op.upwind(vel[0], vel[i], 0)
-            for j in range(1, nd):
-                conv = conv + op.upwind(vel[j], vel[i], j)
+            if face_mode:
+                conv = self.flux_advection(vel[i], F, divF)
+            else:
+                conv = op.upwind(vel[0], vel[i], 0)
+                for j in range(1, nd):
+                    conv = conv + op.upwind(vel[j], vel[i], j)
             force = self.gravity[i] * buoyancy - drag * vel[i]
             if grad_div is not None:
                 force = force + nu * grad_div[i] / 3
             out[i] = nu * op.lap(vel[i]) - conv + force - sgs_u[i]
-        if c.T_advection == 'central':   # original: oscillates at the fire front (cell Peclet number >> 1)
+        if face_mode:
+            adv = self.flux_advection(T, F, divF)
+        elif c.T_advection == 'central':   # original: oscillates at the fire front (cell Peclet number >> 1)
             adv = vel[0] * grad_T[0]
             for j in range(1, nd):
                 adv = adv + vel[j] * grad_T[j]
@@ -341,9 +425,12 @@ class Model:
                        nd + 5: -(c.s_O2 * omega + mdot * y[nd + 5]) / rho}
             for k, src in sources.items():
                 Yk = y[k]
-                adv = scheme(vel[0], Yk, 0)
-                for j in range(1, nd):
-                    adv = adv + scheme(vel[j], Yk, j)
+                if face_mode:
+                    adv = self.flux_advection(Yk, F, divF)
+                else:
+                    adv = scheme(vel[0], Yk, 0)
+                    for j in range(1, nd):
+                        adv = adv + scheme(vel[j], Yk, j)
                 lap = op.lap(Yk)
                 rate = D * lap - adv + src
                 if c.turbulence:
@@ -391,6 +478,8 @@ class Model:
             flat[:, self.dead] = 0.0 if homogeneous else self.dead_values
             if not self.cfg.legacy:
                 flat[nd, self.dead] = flat[nd, self.dead_surface]
+        if self.has_solids:
+            self.apply_solids(y, homogeneous)
         return y
 
     # -------------------------------------------------------------- time step
@@ -402,6 +491,25 @@ class Model:
         div = op.half(y1[0], 0)
         for j in range(1, nd):
             div = div + op.half(y1[j], j)
+        target = 0.0
+        if c.projection == 'face':
+            if not c.density_constant:
+                rho1 = self.rho(T1)
+                solid1 = self.solid_rates(y1, rho1) if c.solid_temperature else None
+                target = self.dilatation(self.heat(y1, rho1, op.grad(T1), op.lap(T1), solid1), rho1, T1, solid1)
+            P = self.face_proj
+            F_star = P.to_faces(y1[:nd])
+            F, p, its = P.project(y1[:nd], rho_n, target, dt, c.tol, max(c.max_iter, 200), p0=p)
+            # Node velocities: the average of the corrections of the two adjacent faces (Rhie-Chow)
+            for j in range(nd):
+                dF = F[j] - F_star[j]
+                y1[j] += 0.5 * (dF + P._shift(dF, nd - 1 - j, -1))
+            self.faces, self.pressure_iterations = F, its
+            m = P.unknown > 0
+            self.max_divergence = float((P.divergence(F) - target)[m].abs().max())
+            if self.has_solids:
+                self.wall_divergence = float((P.divergence(F) - target)[self.near_wall & m].abs().max())
+            return p
         if c.density_constant:
             p = self.poisson.solve(rho_n / dt * div)
             self.pressure_iterations = 1
@@ -428,6 +536,33 @@ class Model:
         grad_p = op.grad(p)
         for j in range(nd):
             y1[j] -= dt / rho_n * grad_p[j]
+        if self.has_solids:
+            p = self.wall_correction(y1, rho_n, target, p)
+        return p
+
+    def wall_correction(self, y1, rho_n, target, p):
+        """Remove the flow through the buildings. Zeroing the velocity inside the solids after the
+        projection breaks the divergence constraint in the fluid next to the walls; each iteration
+        zeroes it again and solves one more Poisson problem for the remaining divergence error in the
+        fluid (an iterative direct-forcing correction, as in FDS)."""
+        c, op, nd, dt = self.cfg, self.op, self.nd, self.dt
+        flat = y1.view(y1.shape[0], -1)
+        for _ in range(c.wall_iterations):
+            flat[:nd, self.solid_idx] = 0.0
+            div = op.half(y1[0], 0)
+            for j in range(1, nd):
+                div = div + op.half(y1[j], j)
+            err = (div - target) * self.fluid_mask
+            dp = self.poisson.solve(rho_n / dt * err)
+            grad = op.grad(dp)
+            for j in range(nd):
+                y1[j] -= dt / rho_n * grad[j]
+            p = p + dp
+        flat[:nd, self.solid_idx] = 0.0
+        div = op.half(y1[0], 0)
+        for j in range(1, nd):
+            div = div + op.half(y1[j], j)
+        self.wall_divergence = float(((div - target) * self.near_wall).abs().max())
         return p
 
     def step(self, t_n, y, p):

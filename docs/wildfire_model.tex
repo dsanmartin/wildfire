@@ -285,6 +285,23 @@ combustion over the first 6~s of the F19 case at $\Delta x=1.17$~m). The publish
 with \code{--legacy}, uses the second-order form for all variables.
 $Y$, $T_s$ and $W$ are not transported and need no boundary condition.
 
+\subsection{Buildings}
+Buildings are boxes standing on the ground, defined in the \code{[buildings]} section, one per key:
+\code{name = x0, x1, height} (2D) or \code{name = x0, x1, y0, y1, height} (3D), in metres. Solid nodes have
+zero velocity, no fuel and ambient values. Solid nodes with a fluid face neighbour (wall nodes) take
+the average of their fluid neighbours for $T$ and the species: adiabatic, impermeable walls. With
+the face-based projection the faces between solid and fluid carry no flux. Solids are opaque to
+radiation at the temperature of their wall nodes, and the turbulence damping uses the distance to
+the nearest building as well as the height above the ground.
+
+Verification: a building in a 5~m\,s$^{-1}$ wind with all physics on and no fire keeps $T$ and
+$\YO$ exactly at their ambient values with no flow inside the solid. Flow around a 10~m cube on a
+1~m grid (10 cells per height, smooth power-law inflow) with the face-based projection: stable for
+60~s, divergence error $1.6\times10^{-10}$~s$^{-1}$, mean upstream separation 0.8--1.5 heights ahead of
+the front face and reattachment 3.5--3.7 heights behind the rear face. Wind-tunnel data for cubes
+give about 1 and 1.6 heights (e.g.\ Martinuzzi \& Tropea 1993, channel flow); the longer wake is
+attributed to the coarse resolution, the absence of inflow turbulence and the short averaging time.
+
 \subsection{Terrain (immersed boundary)}
 Nodes with height between the terrain height minus $\Delta z$ and the terrain height are \emph{cut
 nodes}: velocity from the ground profile, zero vertical gradient of $T$ and species (from the two
@@ -381,6 +398,31 @@ first order in time overall. The radiation field $G$ is recomputed every \code{u
 steps from the state at the start of the step and held fixed in between.
 
 \subsection{Projection and pressure}
+\paragraph{Face-based projection (default, \code{[pressure] projection = face}).}
+Velocities are stored at the nodes, but mass conservation is imposed on face fluxes. Face velocities
+are averages of the provisional node velocities, $F_{j,i+1/2}=\tfrac12(u_{j,i}+u_{j,i+1})$ (zero on
+faces next to solids). The divergence of a node's control volume is the net flux through its faces,
+$D_i=\sum_j(F_{j,i+1/2}-F_{j,i-1/2})/h_j$, where the ground node is a half cell with zero flux through the
+ground. The projection
+\begin{equation}
+  F^{n+1}_{j,i+1/2} = F^*_{j,i+1/2} - \frac{\Delta t}{\rho_{i+1/2}}\,\frac{p_{i+1}-p_i}{h_j},\qquad
+  \sum_j\frac{1}{h_j^2}\Big[\frac{p_{i+1}-p_i}{\rho_{i+1/2}}-\frac{p_i-p_{i-1}}{\rho_{i-1/2}}\Big]
+  = \frac{D_i(F^*)-D^*_i}{\Delta t},
+\end{equation}
+with arithmetic face densities, makes the face fluxes satisfy the discrete constraint to the solver
+tolerance (verified to about $10^{-11}$ for density ratios of 8 and with buildings). Faces next to
+solid nodes are closed: zero flux through walls and a zero-gradient pressure condition, exactly.
+The equation is solved by preconditioned conjugate gradients (symmetric with respect to the cell
+volumes), preconditioned by the direct inverse of the constant-coefficient operator:
+finite-difference eigenvalues $-(2\sin(\pi r/N)/h)^2$ in the periodic directions (FFT) and an
+eigendecomposition of the vertical operator. With constant density and no solids one iteration
+suffices; with buildings or strong density variations 10--30. The node velocities receive the
+average of the corrections of their two faces (Rhie--Chow type), and the projected face fluxes
+transport momentum, temperature and species in conservative form,
+$\vu\cdot\nabla\phi\approx\sum_j\big(F_{j,i+1/2}\phi_{i+1/2}-F_{j,i-1/2}\phi_{i-1/2}\big)/h_j-\phi_iD_i$,
+with Koren-limited face values $\phi_{i\pm1/2}$ upwinded with $F$.
+
+\paragraph{Nodal projection (\code{projection = nodal}, original).}
 Given the provisional state $y^*$ (velocity $\vu^*$), the pressure solves the variable-density
 Poisson equation by fixed-point iteration:
 \begin{equation}
@@ -393,7 +435,13 @@ $\max|p^{(m+1)}-p^{(m)}|<$\,\code{tol} or \code{max\_iter} iterations. Then
   \vu^{n+1} = \vu^* - \frac{\Delta t}{\rho^n}\nabla p.
 \end{equation}
 
-\paragraph{Poisson solver.} FFT in the periodic directions (real FFT in $x$, complex in $y$). For
+The nodal projection is not discretely consistent: the Laplacian of the Poisson solver is compact
+(spectral in $x$, three points in $z$) while the divergence and gradient are central differences over
+two cells, so the projected node velocities are not divergence-free for the central operators.
+Errors of about 0.5~s$^{-1}$ were measured even away from obstacles in a flow around a cube, and the
+flow around buildings went unstable; the face-based projection removes both problems.
+
+\paragraph{Poisson solver (nodal projection).} FFT in the periodic directions (real FFT in $x$, complex in $y$). For
 each horizontal wavenumber $k$ the vertical problem is tridiagonal: second-order differences in
 $z$ with $\gamma_k=-2-(k\Delta z)^2$ on the diagonal, $p=0$ at the top row and a second-order
 Neumann condition at the ground. Two direct methods solve all wavenumbers at once:
@@ -468,7 +516,9 @@ Key & Default & Meaning \\
 \code{[numerics] T\_advection} & \code{koren} & \code{koren}, \code{upwind}, \code{central} \\
 \code{[numerics] bound} & \code{True} & apply the bounds of the solution \\
 \code{[pressure] tol, max\_iter} & $10^{-10}$, 50 & fixed point of the pressure \\
-\code{[pressure] poisson} & \code{auto} & \code{auto}, \code{thomas}, \code{eig} \\
+\code{[pressure] poisson} & \code{auto} & \code{auto}, \code{thomas}, \code{eig} (nodal projection) \\
+\code{[pressure] projection} & \code{face} & \code{face} or \code{nodal} \\
+\code{[buildings]} \code{name} & -- & building box (see Section~\ref{sec:ibc}) \\
 \code{[density] constant} & \code{False} & constant density (incompressible) \\
 \multicolumn{3}{l}{\emph{Gas and turbulence}}\\
 $c_p$, $\rho_\infty$, $\mu$, $\kappa$ & 1007, 1.225, $1.802\times10^{-5}$, 0.02476 & SI units (not in the input file) \\
@@ -545,6 +595,10 @@ $c_w$, $L_v$, $T_{boil}$ & 4184, $2.259\times10^6$, 373.15 & water properties (S
   \item McGrattan, K., et al. \emph{Fire Dynamics Simulator, Technical Reference Guide}. NIST.
   \item Wrede, H., et al. (2025). Fire-X: Extinguishing fire with stoichiometric heat release.
         \emph{ACM Transactions on Graphics}, 44(6), 269.
+  \item Martinuzzi, R., \& Tropea, C. (1993). The flow around surface-mounted, prismatic obstacles
+        placed in a fully developed channel flow. \emph{Journal of Fluids Engineering}, 115, 85--92.
+  \item Rhie, C.~M., \& Chow, W.~L. (1983). Numerical study of the turbulent flow past an airfoil
+        with trailing edge separation. \emph{AIAA Journal}, 21, 1525--1532.
   \item Koren, B. (1993). A robust upwind discretization method for advection, diffusion and
         source terms. In \emph{Numerical Methods for Advection--Diffusion Problems}, Vieweg.
 \end{itemize}

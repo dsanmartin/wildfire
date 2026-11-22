@@ -159,6 +159,10 @@ def run(cfg, verbose=True):
                     *([f"Fuel temperature (nodes with fuel): Min = {s[0]:.2f} K, Max {s[1]:.2f} K",
                        f"Heat release rate: {s[2] / 1e6:.3f} {'MW/m' if nd == 2 else 'MW'}"]
                       if (s := model.solid_diagnostics(y) if cfg.solid_temperature else None) else []),
+                    *([f"Max discrete divergence error (face fluxes): {model.max_divergence:.3e} 1/s"]
+                      if cfg.projection == 'face' else []),
+                    *([f"Max divergence error next to buildings: {model.wall_divergence:.3e} 1/s"]
+                      if getattr(model, 'has_solids', False) else []),
                     f"Pressure iterations: {model.pressure_iterations}, "
                     f"mean step time: {(now - last) / ((n % NT) + 1):.6f} s")
                 last = now
@@ -182,6 +186,8 @@ def run(cfg, verbose=True):
 
     data = rec.arrays()
     data['x'], data['t'] = grid['x'], np.array(rec.times)
+    if grid['solid'].any():
+        data['solid'] = with_periodic_ends(grid['solid'])
     n_saved = len(rec.times)
     for key, values in energy.items():      # cumulative, in J (per metre in 2D), at the saved times
         data['E_' + key] = np.array(values[:n_saved]) * 1e3

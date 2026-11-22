@@ -101,6 +101,18 @@ def build(cfg):
     dead = Zm < ground - dz
     for field, value in zip(velocity + [T, Y], [0.0] * cfg.ndim + [cfg.T_inf, 0.0]):
         field[dead] = value
+    # Buildings: boxes standing on the terrain. Solid nodes: no flow, no fuel, ambient temperature.
+    solid = np.zeros_like(Zm, dtype=bool)
+    for _, box in cfg.buildings:
+        if cfg.ndim == 2:
+            x0, x1, height = box
+            inside = (Xm >= x0) & (Xm <= x1)
+        else:
+            x0, x1, y0, y1, height = box
+            inside = (Xm >= x0) & (Xm <= x1) & (Ym >= y0) & (Ym <= y1)
+        solid |= inside & (Zm <= ground + height)
+    for field, value in zip(velocity + [T, Y], [0.0] * cfg.ndim + [cfg.T_inf, 0.0]):
+        field[solid] = value
     fields = velocity + [T, Y]
     if cfg.solid_temperature:
         # The fuel starts at the gas temperature (heat-driven pyrolysis: at most T_pyr_end, where it is
@@ -113,6 +125,6 @@ def build(cfg):
         'x': x, 'y': y, 'z': z, 't': t, 'dt': dt, 'spacings': spacings,
         'Xm': Xm, 'Ym': Ym, 'Zm': Zm, 'ground': ground,
         'state': np.stack(fields),                   # (ndim + 2 [+ 2], Nz, [Ny-1,] Nx-1): u.., T, Y [, T_s, W, Y_F, Y_O2]
-        'cut': cut, 'dead': dead,
+        'cut': cut, 'dead': dead, 'solid': solid,
         'source_mask': shape > 0.01,                 # nodes held at T0 while t <= t_source
     }

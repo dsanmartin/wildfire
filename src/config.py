@@ -12,7 +12,7 @@ A file is 3D when it defines ``z_min``, ``z_max`` and ``Nz``.
 """
 import configparser
 import warnings
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 
 T_INF = 288.15
 
@@ -130,9 +130,14 @@ class Config:
     tol: float = 1e-10
     max_iter: int = 50
     log_solver: bool = False
-    poisson: str = 'auto'               # auto, thomas, eig
+    poisson: str = 'auto'               # auto, thomas, eig (nodal projection)
+    projection: str = 'face'            # face: discretely conservative face fluxes; nodal: original projection
     # Reproduce the original src_legacy/ code, defects included (see README of this folder)
     legacy: bool = False
+    # Buildings (immersed solids): boxes standing on the ground, (x0, x1, height) in 2D and
+    # (x0, x1, y0, y1, height) in 3D, in metres. Defined in the [buildings] section, one per key.
+    buildings: list = field(default_factory=list)
+    wall_iterations: int = 0        # extra pressure corrections after the projection (see docs: not effective with the current collocated projection)
     # Plan-view model (model = planview): fuel-bed layer in x-y with prescribed wind
     wind_direction: float = 0.0     # direction the wind blows towards, degrees from +x (counter-clockwise)
     wind_factor: float = None       # mid-flame wind / u_r; None: power law at the bed height, (Y_h / z_r)^alpha_u
@@ -193,6 +198,7 @@ _KEYS = {
     ('wind', 'u_r'): ('u_r', float), ('wind', 'shape'): ('initial_u_type', str),
     ('pressure', 'tol'): ('tol', float), ('pressure', 'max_iter'): ('max_iter', int),
     ('pressure', 'log_solver'): ('log_solver', bool), ('pressure', 'poisson'): ('poisson', str),
+    ('pressure', 'wall_iterations'): ('wall_iterations', int), ('pressure', 'projection'): ('projection', str),
     ('density', 'constant'): ('density_constant', bool),
     ('turbulence', 'enabled'): ('turbulence', bool), ('turbulence', 'C_s'): ('C_s', float),
     ('turbulence', 'filter_width'): ('filter_width', float),
@@ -211,6 +217,11 @@ def load_config(path: str, **overrides) -> Config:
     cfg = Config()
     given = set()
     for section in parser.sections():
+        if section == 'buildings':   # any key: a box given by comma-separated numbers
+            for key in parser[section]:
+                box = tuple(float(v) for v in parser.get(section, key).split(','))
+                cfg.buildings.append((key, box))
+            continue
         for key in parser[section]:
             if (section, key) not in _KEYS:
                 warnings.warn(f"[{section}] {key} is not a known parameter and is ignored")
@@ -234,6 +245,11 @@ def load_config(path: str, **overrides) -> Config:
         cfg.z_min, cfg.z_max, cfg.Nz = cfg.y_min, cfg.y_max, cfg.Ny
     if cfg.experiment != 'fire':
         raise NotImplementedError(f"experiment '{cfg.experiment}' is not ported; only 'fire' is (use src_legacy/ for the others)")
+    for name, box in cfg.buildings:
+        if len(box) != (3 if cfg.ndim == 2 else 5):
+            raise ValueError(f"[buildings] {name}: expected {'x0, x1, height' if cfg.ndim == 2 else 'x0, x1, y0, y1, height'}")
+    if cfg.buildings and (cfg.model == 'planview' or cfg.legacy):
+        raise NotImplementedError("buildings need the vertical model without --legacy")
     if cfg.topography_shape == 'slope' and cfg.ndim == 3:
         raise NotImplementedError("'slope' topography is 2D only")
     for key, value in overrides.items():
@@ -241,11 +257,11 @@ def load_config(path: str, **overrides) -> Config:
             setattr(cfg, key, value)
     if cfg.legacy:  # everything as in src_legacy/
         cfg.reaction, cfg.sink, cfg.T_advection = 'explicit', 'legacy', 'central'
-        cfg.solid_temperature, cfg.radiation = False, 'diffusion'
+        cfg.solid_temperature, cfg.radiation, cfg.projection = False, 'diffusion', 'nodal'
     for key, allowed in (('reaction', ('exact', 'explicit')), ('sink', ('surface', 'legacy')),
                          ('T_advection', ('upwind', 'koren', 'central')),
                          ('radiation', ('transport', 'diffusion')), ('pyrolysis', ('linear', 'arrhenius')),
-                         ('model', ('vertical', 'planview'))):
+                         ('model', ('vertical', 'planview')), ('projection', ('face', 'nodal'))):
         if getattr(cfg, key) not in allowed:
             raise ValueError(f"{key} must be one of {allowed}, got '{getattr(cfg, key)}'")
     return cfg
