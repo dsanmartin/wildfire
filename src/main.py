@@ -156,9 +156,10 @@ def run(cfg, verbose=True):
                     f"CFL: {cfl:.6f}",
                     f"Gas temperature: Min = {T_min:.2f} K, Max {T_max:.2f} K",
                     f"Fuel: Min = {Y_min:.2f}, Max {Y_max:.2f}",
-                    *([f"Fuel temperature (nodes with fuel): Min = {s[0]:.2f} K, Max {s[1]:.2f} K",
-                       f"Heat release rate: {s[2] / 1e6:.3f} {'MW/m' if nd == 2 else 'MW'}"]
+                    *([f"Fuel temperature (nodes with fuel): Min = {s[0]:.2f} K, Max {s[1]:.2f} K"]
                       if (s := model.solid_diagnostics(y) if cfg.solid_temperature else None) else []),
+                    *([f"Heat release rate: {fd[0] / 1e6:.3f} {'MW/m' if nd == 2 else 'MW'}, "
+                       f"HRR-weighted gas temperature: {fd[1]:.1f} K"] if (fd := model.flame_diagnostics(y)) else []),
                     *([f"Max discrete divergence error (face fluxes): {model.max_divergence:.3e} 1/s"]
                       if cfg.projection == 'face' else []),
                     *([f"Max divergence error next to buildings: {model.wall_divergence:.3e} 1/s"]

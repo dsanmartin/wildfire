@@ -16,6 +16,12 @@ from projection import FaceProjection
 from operators import face_values
 
 
+# Specific heat of air at constant pressure, J/(kg K), ideal-gas tables (e.g. Cengel & Boles, Table A-17).
+# Combustion products (CO2, H2O) have somewhat higher values; air is used for the whole gas.
+CP_AIR_T = np.array([250.0, 300, 400, 500, 600, 800, 1000, 1200, 1500, 2000, 2500, 3000])
+CP_AIR = np.array([1003.0, 1005, 1013, 1029, 1051, 1099, 1142, 1173, 1211, 1253, 1286, 1312])
+
+
 ENERGY_TERMS = {
     'combustion': 'heat of the fuel actually burned',
     'fuel_overshoot': 'extra heat released by burning more fuel than there was (Y < 0 reset to 0)',
@@ -158,6 +164,21 @@ class Model:
             flat[k, self.wall_idx] = (flat[k][self.wall_nb] * self.wall_w).sum(1)
 
     # ---------------------------------------------------------------- physics
+    def cp(self, T):
+        """Specific heat of the gas: constant, or c_p(T) of air interpolated linearly in the table
+        CP_AIR (clamped at its ends). With c_p(T) the energy equation rho c_p(T) DT/Dt = q and the
+        low-Mach constraint div(u) = q / (rho c_p T) keep their form."""
+        if self.cfg.cp_model == 'constant':
+            return self.cfg.c_p
+        if not hasattr(self, '_cp_table'):
+            self._cp_table = (torch.as_tensor(CP_AIR_T, dtype=T.dtype, device=T.device),
+                              torch.as_tensor(CP_AIR, dtype=T.dtype, device=T.device))
+        Tt, ct = self._cp_table
+        Tc = T.clamp(Tt[0], Tt[-1])
+        i = torch.searchsorted(Tt, Tc.contiguous()).clamp(1, len(Tt) - 1)
+        T0, T1, c0, c1 = Tt[i - 1], Tt[i], ct[i - 1], ct[i]
+        return c0 + (c1 - c0) * (Tc - T0) / (T1 - T0)
+
     def rho(self, T):
         if self.cfg.density_constant:
             return torch.full_like(T, self.cfg.rho_inf)
@@ -173,7 +194,7 @@ class Model:
         sink of the published model (``q``) are used."""
         c, nd = self.cfg, self.nd
         T, Y = y[nd], y[nd + 1]
-        rho_cp = rho * c.c_p
+        rho_cp = rho * self.cp(T)
         if c.radiation == 'diffusion':
             k = (c.kappa + 4 * c.sigma * c.delta * T ** 3) / rho_cp
             dkdT = 12 * c.sigma * c.delta * T ** 2 / rho_cp
@@ -201,7 +222,7 @@ class Model:
     def dilatation(self, heat, rho, T, solid):
         """div(u) imposed by the low Mach number approximation: thermal expansion heat / (rho c_p T),
         plus the volume of gas produced by pyrolysis, mdot / rho."""
-        out = heat / (self.cfg.c_p * rho * T)
+        out = heat / (self.cp(T) * rho * T)
         if solid is not None:
             out = out + solid['mdot'] / rho
         return out
@@ -286,7 +307,7 @@ class Model:
     def q(self, T, Y):
         """Combustion heat source plus convective heat loss, in K/s."""
         c = self.cfg
-        source = c.H_C * Y * self.reaction(T) / c.c_p
+        source = c.H_C * Y * self.reaction(T) / self.cp(T)
         if c.sink == 'surface':
             return source + self.surface_exchange(T, Y)
         # Original term: zero inside the fuel, and in the node above it a loss towards 0 K
@@ -319,7 +340,7 @@ class Model:
         T_s, T_g = T.gather(0, i_s)[0], T.gather(0, i_g)[0]
         dT = T_g - T_s
         Q = c.h_c * (torch.abs(dT) / c.Y_h) ** (1 / 4) * dT * has.to(T.dtype)
-        rho_cp_dz = self.rho(T) * c.c_p * self.h[-1]
+        rho_cp_dz = self.rho(T) * self.cp(T) * self.h[-1]
         out = torch.zeros_like(T)
         out.scatter_add_(0, i_s, (Q / rho_cp_dz.gather(0, i_s)[0]).unsqueeze(0))
         out.scatter_add_(0, i_g, (-Q / rho_cp_dz.gather(0, i_g)[0]).unsqueeze(0))
@@ -418,7 +439,7 @@ class Model:
             # Fuel gas and oxygen: transported like T (same scheme, unit Lewis number, turbulent
             # Schmidt number = Pr), produced by pyrolysis and consumed by combustion
             scheme = op.limited if c.T_advection == 'koren' else op.upwind
-            D = c.kappa / (rho * c.c_p)
+            D = c.kappa / (rho * self.cp(T))
             # The pyrolysis gas is added mass: it brings fuel gas and dilutes what is already there
             mdot, omega = solid['mdot'], solid['omega']
             sources = {nd + 4: (mdot * (1 - y[nd + 4]) - omega) / rho,
@@ -610,8 +631,9 @@ class Model:
             # Y < 0 the heat that the reaction term released from fuel that did not exist
             rho1 = self.rho(y1[nd])
             dT = y1[nd] - T_raw
-            self.energy['clip_low'] += (rho1 * dT.clamp(min=0)).sum() * (c.c_p * self.dV)
-            self.energy['clip_high'] += (rho1 * dT.clamp(max=0)).sum() * (c.c_p * self.dV)
+            rcp = rho1 * self.cp(y1[nd])
+            self.energy['clip_low'] += (rcp * dT.clamp(min=0)).sum() * self.dV
+            self.energy['clip_high'] += (rcp * dT.clamp(max=0)).sum() * self.dV
             self.energy['fuel_overshoot'] += (fuel_density(y1[nd]) * (-Y_raw).clamp(min=0)).sum() * self.dV
         if not c.solid_temperature:
             burned = (y[nd + 1] - y1[nd + 1]).clamp(min=0)
@@ -656,6 +678,21 @@ class Model:
         cfl = sum(float(y[j].abs().max()) / self.h[j] for j in range(nd)) * self.dt
         T, Y = y[nd], y[nd + 1]
         return cfl, float(T.min()), float(T.max()), float(Y.min()), float(Y.max())
+
+    def flame_diagnostics(self, y):
+        """Total heat release rate (W per metre of depth in 2D, W in 3D) and the gas temperature
+        weighted by the local heat release rate: a flame temperature comparable with measurements,
+        unlike the single-cell maximum."""
+        c, nd = self.cfg, self.nd
+        T, Y = y[nd], y[nd + 1].clamp(min=0)
+        rho = self.rho(T)
+        if c.solid_temperature:
+            hrr = rho * torch.minimum(y[nd + 4].clamp(min=0), y[nd + 5].clamp(min=0) / c.s_O2) * c.H_C / self.tau_mix
+        else:
+            hrr = rho * c.H_C * Y * self.reaction(T)
+        total = float(hrr.sum())
+        T_flame = float((hrr * T).sum()) / total if total > 0 else float('nan')
+        return total * self.dV, T_flame
 
     def solid_diagnostics(self, y):
         """Fuel temperature range over the nodes that still hold fuel, and the total heat release rate

@@ -103,6 +103,10 @@ with $\nu=\mu/\rho$, the imposed divergence $D$ of \eqref{eq:div}, the drag of t
 and the subgrid stresses $\boldsymbol{\tau}_{sgs}$ of Section~\ref{sec:turbulence}.
 
 \subsection{Energy}
+The specific heat $c_p$ is constant by default; with \code{[gas] cp\_model = variable} it is the
+temperature-dependent value of air from ideal-gas tables (1005~J\,kg$^{-1}$K$^{-1}$ at 300~K, 1142 at
+1000~K, 1253 at 2000~K, interpolated linearly), used in the energy equation, the low-Mach constraint
+\eqref{eq:div} and the energy budget. Combustion products have somewhat higher values.
 \begin{equation}\label{eq:energy}
   \frac{\partial T}{\partial t} + \vu\cdot\nabla T = \frac{\dot q}{\rho c_p} - q_{sgs}(T).
 \end{equation}
@@ -489,6 +493,11 @@ the heat of combustion (\code{E\_clip\_low}, \code{E\_clip\_high}, \code{E\_comb
 original central scheme the lower bound added several times the combustion heat near the flame;
 with the Koren scheme it is normally negligible.
 
+\subsection{Log diagnostics}
+Besides the extreme values, the log reports the total heat release rate and the gas temperature
+weighted by the local heat release rate, $T_{flame}=\sum\dot q_c T/\sum\dot q_c$, which is comparable
+with measured flame temperatures, unlike the single-cell maximum.
+
 \subsection{Output}
 2D runs save the full fields every $N_T$ steps; 3D runs save three planes (\code{xz\_*}, \code{xy\_*},
 \code{yz\_*} through the head fire), the fuel left per column and the final full fields. Full
@@ -522,6 +531,7 @@ Key & Default & Meaning \\
 \code{[density] constant} & \code{False} & constant density (incompressible) \\
 \multicolumn{3}{l}{\emph{Gas and turbulence}}\\
 $c_p$, $\rho_\infty$, $\mu$, $\kappa$ & 1007, 1.225, $1.802\times10^{-5}$, 0.02476 & SI units (not in the input file) \\
+\code{[gas] cp\_model} & \code{constant} & \code{constant} or \code{variable} ($c_p(T)$ of air) \\
 \code{[temperature] T\_inf} & 288.15 K & ambient temperature \\
 \code{[turbulence] enabled} & \code{True} & Smagorinsky model \\
 \code{[turbulence] C\_s} & 0.2 & Smagorinsky constant \\
