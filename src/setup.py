@@ -101,11 +101,18 @@ def build(cfg):
     dead = Zm < ground - dz
     for field, value in zip(velocity + [T, Y], [0.0] * cfg.ndim + [cfg.T_inf, 0.0]):
         field[dead] = value
+    fields = velocity + [T, Y]
+    if cfg.solid_temperature:
+        # The fuel starts at the gas temperature (heat-driven pyrolysis: at most T_pyr_end, where it is
+        # already pyrolysing). Fuel inside the ignition patch (above boiling) is dry. No fuel gas yet.
+        T_s = np.minimum(T, cfg.T_pyr_end) if cfg.pyrolysis == 'linear' else T.copy()
+        W = cfg.moisture * Y * (T < cfg.T_boil)
+        fields += [T_s, W, np.zeros_like(T), np.full_like(T, cfg.Y_O2_amb)]
 
     return {
         'x': x, 'y': y, 'z': z, 't': t, 'dt': dt, 'spacings': spacings,
         'Xm': Xm, 'Ym': Ym, 'Zm': Zm, 'ground': ground,
-        'state': np.stack(velocity + [T, Y]),        # (ndim + 2, Nz, [Ny-1,] Nx-1)
+        'state': np.stack(fields),                   # (ndim + 2 [+ 2], Nz, [Ny-1,] Nx-1): u.., T, Y [, T_s, W, Y_F, Y_O2]
         'cut': cut, 'dead': dead,
         'source_mask': shape > 0.01,                 # nodes held at T0 while t <= t_source
     }

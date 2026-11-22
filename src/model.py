@@ -1,15 +1,17 @@
 """Wildfire model: right-hand side, boundary conditions and the projection time step.
 
 One implementation for 2D and 3D. The state is a single tensor ``y`` of shape
-(ndim + 2, Nz, [Ny-1,] Nx-1) holding the velocity components (u, [v,] w), the
-temperature T and the fuel fraction Y, in that order. The last velocity component is
-always the vertical one. The physics is the published 2D model (src_legacy/pde.py::Phi_2D,
-src_legacy/pressure.py::solve_pressure_2D, src_legacy/turbulence.py::turbulence_2D).
+(ncomp, Nz, [Ny-1,] Nx-1) holding the velocity components (u, [v,] w), the gas
+temperature T and the fuel fraction Y, and with the solid fuel model also the fuel
+temperature T_s and moisture W (kg water per kg dry fuel), in that order. The last velocity
+component is always the vertical one. With ``solid_temperature = False`` and
+``radiation = diffusion`` the physics is the published 2D model (src_legacy/).
 """
 import numpy as np
 import torch
 from operators import Operators
 from pressure import PoissonSolver
+from radiation import Radiation
 
 
 ENERGY_TERMS = {
@@ -56,7 +58,8 @@ class Model:
             self.cut, self.cut_up1, self.cut_up2 = idx(cut_flat), idx(cut_flat + row), idx(cut_flat + 2 * row)
             self.cut_h = idx(cut_flat % row)                      # horizontal position of each cut node
             self.dead = idx(np.flatnonzero(dead))
-            self.dead_values = to([0.0] * nd + [cfg.T_inf, 0.0]).unsqueeze(1)
+            extra = [cfg.T_inf, 0.0, 0.0, cfg.Y_O2_amb] if cfg.solid_temperature else []
+            self.dead_values = to([0.0] * nd + [cfg.T_inf, 0.0] + extra).unsqueeze(1)
             # z index of the terrain surface in every column (highest cut node), for the wall shear stress
             levels = np.arange(self.shape[0]).reshape((-1,) + (1,) * (nd - 1))
             surface = np.where(cut, levels, 0).max(axis=0)
@@ -69,6 +72,23 @@ class Model:
         legacy_length = cfg.x_max if (cfg.legacy and nd == 2) else None
         self.poisson = PoissonSolver(self.shape, self.h, lengths, device, dtype, cfg.poisson, legacy_length)
         self.pressure_iterations = 0
+        # Gas-phase mixing time and the components with a zero-gradient condition at the walls
+        self.tau_mix = cfg.tau_mix or float(np.sqrt(2 * self.Delta / abs(cfg.g)))
+        ncomp = state0.shape[0]
+        if cfg.legacy:
+            self.neumann = list(range(nd, ncomp))
+        else:   # T and the gas species; Y, T_s and W are not transported and get no condition
+            self.neumann = [nd] + ([nd + 4, nd + 5] if cfg.solid_temperature else [])
+        self.top_rows = list(range(nd)) + self.neumann
+        # Radiation
+        self.G = None                                             # incident radiation, W/m^2
+        self.step_count = 0
+        self._first_stage, self._last_omega = True, None
+        if cfg.radiation == 'transport':
+            self.rad = Radiation(self.shape, self.h, cfg.n_polar, cfg.n_azimuth, device, dtype)
+            if self.has_terrain:
+                self.dead_mask = torch.zeros(self.shape, dtype=torch.bool, device=device)
+                self.dead_mask.view(-1)[self.dead] = True
         # Energy budget, accumulated on the device (J per metre of depth in 2D, J in 3D)
         self.dV = float(np.prod(self.h))
         self.energy = {key: torch.zeros((), dtype=dtype, device=device) for key in ENERGY_TERMS}
@@ -79,16 +99,101 @@ class Model:
             return torch.full_like(T, self.cfg.rho_inf)
         return self.cfg.rho_inf * self.cfg.T_inf / T
 
-    def heat(self, T, Y, rho, grad_T, lap_T):
-        """Conduction + radiation (diffusion approximation) + combustion source + convective sink, in K/s."""
-        c = self.cfg
+    def heat(self, y, rho, grad_T, lap_T, solid=None):
+        """Heating rate of the gas in K/s: conduction, radiation, and the combustion and exchange terms.
+
+        Radiation: ``diffusion`` adds 4 sigma delta T^3 to the conductivity (the published model);
+        ``transport`` adds kappa_g (G - 4 sigma T^4), the absorbed minus the emitted radiation.
+        Fuel: with the solid model the gas gains the heat of combustion of the pyrolysed fuel and
+        loses what convection carries into the fuel; otherwise the single-temperature source and
+        sink of the published model (``q``) are used."""
+        c, nd = self.cfg, self.nd
+        T, Y = y[nd], y[nd + 1]
         rho_cp = rho * c.c_p
-        k = (c.kappa + 4 * c.sigma * c.delta * T ** 3) / rho_cp
-        dkdT = 12 * c.sigma * c.delta * T ** 2 / rho_cp
-        grad2 = grad_T[0] ** 2
-        for g in grad_T[1:]:
-            grad2 = grad2 + g ** 2
-        return dkdT * grad2 + k * lap_T + self.q(T, Y)
+        if c.radiation == 'diffusion':
+            k = (c.kappa + 4 * c.sigma * c.delta * T ** 3) / rho_cp
+            dkdT = 12 * c.sigma * c.delta * T ** 2 / rho_cp
+            grad2 = grad_T[0] ** 2
+            for g in grad_T[1:]:
+                grad2 = grad2 + g ** 2
+            out = dkdT * grad2 + k * lap_T
+        else:
+            kappa_g = c.kappa_gas
+            if not c.solid_temperature:   # one temperature: the fuel absorbs and emits at T as well
+                kappa_g = kappa_g + c.alpha_s * c.sigma_s * Y.clamp(min=0) / 4
+            out = c.kappa / rho_cp * lap_T + kappa_g * (self.G - 4 * c.sigma * T ** 4) / rho_cp
+        if c.solid_temperature:
+            s = solid if solid is not None else self.solid_rates(y, rho)
+            return out + (s['Q_comb'] - s['Q_conv']) / rho_cp
+        return out + self.q(T, Y)
+
+    def dilatation(self, heat, rho, T, solid):
+        """div(u) imposed by the low Mach number approximation: thermal expansion heat / (rho c_p T),
+        plus the volume of gas produced by pyrolysis, mdot / rho."""
+        out = heat / (self.cfg.c_p * rho * T)
+        if solid is not None:
+            out = out + solid['mdot'] / rho
+        return out
+
+    def solid_rates(self, y, rho):
+        """Solid fuel and gas-phase combustion. Rates per unit volume.
+
+        Heat to the fuel elements (surface per volume a = alpha_s sigma_s Y, shrinking as the fuel is
+        consumed): convection Q_conv = h a (T - T_s), with h the larger of a natural-convection
+        estimate h_c |T - T_s|^(1/3) and the forced convection of a cylinder of diameter 4 / sigma_s
+        (Hilpert: Nu = 0.683 Re^0.466 Pr^(1/3)); radiation Q_rad = a/4 (G - 4 sigma T_s^4).
+        Wet fuel at T_boil spends the net heat on evaporating its moisture. Dry fuel pyrolyses:
+          linear (Mell et al. 2007, FDS): between T_pyr and T_pyr_end a fraction
+            (T_s - T_pyr) / (T_pyr_end - T_pyr) of the net heat pyrolyses fuel at H_pyr J/kg, all of it
+            above T_pyr_end; the rest heats the fuel;
+          arrhenius: dY/dt = -Y_f A exp(-T_act / T_s) Y above T_pc, absorbing H_pyr J/kg.
+        The pyrolysis gas Y_F burns with the oxygen Y_O2 at the mixing-limited rate
+          omega = rho min(Y_F, Y_O2 / s_O2) / tau_mix  [kg fuel/(m^3 s)],  releasing H_C per kg."""
+        c, nd = self.cfg, self.nd
+        T, Y, T_s, W = y[nd], y[nd + 1].clamp(min=0), y[nd + 2], y[nd + 3].clamp(min=0)
+        Y_F, Y_O = y[nd + 4].clamp(min=0), y[nd + 5].clamp(min=0)
+        speed2 = y[0] ** 2
+        for u in y[1:nd]:
+            speed2 = speed2 + u ** 2
+        a = c.alpha_s * c.sigma_s * Y
+        diameter = 4 / c.sigma_s
+        Re = torch.sqrt(speed2) * diameter * rho / c.mu
+        dT = T - T_s
+        h = torch.maximum(c.kappa / diameter * 0.683 * Re ** 0.466 * c.Pr ** (1 / 3),
+                          c.h_c * torch.abs(dT) ** (1 / 3))
+        has = (Y > c.fuel_threshold) | (W > 0)
+        Q_conv = h * a * dT * has
+        Q_rad = (a / 4 * (self.G - 4 * c.sigma * T_s ** 4) * has) if c.radiation == 'transport' else 0.0
+        Q_in = Q_conv + Q_rad
+        dry = (W <= 0) & (Y > c.fuel_threshold)
+        if c.pyrolysis == 'linear':
+            share = ((T_s - c.T_pyr) / (c.T_pyr_end - c.T_pyr)).clamp(0, 1) * dry
+            mdot = share * Q_in.clamp(min=0) / c.H_pyr
+        else:
+            mdot = c.rho_bulk * c.Y_f * self.reaction(T_s) * Y * dry
+        mdot = torch.minimum(mdot, c.rho_bulk * Y / self.dt)        # cannot pyrolyse more than is left
+        Q_net = Q_in - mdot * c.H_pyr
+        evap = (W > 0) & (T_s >= c.T_boil)
+        dW = torch.where(evap, -Q_net.clamp(min=0) / (c.rho_bulk * c.L_v), torch.zeros_like(W))
+        heat_capacity = (c.rho_bulk * (Y * c.c_s + W * c.c_w)).clamp(min=1e-30)
+        dT_s = torch.where(evap, Q_net.clamp(max=0), Q_net) / heat_capacity * has
+        omega = rho * torch.minimum(Y_F, Y_O / c.s_O2) / self.tau_mix
+        return {'Q_conv': Q_conv, 'Q_comb': omega * c.H_C, 'dY': -mdot / c.rho_bulk, 'dT_s': dT_s,
+                'dW': dW, 'mdot': mdot, 'omega': omega}
+
+    def update_radiation(self, y):
+        """Solve the radiative transfer equation for the current state and store G."""
+        c, nd = self.cfg, self.nd
+        T, Y = y[nd], y[nd + 1].clamp(min=0)
+        k_s = c.alpha_s * c.sigma_s * Y / 4                       # absorption by the fuel elements
+        T_s = y[nd + 2] if c.solid_temperature else T
+        kappa = (c.kappa_gas + k_s).clamp(min=1e-12)
+        Ib = c.sigma * (c.kappa_gas * T ** 4 + k_s * T_s ** 4) / (np.pi * kappa)
+        if self.has_terrain:                                      # terrain: opaque, at its own temperature
+            kappa = torch.where(self.dead_mask, torch.full_like(kappa, 1e3), kappa)
+            Ib = torch.where(self.dead_mask, c.sigma * T ** 4 / np.pi, Ib)
+        I_ground = c.sigma * T[0] ** 4 / np.pi
+        self.G = self.rad.solve(kappa, Ib, I_ground, c.sigma * c.T_inf ** 4 / np.pi)
 
     def reaction(self, T):
         """Rate R(T) of the fuel equation dY/dt = -Y_f R Y: Arrhenius K(T) times the phase-change step H(T).
@@ -183,6 +288,7 @@ class Model:
         acc = mu_sgs * lap_T
         for j in range(nd):
             acc = acc + grad_mu[j] * grad_T[j]
+        self._mu_sgs, self._grad_mu = mu_sgs, grad_mu                # reused for the species
         return out, -acc / (c.Pr * rho)
 
     def rhs(self, y):
@@ -192,14 +298,17 @@ class Model:
         rho = self.rho(T)
         nu = c.mu / rho
         grad_T, lap_T = op.grad(T), op.lap(T)
-        heat = self.heat(T, Y, rho, grad_T, lap_T)
+        solid = self.solid_rates(y, rho) if c.solid_temperature else None
+        if solid is not None and self._first_stage:
+            self._last_omega, self._first_stage = solid['omega'], False
+        heat = self.heat(y, rho, grad_T, lap_T, solid)
         speed2 = vel[0] ** 2
         for u in vel[1:]:
             speed2 = speed2 + u ** 2
         drag = 0.5 * c.C_d * c.alpha_s * c.sigma_s * Y * torch.sqrt(speed2)
         buoyancy = (rho - c.rho_inf) / rho
         # Viscous term of the dilatation: nu / 3 * grad(div u), with div u from the energy equation
-        grad_div = None if c.density_constant else op.grad(heat / (c.c_p * rho * T))
+        grad_div = None if c.density_constant else op.grad(self.dilatation(heat, rho, T, solid))
         sgs_u, sgs_T = self.sgs(vel, T, rho, grad_T, lap_T) if c.turbulence else ([0.0] * nd, 0.0)
         out = torch.empty_like(y)
         for i in range(nd):
@@ -220,7 +329,32 @@ class Model:
             for j in range(1, nd):
                 adv = adv + scheme(vel[j], T, j)
         out[nd] = heat - adv - sgs_T
-        out[nd + 1] = -c.Y_f * self.reaction(T) * Y
+        if solid is not None:
+            out[nd + 1], out[nd + 2], out[nd + 3] = solid['dY'], solid['dT_s'], solid['dW']
+            # Fuel gas and oxygen: transported like T (same scheme, unit Lewis number, turbulent
+            # Schmidt number = Pr), produced by pyrolysis and consumed by combustion
+            scheme = op.limited if c.T_advection == 'koren' else op.upwind
+            D = c.kappa / (rho * c.c_p)
+            # The pyrolysis gas is added mass: it brings fuel gas and dilutes what is already there
+            mdot, omega = solid['mdot'], solid['omega']
+            sources = {nd + 4: (mdot * (1 - y[nd + 4]) - omega) / rho,
+                       nd + 5: -(c.s_O2 * omega + mdot * y[nd + 5]) / rho}
+            for k, src in sources.items():
+                Yk = y[k]
+                adv = scheme(vel[0], Yk, 0)
+                for j in range(1, nd):
+                    adv = adv + scheme(vel[j], Yk, j)
+                lap = op.lap(Yk)
+                rate = D * lap - adv + src
+                if c.turbulence:
+                    grad_Yk = op.grad(Yk)
+                    acc = self._mu_sgs * lap
+                    for j in range(nd):
+                        acc = acc + self._grad_mu[j] * grad_Yk[j]
+                    rate = rate + acc / (c.Pr * rho)
+                out[k] = rate
+        else:
+            out[nd + 1] = -c.Y_f * self.reaction(T) * Y
         self.apply_bc(out, homogeneous=True)
         return out
 
@@ -237,13 +371,22 @@ class Model:
         unevenly in z. ``legacy`` keeps that behaviour.
         ``homogeneous=True`` is the version for time derivatives (Dirichlet rows do not change)."""
         nd = self.nd
-        last = y.shape[0] if self.cfg.legacy else nd + 1     # rows nd .. last-1 get the Neumann condition
+        legacy = self.cfg.legacy
+        # Zero gradient. Second-order extrapolation (4 phi_1 - phi_2) / 3 leaves the range of the interior
+        # values where the profile is curved: at the fire front, with a hot layer just above cold ground
+        # (T_1 = 348 K, T_2 = 584 K), it gave 270 K, below ambient, and the bound then added energy at
+        # every step. Scalars therefore use the bounded first-order form phi_0 = phi_1 (legacy: original).
+        extrap = lambda a, b: (4 * a - b) / 3
         y[:nd, 0] = 0.0 if homogeneous else self.vel_bottom
-        y[nd:last, 0] = (4 * y[nd:last, 1] - y[nd:last, 2]) / 3
-        y[:last, -1] = (4 * y[:last, -2] - y[:last, -3]) / 3
+        for k in self.neumann:
+            y[k, 0] = extrap(y[k, 1], y[k, 2]) if legacy else y[k, 1]
+        for k in self.top_rows:
+            y[k, -1] = extrap(y[k, -2], y[k, -3]) if (legacy or k < nd) else y[k, -2]
         if self.has_terrain:
             flat = y.view(y.shape[0], -1)
-            flat[nd:last, self.cut] = (4 * flat[nd:last, self.cut_up1] - flat[nd:last, self.cut_up2]) / 3
+            for k in self.neumann:
+                flat[k, self.cut] = extrap(flat[k, self.cut_up1], flat[k, self.cut_up2]) if legacy \
+                    else flat[k, self.cut_up1]
             flat[:nd, self.cut] = 0.0 if homogeneous else self.vel_bottom.reshape(nd, -1)[:, self.cut_h]
             flat[:, self.dead] = 0.0 if homogeneous else self.dead_values
             if not self.cfg.legacy:
@@ -265,7 +408,8 @@ class Model:
         else:
             # Low Mach number: div(u^{n+1}) is prescribed by the energy equation
             rho1 = self.rho(T1)
-            target = self.heat(T1, Y1, rho1, op.grad(T1), op.lap(T1)) / (c.c_p * rho1 * T1)
+            solid1 = self.solid_rates(y1, rho1) if c.solid_temperature else None
+            target = self.dilatation(self.heat(y1, rho1, op.grad(T1), op.lap(T1), solid1), rho1, T1, solid1)
             f0 = rho_n / dt * (div - target)
             grad_rho = [g / rho_n for g in op.grad_half(rho_n)]
             # Fixed point on the variable-coefficient term grad(rho) . grad(p) / rho
@@ -288,6 +432,10 @@ class Model:
 
     def step(self, t_n, y, p):
         c, nd, dt = self.cfg, self.nd, self.dt
+        if c.radiation == 'transport' and (self.G is None or self.step_count % c.rad_every == 0):
+            self.update_radiation(y)
+        self.step_count += 1
+        self._first_stage = True
         if c.method == 'euler':
             y1 = y + dt * self.rhs(y)
         elif c.method == 'RK2':
@@ -302,9 +450,23 @@ class Model:
             y1 = y + (dt / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
         else:
             raise ValueError(f"unknown time method '{c.method}'")
+        if c.solid_temperature:   # heat of combustion released this step (exact for Euler)
+            self.energy['combustion'] += self._last_omega.sum() * (c.H_C * dt * self.dV)
         p = self.project(y1, y[nd], p)
         self.apply_bc(y1)
-        heat_per_fuel = c.H_C / c.Y_f if c.Y_f > 0 else 0.0     # J/kg released per unit decrease of Y
+        if c.solid_temperature:
+            y1[nd + 3].clamp_(min=0)
+            y1[nd + 4:nd + 6].clamp_(0, 1)
+            # Where the fuel is gone the solid temperature has no meaning: it follows the gas
+            has = (y1[nd + 1] > c.fuel_threshold) | (y1[nd + 3] > 0)
+            y1[nd + 2] = torch.where(has, y1[nd + 2], y1[nd])
+            if c.bound:
+                y1[nd + 2].clamp_(c.T_min, c.T_max)
+        # Heat released per unit decrease of Y: rho_bulk H_C [J/m^3] with the solid model; in the
+        # published model rho H_C / Y_f, with rho the gas density
+        heat_per_fuel = c.H_C / c.Y_f if c.Y_f > 0 else 0.0
+        fuel_density = (lambda T: torch.full_like(T, c.rho_bulk * c.H_C)) if c.solid_temperature \
+            else (lambda T: self.rho(T) * heat_per_fuel)
         if c.bound:
             T_raw, Y_raw = y1[nd].clone(), y1[nd + 1].clone()
             y1[nd].clamp_(c.T_min, c.T_max)
@@ -315,15 +477,60 @@ class Model:
             dT = y1[nd] - T_raw
             self.energy['clip_low'] += (rho1 * dT.clamp(min=0)).sum() * (c.c_p * self.dV)
             self.energy['clip_high'] += (rho1 * dT.clamp(max=0)).sum() * (c.c_p * self.dV)
-            self.energy['fuel_overshoot'] += (rho1 * (-Y_raw).clamp(min=0)).sum() * (heat_per_fuel * self.dV)
-        burned = (y[nd + 1] - y1[nd + 1]).clamp(min=0)
-        self.energy['combustion'] += (self.rho(y1[nd]) * burned).sum() * (heat_per_fuel * self.dV)
+            self.energy['fuel_overshoot'] += (fuel_density(y1[nd]) * (-Y_raw).clamp(min=0)).sum() * self.dV
+        if not c.solid_temperature:
+            burned = (y[nd + 1] - y1[nd + 1]).clamp(min=0)
+            self.energy['combustion'] += (fuel_density(y1[nd]) * burned).sum() * self.dV
         if t_n <= c.t_source:
             y1[nd][self.source_mask] = self.T0[self.source_mask]
         return y1, p
+
+    def output_fields(self, y):
+        """Derived fields written with the state (all per unit volume unless stated):
+        HRR      heat release rate of combustion, W/m^3 (FDS: HRRPUV)
+        pyrolysis  pyrolysis rate, kg/(m^3 s)                         (solid fuel model)
+        Q_conv   convective heating of the fuel by the gas, W/m^3      (solid fuel model)
+        G        incident radiation, W/m^2                             (radiation transport)
+        q_rad_gas, q_rad_fuel  net radiative heating of gas and fuel, W/m^3
+        nu_t     subgrid (turbulent) viscosity, m^2/s                  (turbulence model)"""
+        c, nd = self.cfg, self.nd
+        T, Y = y[nd], y[nd + 1].clamp(min=0)
+        rho = self.rho(T)
+        out = {}
+        if c.radiation == 'transport' and self.G is None:
+            self.update_radiation(y)
+        if c.solid_temperature:
+            s = self.solid_rates(y, rho)
+            out['HRR'], out['pyrolysis'], out['Q_conv'] = s['Q_comb'], s['mdot'], s['Q_conv']
+        else:
+            out['HRR'] = rho * c.H_C * Y * self.reaction(T)
+        if c.radiation == 'transport':
+            kappa_g = c.kappa_gas if c.solid_temperature else c.kappa_gas + c.alpha_s * c.sigma_s * Y / 4
+            out['G'] = self.G
+            out['q_rad_gas'] = kappa_g * (self.G - 4 * c.sigma * T ** 4)
+            if c.solid_temperature:
+                has = (Y > c.fuel_threshold) | (y[nd + 3] > 0)
+                out['q_rad_fuel'] = c.alpha_s * c.sigma_s * Y / 4 * (self.G - 4 * c.sigma * y[nd + 2] ** 4) * has
+        if c.turbulence:
+            self.sgs(y[:nd], T, rho, self.op.grad(T), self.op.lap(T))
+            out['nu_t'] = self._mu_sgs / rho
+        return out
 
     def diagnostics(self, y):
         nd = self.nd
         cfl = sum(float(y[j].abs().max()) / self.h[j] for j in range(nd)) * self.dt
         T, Y = y[nd], y[nd + 1]
         return cfl, float(T.min()), float(T.max()), float(Y.min()), float(Y.max())
+
+    def solid_diagnostics(self, y):
+        """Fuel temperature range over the nodes that still hold fuel, and the total heat release rate
+        (W per metre of depth in 2D, W in 3D)."""
+        c, nd = self.cfg, self.nd
+        Y, T_s = y[nd + 1], y[nd + 2]
+        fuel = Y > c.fuel_threshold
+        rho = self.rho(y[nd])
+        hrr = float((rho * torch.minimum(y[nd + 4].clamp(min=0), y[nd + 5].clamp(min=0) / c.s_O2)).sum()) \
+            * c.H_C / self.tau_mix * self.dV
+        if not bool(fuel.any()):
+            return float('nan'), float('nan'), hrr
+        return float(T_s[fuel].min()), float(T_s[fuel].max()), hrr

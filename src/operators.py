@@ -112,32 +112,36 @@ class Operators:
     """Vector calculus for a given grid. Directions are ordered like the velocity
     components, (x, z) or (x, y, z): direction j lives on tensor axis ``ndim - 1 - j``."""
 
-    def __init__(self, spacings, legacy=False):
-        self.h = tuple(spacings)            # (dx, dz) or (dx, dy, dz)
+    def __init__(self, spacings, legacy=False, all_periodic=False):
+        self.h = tuple(spacings)            # (dx, dz) or (dx, dy, dz); plan view: (dx, dy)
         self.ndim = len(self.h)
         self.legacy = legacy
+        self.all_periodic = all_periodic    # plan-view model: no vertical axis, every axis periodic
+
+    def _vertical(self, axis):
+        return axis == 0 and not self.all_periodic
 
     def d1(self, phi, j):
         axis = self.ndim - 1 - j
-        return d1_vertical(phi, self.h[j]) if axis == 0 else d1_periodic(phi, self.h[j], axis)
+        return d1_vertical(phi, self.h[j]) if self._vertical(axis) else d1_periodic(phi, self.h[j], axis)
 
     def d2(self, phi, j):
         axis = self.ndim - 1 - j
-        return d2_vertical(phi, self.h[j]) if axis == 0 else d2_periodic(phi, self.h[j], axis)
+        return d2_vertical(phi, self.h[j]) if self._vertical(axis) else d2_periodic(phi, self.h[j], axis)
 
     def upwind(self, a, phi, j):
         axis = self.ndim - 1 - j
-        if axis == 0:
+        if self._vertical(axis):
             return upwind_vertical(a, phi, self.h[j], self.legacy)
         return upwind_periodic(a, phi, self.h[j], axis)
 
     def limited(self, a, phi, j):
         axis = self.ndim - 1 - j
-        return limited_vertical(a, phi, self.h[j]) if axis == 0 else limited_periodic(a, phi, self.h[j], axis)
+        return limited_vertical(a, phi, self.h[j]) if self._vertical(axis) else limited_periodic(a, phi, self.h[j], axis)
 
     def half(self, phi, j):
         axis = self.ndim - 1 - j
-        return half_vertical(phi, self.h[j]) if axis == 0 else half_periodic(phi, self.h[j], axis)
+        return half_vertical(phi, self.h[j]) if self._vertical(axis) else half_periodic(phi, self.h[j], axis)
 
     def grad(self, phi):
         return [self.d1(phi, j) for j in range(self.ndim)]

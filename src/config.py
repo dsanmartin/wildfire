@@ -19,7 +19,8 @@ T_INF = 288.15
 
 @dataclass
 class Config:
-    # Domain and grid (z is the vertical axis; y only exists in 3D)
+    # Domain and grid (z is the vertical axis; y only exists in 3D and in the plan-view model)
+    model: str = 'vertical'         # vertical: 2D x-z or 3D coupled model; planview: 2D x-y fire-spread layer
     ndim: int = 2
     x_min: float = 0.0
     x_max: float = 200.0
@@ -63,6 +64,29 @@ class Config:
     Y_f: float = 70.0
     Y_h: float = 0.51
     reaction: str = 'exact'         # exact: fuel decay integrated exactly over dt; explicit: original rate
+    # Solid fuel phase: its own temperature T_s, heated by convection and radiation, and moisture W
+    solid_temperature: bool = True  # False: one temperature for gas and fuel (published model)
+    rho_bulk: float = 0.6144        # dry fuel mass per bed volume, kg/m^3 (FDS Case_F19)
+    c_s: float = 1500.0             # specific heat of the dry fuel, J/(kg K)
+    H_pyr: float = 4.16e5           # heat absorbed by pyrolysis, J/kg (Mell et al. 2007)
+    moisture: float = 0.0           # initial moisture, kg water per kg dry fuel (F19: 0.058)
+    c_w: float = 4184.0             # specific heat of liquid water, J/(kg K)
+    L_v: float = 2.259e6            # latent heat of vaporisation of water, J/kg
+    T_boil: float = 373.15          # temperature at which the fuel moisture evaporates, K
+    pyrolysis: str = 'linear'       # linear: heat-driven between T_pyr and T_pyr_end (Mell et al. 2007);
+                                    # arrhenius: dY/dt = -Y_f A exp(-T_act/T_s) Y for T_s > T_pc
+    T_pyr: float = 400.0            # pyrolysis starts, K
+    T_pyr_end: float = 500.0        # all net heat goes to pyrolysis above this, K
+    # Gas-phase combustion of the pyrolysis gas (used with the solid fuel model)
+    Y_O2_amb: float = 0.232         # oxygen mass fraction of the ambient air
+    s_O2: float = 1.185             # kg of oxygen per kg of fuel gas (cellulose)
+    tau_mix: float = None           # mixing time, s; None: sqrt(2 Delta / g) (FDS buoyancy time scale)
+    # Radiation
+    radiation: str = 'transport'    # transport: discrete ordinates; diffusion: 4 sigma delta T^3 conductivity
+    kappa_gas: float = 0.1          # gray absorption coefficient of the gas, 1/m (to calibrate)
+    n_polar: int = 12               # polar bands of the angular quadrature (even)
+    n_azimuth: int = 16             # azimuths over the full circle (even; 2D uses half of them)
+    rad_every: int = 5              # time steps between radiation solves
     sink: str = 'surface'           # surface: top fuel node <-> gas node above; legacy: original term
     fuel_threshold: float = 1e-3    # Y above which a node counts as fuel for the surface exchange
     T_advection: str = 'koren'      # koren (limited third order), upwind (second order), central (original)
@@ -109,6 +133,17 @@ class Config:
     poisson: str = 'auto'               # auto, thomas, eig
     # Reproduce the original src_legacy/ code, defects included (see README of this folder)
     legacy: bool = False
+    # Plan-view model (model = planview): fuel-bed layer in x-y with prescribed wind
+    wind_direction: float = 0.0     # direction the wind blows towards, degrees from +x (counter-clockwise)
+    wind_factor: float = None       # mid-flame wind / u_r; None: power law at the bed height, (Y_h / z_r)^alpha_u
+    heat_retained: float = 0.15     # fraction of the heat of combustion that stays in the bed (to calibrate)
+    h_top: float = 20.0             # heat loss coefficient to the air above the bed, W/(m^2 K) (to calibrate)
+    delta_bed: float = None         # radiative path length in the bed, m; None: 4 / (alpha_s sigma_s)
+    # Output of 3D runs: planes saved at every output time (full fields only at the end)
+    z_slice: float = 1.0            # height of the x-y plane, m
+    full_interval: float = 0.0      # s between full-field snapshots (files in NAME/full/); 0: none
+    full_dtype: str = 'float32'     # precision of the full-field snapshots
+    y_slice: float = None           # position of the x-z plane, m; None: middle of the domain
     # Run
     device: str = 'auto'
     dtype: str = 'float64'
@@ -134,6 +169,19 @@ _KEYS = {
     ('fuel', 'Y_f'): ('Y_f', float), ('fuel', 'A'): ('A', float), ('fuel', 'H_C'): ('H_C', float),
     ('fuel', 'sigma_s'): ('sigma_s', float), ('fuel', 'alpha_s'): ('alpha_s', float),
     ('fuel', 'reaction'): ('reaction', str), ('temperature', 'sink'): ('sink', str),
+    ('fuel', 'solid_temperature'): ('solid_temperature', bool), ('fuel', 'rho_bulk'): ('rho_bulk', float),
+    ('fuel', 'c_s'): ('c_s', float), ('fuel', 'H_pyr'): ('H_pyr', float), ('fuel', 'moisture'): ('moisture', float),
+    ('radiation', 'model'): ('radiation', str), ('radiation', 'kappa_gas'): ('kappa_gas', float),
+    ('radiation', 'n_polar'): ('n_polar', int), ('radiation', 'n_azimuth'): ('n_azimuth', int),
+    ('radiation', 'update_every'): ('rad_every', int),
+    ('output', 'z_slice'): ('z_slice', float), ('output', 'y_slice'): ('y_slice', float),
+    ('model', 'type'): ('model', str), ('wind', 'direction'): ('wind_direction', float),
+    ('wind', 'factor'): ('wind_factor', float), ('planview', 'heat_retained'): ('heat_retained', float),
+    ('planview', 'h_top'): ('h_top', float), ('planview', 'delta_bed'): ('delta_bed', float),
+    ('output', 'full_interval'): ('full_interval', float), ('output', 'full_dtype'): ('full_dtype', str),
+    ('fuel', 'pyrolysis'): ('pyrolysis', str), ('fuel', 'T_pyr'): ('T_pyr', float),
+    ('fuel', 'T_pyr_end'): ('T_pyr_end', float), ('combustion', 's_O2'): ('s_O2', float),
+    ('combustion', 'tau_mix'): ('tau_mix', float), ('combustion', 'Y_O2_amb'): ('Y_O2_amb', float),
     ('temperature', 'T_inf'): ('T_inf', float), ('numerics', 'bound'): ('bound', bool),
     ('numerics', 'T_advection'): ('T_advection', str), ('fuel', 'threshold'): ('fuel_threshold', float),
     ('fuel', 'x_start'): ('fuel_x_start', float), ('fuel', 'x_end'): ('fuel_x_end', float),
@@ -177,7 +225,9 @@ def load_config(path: str, **overrides) -> Config:
         if 'T_min' not in given:
             cfg.T_min = cfg.T_inf
     has = lambda key, sec: parser.has_option(sec, key)
-    if has('z_min', 'domain') and has('z_max', 'domain') and has('Nz', 'numerics'):
+    if cfg.model == 'planview':   # 2D in x-y: y is horizontal
+        cfg.ndim = 2
+    elif has('z_min', 'domain') and has('z_max', 'domain') and has('Nz', 'numerics'):
         cfg.ndim = 3
     else:  # 2D file: its 'y' is the vertical axis
         cfg.ndim = 2
@@ -191,8 +241,11 @@ def load_config(path: str, **overrides) -> Config:
             setattr(cfg, key, value)
     if cfg.legacy:  # everything as in src_legacy/
         cfg.reaction, cfg.sink, cfg.T_advection = 'explicit', 'legacy', 'central'
+        cfg.solid_temperature, cfg.radiation = False, 'diffusion'
     for key, allowed in (('reaction', ('exact', 'explicit')), ('sink', ('surface', 'legacy')),
-                         ('T_advection', ('upwind', 'koren', 'central'))):
+                         ('T_advection', ('upwind', 'koren', 'central')),
+                         ('radiation', ('transport', 'diffusion')), ('pyrolysis', ('linear', 'arrhenius')),
+                         ('model', ('vertical', 'planview'))):
         if getattr(cfg, key) not in allowed:
             raise ValueError(f"{key} must be one of {allowed}, got '{getattr(cfg, key)}'")
     return cfg
