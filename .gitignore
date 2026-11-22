@@ -133,7 +133,6 @@ dmypy.json
 .vscode/
 data/
 others/
-docs/
 src_bk/
 src_gpu/
 src_cupy/
