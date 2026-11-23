@@ -57,7 +57,9 @@ class GraphRunner:
             'pcg': lambda: P.pcg_iterate(self.chunk),
             'finalize': self._finalize,
         }
-        self.capture_order = ['radiation', 'pcg', 'predict', 'finalize']   # most valuable first
+        # Capture in replay order: a graph keeps the addresses of the tensors it reads, so everything
+        # it shares with another graph lives in persistent buffers updated in place
+        self.capture_order = [n for n in self.functions]
         if c.radiation != 'transport':
             del self.functions['radiation']
         self.graphs = {}

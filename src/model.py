@@ -308,7 +308,10 @@ class Model:
         H = int(np.prod(self.shape[1:]))
         cols = torch.zeros(H, dtype=y.dtype, device=y.device)
         cols[self.wall_cols] = u_tau
-        self._u_tau_wall = cols.view(self.shape[1:])
+        if self._u_tau_wall is None:          # persistent buffer: read by the turbulence model of the next
+            self._u_tau_wall = cols.view(self.shape[1:]).clone()   # evaluation (CUDA graphs keep addresses)
+        else:
+            self._u_tau_wall.copy_(cols.view(self.shape[1:]))
         scale = -(u_tau ** 2) / uh.clamp(min=1e-12) / self.wall_dz
         return [scale * flat[i, self.wall_U] for i in range(nd - 1)]
 

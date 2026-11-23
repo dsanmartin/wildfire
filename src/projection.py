@@ -163,16 +163,25 @@ class FaceProjection:
         return -self.precondition(r) * self._rho_ref * self.unknown
 
     def _keep(self, name, value):
-        """Store value in the persistent buffer name (allocated on first use, then updated in place)."""
+        """Store value (a tensor or a list of tensors) in the persistent buffer name: allocated on first
+        use, then updated in place. Tensors shared between CUDA graphs must never be replaced: a graph
+        keeps the addresses it was captured with."""
         buf = getattr(self, name, None)
-        if buf is None or buf.shape != value.shape:
+        if isinstance(value, (list, tuple)):
+            if buf is None or len(buf) != len(value):
+                setattr(self, name, [v.clone() for v in value])
+            else:
+                for b, v in zip(buf, value):
+                    b.copy_(v)
+        elif buf is None or buf.shape != value.shape:
             setattr(self, name, value.clone())
         else:
             buf.copy_(value)
 
     def pcg_setup(self, rhs, beta, rho_ref, p0=None):
         """Start PCG for L p = rhs. beta: face coefficients, rho_ref: scaling of the preconditioner."""
-        self._beta, self._rho_ref = beta, rho_ref
+        self._keep('_beta', beta)
+        self._keep('_rho_ref', rho_ref)
         m = self.unknown
         b = -rhs * m
         x = torch.zeros_like(rhs) if p0 is None else p0 * m
@@ -216,7 +225,7 @@ class FaceProjection:
         """First half of the projection: provisional face fluxes, the pressure equation and PCG setup.
         dt may be a tensor (CUDA graphs)."""
         nd = self.nd
-        self._F_star = self.to_faces(vel)
+        self._keep('_F_star', self.to_faces(vel))
         beta = [self.open[j] * 2.0 / (rho + self._shift(rho, nd - 1 - j, 1)) for j in range(nd)]
         for j in range(nd):                                   # vertical faces of the top row are unused
             if nd - 1 - j == 0:
