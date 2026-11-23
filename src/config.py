@@ -36,6 +36,7 @@ class Config:
     Nt: int = 1000
     NT: int = 100
     method: str = 'euler'           # euler, RK2, RK4
+    cfl: float = 0.4                # adaptive time step: target CFL (dt <= (t_max - t_min) / Nt); 0: fixed dt
     experiment: str = 'fire'
     # Gas
     c_p: float = 1007.0
@@ -192,6 +193,7 @@ _KEYS = {
     ('temperature', 'T_inf'): ('T_inf', float), ('numerics', 'bound'): ('bound', bool),
     ('gas', 'cp_model'): ('cp_model', str), ('gas', 'transport'): ('transport', str),
     ('numerics', 'T_advection'): ('T_advection', str), ('fuel', 'threshold'): ('fuel_threshold', float),
+    ('numerics', 'cfl'): ('cfl', float),
     ('fuel', 'x_start'): ('fuel_x_start', float), ('fuel', 'x_end'): ('fuel_x_end', float),
     ('fuel', 'y_start'): ('fuel_y_start', float), ('fuel', 'y_end'): ('fuel_y_end', float),
     ('temperature', 'T_hot'): ('T_hot', float), ('temperature', 'T_min'): ('T_min', float),
@@ -263,7 +265,7 @@ def load_config(path: str, **overrides) -> Config:
     if cfg.legacy:  # everything as in src_legacy/
         cfg.reaction, cfg.sink, cfg.T_advection = 'explicit', 'legacy', 'central'
         cfg.solid_temperature, cfg.radiation, cfg.projection, cfg.cp_model = False, 'diffusion', 'nodal', 'constant'
-        cfg.transport = 'constant'
+        cfg.transport, cfg.cfl = 'constant', 0.0
     for key, allowed in (('reaction', ('exact', 'explicit')), ('sink', ('surface', 'legacy')),
                          ('T_advection', ('upwind', 'koren', 'central')),
                          ('radiation', ('transport', 'diffusion')), ('pyrolysis', ('linear', 'arrhenius')),

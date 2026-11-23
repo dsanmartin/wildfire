@@ -731,6 +731,23 @@ class Model:
             out['nu_t'] = self._mu_sgs / rho
         return out
 
+    def stable_dt(self, y, dt_max):
+        """Largest time step allowed by the advective CFL target (sum over directions of max|u_j| / h_j)
+        and by the explicit diffusion limit dt <= 0.25 / (nu_eff sum 1/h_j^2), with nu_eff the largest
+        molecular plus subgrid kinematic viscosity of the last right-hand side evaluation."""
+        c, nd = self.cfg, self.nd
+        s = sum(float(y[j].abs().max()) / self.h[j] for j in range(nd))
+        dt = min(dt_max, c.cfl / s) if s > 0 else dt_max
+        rho = self.rho(y[nd])
+        nu = self.viscosity(y[nd]) / rho
+        nu_max = float(nu.max()) if torch.is_tensor(nu) else nu
+        if getattr(self, '_mu_sgs', None) is not None:
+            nu_max += float((self._mu_sgs / rho).max())
+        inv_h2 = sum(1 / h ** 2 for h in self.h)
+        if nu_max > 0:
+            dt = min(dt, 0.25 / (nu_max * inv_h2))
+        return dt
+
     def diagnostics(self, y):
         nd = self.nd
         cfl = sum(float(y[j].abs().max()) / self.h[j] for j in range(nd)) * self.dt

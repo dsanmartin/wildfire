@@ -142,18 +142,36 @@ def run(cfg, verbose=True):
         next_full = t[0] + cfg.full_interval
     unit = 'kJ/m' if nd == 2 else 'kJ'
     energy = {key: [0.0] for key in ENERGY_TERMS}
+    # Time stepping. Fixed step dt_max = (t_max - t_min) / Nt, or adaptive ([numerics] cfl > 0): each step
+    # takes the largest dt allowed by the CFL target and the diffusion limit, at most dt_max, and steps
+    # are shortened to land exactly on the output times, which stay every NT * dt_max seconds.
+    dt_max = model.dt
+    out_dt = NT * dt_max
+    t_end = t[-1]
+    t_now, n, steps_since = t[0], 0, 0
+    next_out = t[0] + out_dt
+    dt_min_seen, dt_max_seen = np.inf, 0.0
     start = last = time.perf_counter()
     with torch.no_grad():
-        for n in range(Nt):
-            y, p = model.step(t[n], y, p)
-            if next_full is not None and t[n + 1] >= next_full - 0.5 * model.dt:
-                save_full(cfg, grid, names, y, p, model.output_fields(y), t[n + 1])
+        while t_now < t_end - 1e-9 * out_dt:
+            dt = model.stable_dt(y, dt_max) if cfg.cfl > 0 else dt_max
+            dt = min(dt, next_out - t_now, t_end - t_now)
+            model.dt = dt
+            dt_min_seen, dt_max_seen = min(dt_min_seen, dt), max(dt_max_seen, dt)
+            y, p = model.step(t_now, y, p)
+            t_now += dt
+            n += 1
+            steps_since += 1
+            if next_full is not None and t_now >= next_full - 0.5 * dt:
+                save_full(cfg, grid, names, y, p, model.output_fields(y), t_now)
                 next_full += cfg.full_interval
-            if (n + 1) % NT == 0 or n == Nt - 1:
+            if t_now >= next_out - 1e-9 * out_dt or t_now >= t_end - 1e-9 * out_dt:
+                next_out += out_dt
                 cfl, T_min, T_max, Y_min, Y_max = model.diagnostics(y)     # also synchronises the device
                 now = time.perf_counter()
-                say(f"Time step: {n + 1:6d}, Simulation time: {t[n + 1]:.4f} s",
-                    f"CFL: {cfl:.6f}",
+                say(f"Time step: {n:6d}, Simulation time: {t_now:.4f} s",
+                    f"CFL: {cfl:.6f}, dt: {dt:.3e} s" + (f" (since last output: min {dt_min_seen:.3e}, max {dt_max_seen:.3e})"
+                                                        if cfg.cfl > 0 else ""),
                     f"Gas temperature: Min = {T_min:.2f} K, Max {T_max:.2f} K",
                     f"Fuel: Min = {Y_min:.2f}, Max {Y_max:.2f}",
                     *([f"Fuel temperature (nodes with fuel): Min = {s[0]:.2f} K, Max {s[1]:.2f} K"]
@@ -165,8 +183,9 @@ def run(cfg, verbose=True):
                     *([f"Max divergence error next to buildings: {model.wall_divergence:.3e} 1/s"]
                       if getattr(model, 'has_solids', False) else []),
                     f"Pressure iterations: {model.pressure_iterations}, "
-                    f"mean step time: {(now - last) / ((n % NT) + 1):.6f} s")
-                last = now
+                    f"mean step time: {(now - last) / steps_since:.6f} s")
+                last, steps_since = now, 0
+                dt_min_seen, dt_max_seen = np.inf, 0.0
                 E = {key: float(v) / 1e3 for key, v in model.energy.items()}
                 dE = {key: E[key] - energy[key][-1] for key in E}
                 ratio = lambda key, d: f"{100 * d[key] / d['combustion']:.1f}%" if d['combustion'] > 0 else "n/a"
@@ -180,9 +199,9 @@ def run(cfg, verbose=True):
                 if not np.isfinite(T_max):
                     say("Non-finite temperature: stopping")
                     break
-                rec.add(y, p, t[n + 1], model.output_fields(y))
+                rec.add(y, p, t_now, model.output_fields(y))
     elapsed = time.perf_counter() - start
-    say(f"\nSolver time: {timedelta(seconds=round(elapsed))} ({elapsed / (n + 1) * 1e3:.2f} ms per step)\n")
+    say(f"\nSolver time: {timedelta(seconds=round(elapsed))} ({elapsed / max(n, 1) * 1e3:.2f} ms per step, {n} steps)\n")
     log.close()
 
     data = rec.arrays()

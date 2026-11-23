@@ -409,7 +409,16 @@ extrema for a uniform velocity. At the walls two ghost rows copy the boundary va
 oscillates at the fire front and with forward Euler is only stable because of the temperature bound).
 
 \subsection{Time integration}
-Explicit, with a fixed step $\Delta t=(t_{\max}-t_{\min})/N_t$. The right-hand side $F(y)$ of all
+Explicit. The time step is adaptive by default (\code{[numerics] cfl}, target 0.4): each step takes
+\begin{equation}
+  \Delta t = \min\Big(\Delta t_{\max},\ \frac{\mathrm{CFL}}{\sum_j\max|u_j|/h_j},\
+  \frac{0.25}{\nu_{\mathrm{eff}}\sum_j h_j^{-2}}\Big),\qquad \Delta t_{\max}=\frac{t_{\max}-t_{\min}}{N_t},
+\end{equation}
+with $\nu_{\mathrm{eff}}$ the largest molecular plus subgrid kinematic viscosity, and steps are
+shortened to land exactly on the output times, which stay every $N_T\Delta t_{\max}$. In calm periods
+$\Delta t=\Delta t_{\max}$ and the results equal those of a fixed step. With \code{cfl = 0} (and with
+\code{--legacy}) the step is fixed. A fixed 1~ms step failed in an F19 calibration run when gusts
+in the plume raised the CFL number from 0.43 to 0.73 within four seconds. The right-hand side $F(y)$ of all
 equations except the pressure term is integrated with forward Euler (default), Heun's RK2 or
 classical RK4; the projection is applied once per step, after the last stage, so the scheme is
 first order in time overall. The radiation field $G$ is recomputed every \code{update\_every}
@@ -536,6 +545,7 @@ Key & Default & Meaning \\
 \code{[numerics] Nx, Ny, Nz} & -- & nodes per direction \\
 \code{[numerics] Nt, NT} & -- & time steps; output every \code{NT} steps \\
 \code{[numerics] time\_method} & \code{euler} & \code{euler}, \code{RK2}, \code{RK4} \\
+\code{[numerics] cfl} & 0.4 & adaptive step target; 0: fixed $\Delta t=(t_{\max}-t_{\min})/N_t$ \\
 \code{[numerics] T\_advection} & \code{koren} & \code{koren}, \code{upwind}, \code{central} \\
 \code{[numerics] bound} & \code{True} & apply the bounds of the solution \\
 \code{[pressure] tol, max\_iter} & $10^{-10}$, 50 & fixed point of the pressure \\
