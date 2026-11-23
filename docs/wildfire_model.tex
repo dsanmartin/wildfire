@@ -15,7 +15,7 @@
 \newcommand{\YO}{Y_{O_2}}
 
 \title{Coupled atmosphere--fire model: equations, boundary conditions\\and numerical methods of the PyTorch implementation}
-\author{Documentation of \code{src/} (branch \code{wui})}
+\author{Documentation of \code{src/} (branch \code{density-transport})}
 \date{November 2026}
 
 \begin{document}
@@ -49,12 +49,13 @@ $(z,y,x)$ in 3D.
 
 \paragraph{State variables.}
 \begin{center}
-\begin{tabular}{ll}
+\begin{tabular}{lp{11cm}}
 \toprule
 Symbol & Field (output name) \\
 \midrule
 $\vu$ & velocity (\code{u}, \code{v}[, \code{w}]) \\
 $T$ & gas temperature (\code{T}) \\
+$\rho$ & gas density, $\rho_\infty T_\infty/T$: the same variable as $T$, computed from it (not saved) \\
 $Y$ & fuel fraction left in the bed (\code{Y}) \\
 $T_s$ & solid fuel temperature (\code{Ts}) \\
 $W$ & fuel moisture, kg water per kg dry fuel (\code{W}) \\
@@ -68,46 +69,6 @@ $p$ & hydrodynamic pressure (\code{p}) \\
 %======================================================================
 \section{Gas phase}\label{sec:gas}
 %======================================================================
-
-\subsection{Structure of the gas-phase model}\label{sec:structure}
-The gas is described by the velocity $\vu$, the hydrodynamic pressure $p$, one thermodynamic variable
-and the species mass fractions $\Yf$, $\YO$. At low Mach number the thermodynamic pressure is
-constant, so density and temperature are tied by the gas law, $\rho=\rho_\infty T_\infty/T$, and they
-are \emph{one} variable: the code stores $T$ and computes $\rho$ from it wherever it is needed. Each
-equation has one role:
-\begin{center}
-\begin{tabular}{p{4.2cm}p{10.2cm}}
-\toprule
-Equation & Role \\
-\midrule
-continuity \eqref{eq:continuity} & advances $\rho$, hence $T$ (conservative, exact mass balance) \\
-species \eqref{eq:species} & advance $\rho\Yf$, $\rho\YO$ with the same mass fluxes \\
-energy \eqref{eq:energy} & gives the heating rate $\dot q$; it is not integrated in time \\
-constraint \eqref{eq:div} & turns $\dot q$ (and the added gas) into the velocity divergence $D$ \\
-momentum \eqref{eq:momentum} + projection & advance $\vu$ and give $p$, with $\nabla\cdot\vu=D$ \\
-\bottomrule
-\end{tabular}
-\end{center}
-The heating therefore changes the temperature through the expansion it imposes: a heated cell has
-$D>0$, sends out more mass than it receives, its density falls and its temperature rises. In the
-continuous equations this is the same as integrating the energy equation; discretely it conserves
-mass exactly, and mixing of hot and cold gas, physical or numerical, gives the mass-weighted
-temperature, as it should. One time step (forward Euler):
-\begin{enumerate}
-  \item from the state $(\vu^n, T^n, Y_k^n)$ and the face fluxes $F^n$ of the previous projection,
-        evaluate all right-hand sides; with $\rho^n=\rho_\infty T_\infty/T^n$,
-        $\rho^{n+1}=\rho^n-\Delta t\,[\nabla\cdot(\rho F^n)-\dot m''']$ and
-        $(\rho Y_k)^{n+1}=(\rho Y_k)^n+\Delta t\,[\dots]$, then $T^{n+1}=\rho_\infty T_\infty/\rho^{n+1}$ and
-        $Y_k^{n+1}=(\rho Y_k)^{n+1}/\rho^{n+1}$; provisional velocity $\vu^*$ from the momentum equation;
-  \item compute $D^{n+1}$ from the heating rate $\dot q$ at the new state (constraint \eqref{eq:div});
-  \item project: pressure and face fluxes $F^{n+1}$ with discrete divergence $D^{n+1}$, corrected node
-        velocities $\vu^{n+1}$ (Section~\ref{sec:projection});
-  \item boundary conditions, bounds, solid fuel fixes, energy and mass budgets.
-\end{enumerate}
-The heating thus reaches the temperature one step later, through $F^{n+1}$. The solid fuel
-(Section~\ref{sec:solid}) is advanced in step 1 with its own ordinary differential equations.
-\code{[numerics] scalar\_transport = temperature} instead integrates the energy equation for $T$ and
-the advective form of the species equations (the original approach, Appendix~\ref{app:corrections}).
 
 \subsection{Low Mach number approximation}
 The thermodynamic pressure is constant, so the ideal gas law gives
@@ -184,6 +145,56 @@ the volume-weighted one (744~K for equal volumes at 1200 and 288~K) instead of t
 (464~K), the mixed gas is too hot and too light, and mass disappears without any flux
 (Appendix~\ref{app:corrections}).
 
+\subsection{Structure of the gas-phase model and time step}\label{sec:structure}
+In summary, the gas is described by the velocity $\vu$, the hydrodynamic pressure $p$, one thermodynamic variable
+and the species mass fractions $\Yf$, $\YO$. At low Mach number the thermodynamic pressure is
+constant, so density and temperature are tied by the gas law, $\rho=\rho_\infty T_\infty/T$, and they
+are \emph{one} variable: the code stores $T$ and computes $\rho$ from it wherever it is needed. Each
+equation has one role:
+\begin{center}
+\begin{tabular}{p{5.0cm}p{9.6cm}}
+\toprule
+Equation & Role \\
+\midrule
+continuity \eqref{eq:continuity} & advances $\rho$, hence $T$ (conservative, exact mass balance) \\
+species \eqref{eq:species} & advance $\rho\Yf$, $\rho\YO$ with the same mass fluxes \\
+energy \eqref{eq:energy} & gives the heating rate $\dot q$; it is not integrated in time \\
+constraint \eqref{eq:div} & turns $\dot q$ and the added gas into the divergence $D$ \\
+momentum \eqref{eq:momentum} + projection & advance $\vu$ and give $p$, with $\nabla\cdot\vu=D$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+The heating therefore changes the temperature through the expansion it imposes: a heated cell has
+$D>0$, sends out more mass than it receives, its density falls and its temperature rises. In the
+continuous equations this is the same as integrating the energy equation; discretely it conserves
+mass exactly, and mixing of hot and cold gas, physical or numerical, gives the mass-weighted
+temperature, as it should. One time step (forward Euler):
+\begin{enumerate}
+  \item From the state $(\vu^n, T^n, Y_k^n)$ and the face fluxes $F^n$ of the previous projection,
+        evaluate all right-hand sides and advance the density and the species,
+        \begin{align*}
+          \rho^n &= \frac{\rho_\infty T_\infty}{T^n},\\[4pt]
+          \rho^{n+1} &= \rho^n - \Delta t\,\big[\nabla\cdot(\rho F^n) - \dot m'''\big],\\[4pt]
+          (\rho Y_k)^{n+1} &= (\rho Y_k)^n + \Delta t\,\big[-\nabla\cdot(\rho F^n Y_k) + \text{diffusion} + \text{sources}\big],
+        \end{align*}
+        then recover the temperature and the mass fractions,
+        \[
+          T^{n+1} = \frac{\rho_\infty T_\infty}{\rho^{n+1}},\qquad
+          Y_k^{n+1} = \frac{(\rho Y_k)^{n+1}}{\rho^{n+1}},
+        \]
+        and compute the provisional velocity $\vu^*$ from the momentum equation.
+  \item Compute the divergence $D^{n+1}$ from the heating rate $\dot q$ at the new state
+        (constraint \eqref{eq:div}).
+  \item Project: the pressure and the face fluxes $F^{n+1}$ with discrete divergence $D^{n+1}$, and the
+        corrected node velocities $\vu^{n+1}$ (Section~\ref{sec:projection}).
+  \item Apply the boundary conditions, the bounds and the solid fuel fixes, and update the energy and
+        mass budgets.
+\end{enumerate}
+The heating thus reaches the temperature one step later, through $F^{n+1}$. The solid fuel
+(Section~\ref{sec:solid}) is advanced in step 1 with its own ordinary differential equations.
+\code{[numerics] scalar\_transport = temperature} instead integrates the energy equation for $T$ and
+the advective form of the species equations (the original approach, Appendix~\ref{app:corrections}).
+
 %======================================================================
 \section{Solid fuel}\label{sec:solid}
 %======================================================================
@@ -193,22 +204,6 @@ The fuel occupies the nodes up to a height $Y_h$ above the terrain (optionally l
 horizontally), with $Y=1$ initially. The elements are characterized by the packing ratio
 $\alpha_s$, the surface-to-volume ratio $\sigma_s$ (equivalent cylinder diameter $d=4/\sigma_s$) and
 the dry bulk density $\rho_b$. Fuel surface per unit volume: $a=\alpha_s\sigma_s Y$.
-
-\subsection{Fuel parameters from FDS Case F19}\label{sec:fds-fuel}
-The fuel defaults are those of the FDS validation case \code{Case\_F19.fds} (with
-\code{vegetation\_model.txt}): surface-to-volume ratio $\sigma_s=12240$~m$^{-1}$ (cylindrical blades
-of diameter 0.33~mm), bulk density 0.6144~kg\,m$^{-3}$ and particle density 500~kg\,m$^{-3}$, so the
-packing ratio is $\alpha_s=0.6144/500=0.00123$, bed height 0.49~m, moisture 0.058 and heat of
-pyrolysis 418~kJ\,kg$^{-1}$. For a cylindrical particle FDS takes the drag area as $2\pi rL$ times a
-shape factor 1/4 (random orientation), so the drag on the gas per unit volume is
-$\tfrac12 C_{d,\text{FDS}}(\beta\sigma/4)|\vu|\vu$; with $\mathbf F_d$ above, its
-\code{DRAG\_COEFFICIENT} of 2.8 corresponds to $C_d=0.7$. The absorption coefficient of the fuel,
-$\alpha_s\sigma_sY/4$, is the same as in FDS. FDS converts 75\% of the dry fuel into a gas with a heat
-of combustion of 17.4~MJ\,kg$^{-1}$ and the rest into char that oxidizes at the surface; this model
-gasifies all of it, so $H_C=13.1$~MJ per kg of dry fuel matches the FDS gas-phase heat release. Not
-reproduced: the char oxidation, the temperature-dependent fuel heat capacity of FDS (1.1 to
-2.0~kJ\,kg$^{-1}$K$^{-1}$ from 0 to 200~$^\circ$C; here constant $c_s$) and its Arrhenius pyrolysis
-(here linear by default).
 
 \subsection{Fuel temperature and moisture}
 \begin{equation}\label{eq:solid}
@@ -243,7 +238,28 @@ Above $T_\text{pyr,end}$ all net heat goes to pyrolysis, so $T_s$ stays near $T_
 \paragraph{Arrhenius.} $\dot m''' = \rho_b\,Y_f\,A\,e^{-T_\text{act}/T_s}\,H(T_s-T_\text{pc})\,Y$ ($H$ the
 Heaviside step), the rate of the published model (Appendix~\ref{app:published}) at the fuel temperature.
 
-In both cases $\dot m'''\le\rho_bY/\Delta t$ (no more fuel than is present).
+\noindent In both cases $\dot m'''\le\rho_bY/\Delta t$ (no more fuel than is present).
+
+\subsection{Fuel parameters from FDS Case F19}\label{sec:fds-fuel}
+The fuel defaults are those of the FDS validation case of F19, \code{Case\_F19.fds}, with the
+vegetation model in \code{vegetation\_model.txt}:
+\begin{itemize}
+  \item cylindrical blades with surface-to-volume ratio $\sigma_s=12240$~m$^{-1}$ (diameter 0.33~mm);
+  \item bulk density 0.6144~kg\,m$^{-3}$ and particle density 500~kg\,m$^{-3}$, so the packing ratio is
+        $\alpha_s=0.6144/500=0.00123$; bed height 0.49~m; moisture 0.058; heat of pyrolysis
+        418~kJ\,kg$^{-1}$ (here 416, after Mell et al.\ 2007);
+  \item drag: for a cylindrical particle FDS takes the drag area as $2\pi rL$ times a shape factor 1/4
+        (random orientation), so its drag on the gas per unit volume is
+        $\tfrac12 C_{d,\text{FDS}}(\beta\sigma/4)|\vu|\vu$; with $\mathbf F_d$ of Section~\ref{sec:gas}, its
+        drag coefficient of 2.8 corresponds to $C_d=0.7$;
+  \item radiation: the absorption coefficient of the fuel, $\alpha_s\sigma_sY/4$, is the same as in FDS;
+  \item heat of combustion: FDS converts 75\% of the dry fuel into a gas with a heat of combustion of
+        17.4~MJ\,kg$^{-1}$ and the rest into char that oxidizes at the surface; this model gasifies all
+        of it, so $H_C=13.1$~MJ per kg of dry fuel matches the FDS gas-phase heat release.
+\end{itemize}
+Not reproduced: the char oxidation, the temperature-dependent fuel heat capacity of FDS (1.1 to
+2.0~kJ\,kg$^{-1}$K$^{-1}$ from 0 to 200~$^\circ$C; here constant $c_s$) and its Arrhenius pyrolysis
+(here linear by default).
 
 %======================================================================
 \section{Gas-phase combustion}\label{sec:combustion}
@@ -335,11 +351,14 @@ enters through the ground face into the half cell of the ground row, as the volu
 $\dot m'''=\dot q''_b f(t-t_\text{ign})/(H_C\,\Delta z/2)$, added to the pyrolysis source in the species
 and in the constraint \eqref{eq:div}. Each point is lit at $t_\text{ign}=r/v_\text{ign}$, its distance $r$ to the
 origin divided by the spread rate (0: all at once), and follows the ramp $f$, piecewise linear in the
-time since it was lit. Defaults (FDS Case F19): $\dot q''_b=1460$~kW\,m$^{-2}$, strip $0\le x\le3.3$~m,
-$-87\le y\le87$~m, ramp $f$ = 0, 1, 1, 0 at 0, 1, 11, 12~s, spread rate 1.56~m\,s$^{-1}$ from
-$(0,0)$, so the 174~m line is fully lit after 56~s. A 2D run is the plane $y=0$ of this setup, lit at
-$t=0$ in the middle of the line. The ramp is evaluated on the device from the simulation time, so it
-also runs inside CUDA graphs.
+time since it was lit. The ramp is evaluated on the device from the simulation time, so it also runs
+inside CUDA graphs. Defaults (FDS Case F19):
+\begin{itemize}
+  \item $\dot q''_b=1460$~kW\,m$^{-2}$ on the strip $0\le x\le3.3$~m, $-87\le y\le87$~m;
+  \item ramp $f$ = 0, 1, 1, 0 at 0, 1, 11 and 12~s after lighting;
+  \item spread rate 1.56~m\,s$^{-1}$ from $(0,0)$, so the 174~m line is fully lit after 56~s.
+\end{itemize}
+A 2D run is the plane $y=0$ of this setup, lit at $t=0$ in the middle of the line.
 
 \paragraph{Hot gas (\code{temperature}, default).} $T=T_\infty+(T_\text{hot}-T_\infty)\,S$ at $t=0$, with
 the shape $S$:
@@ -353,7 +372,7 @@ Optionally $T$ is held at its initial value where $S>0.01$ for $t\le$\,\code{t\_
 
 \subsection{Boundary conditions}
 \begin{center}
-\begin{tabular}{p{2.4cm}p{4.6cm}p{2.9cm}p{2.0cm}p{1.6cm}}
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.3cm}>{\raggedright\arraybackslash}p{4.2cm}>{\raggedright\arraybackslash}p{3.3cm}>{\raggedright\arraybackslash}p{1.6cm}>{\raggedright\arraybackslash}p{2.0cm}}
 \toprule
 Boundary & Velocity & $T$, $\Yf$, $\YO$ & $Y$, $T_s$, $W$ & $p$ \\
 \midrule
@@ -487,7 +506,7 @@ the scalars ($T$, $\Yf$, $\YO$) the ground row is a half cell next to an adiabat
 $\partial_z\phi_0=0$ and $\partial_{zz}\phi_0\approx2(\phi_1-\phi_0)/\Delta z^2$, the flux balance of
 the half cell.
 
-\subsection{Advection}
+\subsection{Advection}\label{sec:advection}
 \paragraph{Momentum: second-order upwind.}
 \begin{equation}
   (a\,\partial_x\phi)_i \approx a_i^+\frac{3\phi_i-4\phi_{i-1}+\phi_{i-2}}{2\Delta x}
@@ -499,10 +518,11 @@ used.
 \paragraph{Density and species: Koren-limited, conservative.}
 With the projected face fluxes $F$ (Section~\ref{sec:projection}) and the mass fluxes
 $m_{j,i+1/2}=F_{j,i+1/2}\,\rho_{i+1/2}$,
-\begin{equation}
-  \frac{\rho_i^{n+1}-\rho_i^n}{\Delta t} = -\sum_j\frac{m_{j,i+1/2}-m_{j,i-1/2}}{h_j} + \dot m'''_i,\qquad
-  \frac{(\rho Y)_i^{n+1}-(\rho Y)_i^n}{\Delta t} = -\sum_j\frac{m_{j,i+1/2}Y_{i+1/2}-m_{j,i-1/2}Y_{i-1/2}}{h_j} + \dots,
-\end{equation}
+\begin{align}
+  \frac{\rho_i^{n+1}-\rho_i^n}{\Delta t} &= -\sum_j\frac{m_{j,i+1/2}-m_{j,i-1/2}}{h_j} + \dot m'''_i,\\[4pt]
+  \frac{(\rho Y)_i^{n+1}-(\rho Y)_i^n}{\Delta t} &= -\sum_j\frac{m_{j,i+1/2}\,Y_{i+1/2}-m_{j,i-1/2}\,Y_{i-1/2}}{h_j}
+    + \text{diffusion} + \text{sources},
+\end{align}
 then $T=\rho_\infty T_\infty/\rho^{n+1}$ and $Y=(\rho Y)^{n+1}/\rho^{n+1}$ (exact with forward Euler; with RK2
 and RK4 the stages use the equivalent rates of $T$ and $Y$). The face values $\rho_{i+1/2}$, $Y_{i+1/2}$ are
 reconstructed from the upwind side,
@@ -542,7 +562,7 @@ ground. The projection
   = \frac{D_i(F^*)-D^*_i}{\Delta t},
 \end{equation}
 with arithmetic face densities (an interpolation of the same $\rho$, chosen to keep the operator
-symmetric; the transport uses Koren-limited face values of $\rho$, Section~\ref{sec:numerics}) and $D^*$
+symmetric; the transport uses Koren-limited face values of $\rho$, Section~\ref{sec:advection}) and $D^*$
 the divergence \eqref{eq:div} at the provisional state,
 makes the face fluxes satisfy the discrete constraint to the solver tolerance (about
 $10^{-11}$~s$^{-1}$, also for density ratios of 8 and with buildings). The subgrid heat flux in $D^*$
@@ -648,78 +668,97 @@ information and a copy of the code.
 %======================================================================
 \section{Input parameters}\label{sec:params}
 %======================================================================
-Keys are given as \code{[section] key}. Values in a 2D file use \code{y} for the vertical
-direction; a file is 3D when it defines \code{z\_min}, \code{z\_max} and \code{Nz}. Options that only
-serve the published model are listed in Appendix~\ref{app:params}.
+Keys are listed under their section of the input file (\code{[section]} followed by \code{key = value}
+lines). Values in a 2D file use \code{y} for the vertical direction; a file is 3D when it defines
+\code{z\_min}, \code{z\_max} and \code{Nz}. Constants without a key are given in SI units. Options that
+only serve the published model are listed in Appendix~\ref{app:params}.
 
-\begin{longtable}{p{4.6cm}p{2.6cm}p{7.6cm}}
+\newcommand{\psec}[1]{\addlinespace[4pt]\multicolumn{3}{l}{\code{[#1]}}\\[1pt]}
+\begin{longtable}{>{\raggedright\arraybackslash}p{3.9cm}>{\raggedright\arraybackslash}p{3.5cm}>{\raggedright\arraybackslash}p{7.3cm}}
 \toprule
 Key & Default & Meaning \\
 \midrule
 \endhead
-\multicolumn{3}{l}{\emph{Domain and numerics}}\\
-\code{[domain]} \code{x\_min}\dots\code{t\_max} & -- & domain and time interval \\
-\code{[numerics] Nx, Ny, Nz} & -- & nodes per direction \\
-\code{[numerics] Nt, NT} & -- & $\Delta t_\text{max}=(t_\text{max}-t_\text{min})/N_t$; output every \code{NT}\,$\Delta t_\text{max}$ \\
-\code{[numerics] time\_method} & \code{euler} & \code{euler}, \code{RK2}, \code{RK4} \\
-\code{[numerics] cfl} & 0.4 & adaptive step target; 0: fixed step \\
-\code{[numerics] cuda\_graph, pcg\_chunk} & \code{auto}, 4 & CUDA graphs (\code{auto}, \code{on}, \code{off}); PCG iterations per replay \\
-\code{[numerics] T\_advection} & \code{koren} & \code{koren} or \code{upwind} (without face fluxes) \\
-\code{[numerics] bound} & \code{True} & apply the bounds of the solution \\
-\code{[pressure] tol, max\_iter} & $10^{-10}$, 50 & pressure solver tolerance and iterations \\
-\code{[buildings]} \code{name} & -- & building box (Section~\ref{sec:ibc}) \\
-\code{[density] constant} & \code{False} & constant density (incompressible) \\
-\multicolumn{3}{l}{\emph{Gas and turbulence}}\\
-$\mu_0$, $\kappa_0$, $c_p$ & $1.802\times10^{-5}$, 0.02476, 1007 & SI units at 288.15~K (not in the input file) \\
-\code{[gas] cp\_model} & \code{mixture} & \code{mixture}, \code{variable} ($c_p(T)$ of air), \code{constant} \\
-\code{[gas] transport} & \code{sutherland} & \code{sutherland} or \code{constant} \\
-\code{[temperature] T\_inf} & 288.15 K & ambient temperature (F19: 307.15 K, FDS \code{TMPA}); $\rho_\infty$ follows it \\
-\code{[turbulence] enabled} & \code{True} & Smagorinsky model \\
-\code{[turbulence] C\_s} & 0.2 & Smagorinsky constant \\
-\code{[turbulence] filter\_width} & grid & fixed filter width (m) \\
-$Pr$ & 0.7323 & Prandtl number (also turbulent) \\
-\multicolumn{3}{l}{\emph{Fuel}}\\
-\code{[fuel] Y\_h} & 0.49 m & fuel bed height \\
-\code{[fuel] C\_d, alpha\_s, sigma\_s} & 0.7, 0.00123, 12240 m$^{-1}$ & drag coefficient, packing ratio, surface-to-volume (Section~\ref{sec:fds-fuel}) \\
-\code{[fuel] rho\_bulk} & 0.6144 kg\,m$^{-3}$ & dry bulk density \\
-\code{[fuel] x\_start}\dots\code{y\_end} & whole domain & horizontal extent of the bed \\
-\code{[fuel] H\_C} & $21\times10^6$ J\,kg$^{-1}$ & heat of combustion per kg of dry fuel (F19 calibration: 13.1--17.4~MJ\,kg$^{-1}$) \\
-\code{[fuel] c\_s} & 1500 J\,kg$^{-1}$K$^{-1}$ & specific heat of dry fuel \\
-\code{[fuel] H\_pyr} & $4.16\times10^5$ J\,kg$^{-1}$ & heat of pyrolysis \\
-\code{[fuel] moisture} & 0.058 & moisture content \\
-\code{[fuel] pyrolysis} & \code{linear} & \code{linear} or \code{arrhenius} \\
-\code{[fuel] T\_pyr, T\_pyr\_end} & 400 K, 500 K & range of linear pyrolysis \\
-\code{[fuel] A, T\_act, Y\_f}, \code{[temperature] T\_pc} & $10^9$ s$^{-1}$, 18040.85 K, 70, 523 K & Arrhenius pyrolysis \\
-\code{[fuel] slab} & \code{True} & solid terms and drag on the fuel rows only (bitwise identical) \\
-$c_w$, $L_v$, $T_\text{boil}$, $h_c$ & 4184, $2.259\times10^6$, 373.15, 1.42 & water properties, natural convection coefficient (SI) \\
-\multicolumn{3}{l}{\emph{Combustion and radiation}}\\
-\code{[combustion] s\_O2} & 1.185 & oxygen per kg of fuel gas \\
-\code{[combustion] tau\_mix} & $\sqrt{2\Delta/|g|}$ & mixing time (s) \\
-\code{[combustion] Y\_O2\_amb} & 0.232 & ambient oxygen \\
-\code{[radiation] kappa\_gas} & 0.1 m$^{-1}$ & gray gas absorption coefficient \\
-\code{[radiation] n\_polar, n\_azimuth} & 12, 16 & angular quadrature (even) \\
-\code{[radiation] update\_every} & 5 & steps between radiation solves \\
-\multicolumn{3}{l}{\emph{Wind}}\\
-\code{[wind] u\_r, z\_r, shape} & 4.8 m\,s$^{-1}$, 2 m, \code{monin-obukhov} & reference wind and profile \\
-\code{[wind] z\_0, L} & 0.03 m, neutral & roughness and Obukhov length \\
-\code{[wind] forcing, forcing\_time} & \code{profile}, 1 s & wind forcing and its relaxation time \\
-\code{[wall] model, z\_0} & \code{log}, wind $z_0$ & ground wall model and its roughness \\
-\multicolumn{3}{l}{\emph{Ignition}}\\
-\code{[ignition] model} & \code{temperature} & \code{temperature} (hot gas) or \code{burner} \\
-\code{[ignition] hrrpua} & 1460 kW\,m$^{-2}$ & burner heat release per unit area \\
-\code{[ignition] x\_start, x\_end, y\_start, y\_end} & 0, 3.3, $-87$, 87 m & burner strip \\
-\code{[ignition] ramp} & \code{0 0, 1 1, 11 1, 12 0} & time since lit (s) and fraction of \code{hrrpua} \\
-\code{[ignition] spread\_rate, x\_origin, y\_origin} & 1.56 m\,s$^{-1}$, 0, 0 & lighting of the strip from the origin \\
-\code{[temperature] T\_hot, shape} & $T_\infty+500$~K, \code{gaussian} & hot-gas ignition \\
-\code{[temperature] x\_start}\dots\code{z\_end} & 0, 6, -, -, 0, 1 m & hot-gas extent \\
-\code{[temperature] t\_source} & $-1$ (off) & hold the hot gas until this time \\
-\code{[temperature] T\_min, T\_max} & $T_\infty$, 2500 K & temperature bounds \\
-\code{[topography] shape} & \code{flat} & \code{flat}, \code{hill}, \code{slope} (2D) \\
-\multicolumn{3}{l}{\emph{Output}}\\
-\code{[output] z\_slice, y\_slice} & 1 m, center & planes saved in 3D \\
-\code{[output] full\_interval} & 0 (off) & seconds between full snapshots \\
-\code{[output] full\_dtype} & \code{float32} & precision of the snapshots \\
 \bottomrule
+\endfoot
+\psec{domain}
+\code{x\_min}\dots\code{t\_max} & -- & domain and time interval \\
+\psec{numerics}
+\code{Nx}, \code{Ny}, \code{Nz} & -- & nodes per direction \\
+\code{Nt}, \code{NT} & -- & $\Delta t_\text{max}=(t_\text{max}-t_\text{min})/N_t$; output every $N_T\Delta t_\text{max}$ \\
+\code{time\_method} & \code{euler} & \code{euler}, \code{RK2}, \code{RK4} \\
+\code{cfl} & 0.4 & adaptive step target; 0: fixed step \\
+\code{scalar\_transport} & \code{density} & conservative $\rho$ and $\rho Y_k$ (Section~\ref{sec:structure}) \\
+\code{cuda\_graph} & \code{auto} & CUDA graphs: \code{auto}, \code{on}, \code{off} \\
+\code{pcg\_chunk} & 4 & PCG iterations per graph replay \\
+\code{T\_advection} & \code{koren} & \code{koren} or \code{upwind} (without face fluxes) \\
+\code{bound} & \code{True} & apply the bounds of the solution \\
+\psec{pressure}
+\code{tol}, \code{max\_iter} & $10^{-10}$, 50 & pressure solver tolerance and iterations \\
+\psec{density}
+\code{constant} & \code{False} & constant density (incompressible) \\
+\psec{buildings}
+any name & -- & building box \code{x0, x1, height} (3D: \code{x0, x1, y0, y1, height}) \\
+\psec{gas}
+\code{cp\_model} & \code{mixture} & \code{mixture}, \code{variable} ($c_p(T)$ of air), \code{constant} \\
+\code{transport} & \code{sutherland} & \code{sutherland} or \code{constant} \\
+-- & $\mu_0=1.802\times10^{-5}$, $\kappa_0=0.02476$, $c_p=1007$ & viscosity and conductivity at 288.15~K, constant $c_p$ \\
+\psec{turbulence}
+\code{enabled} & \code{True} & Smagorinsky model \\
+\code{C\_s} & 0.2 & Smagorinsky constant \\
+\code{filter\_width} & grid & fixed filter width (m) \\
+-- & $Pr=0.7323$ & Prandtl number (also turbulent) \\
+\psec{fuel}
+\code{Y\_h} & 0.49~m & fuel bed height \\
+\code{C\_d} & 0.7 & drag coefficient (Section~\ref{sec:fds-fuel}) \\
+\code{alpha\_s} & 0.00123 & packing ratio \\
+\code{sigma\_s} & 12240~m$^{-1}$ & surface-to-volume ratio \\
+\code{rho\_bulk} & 0.6144~kg\,m$^{-3}$ & dry bulk density \\
+\code{x\_start}\dots\code{y\_end} & whole domain & horizontal extent of the bed \\
+\code{H\_C} & 21~MJ\,kg$^{-1}$ & heat of combustion per kg of dry fuel (F19 calibration: 13.1--17.4) \\
+\code{c\_s} & 1500~J\,kg$^{-1}$K$^{-1}$ & specific heat of dry fuel \\
+\code{H\_pyr} & 416~kJ\,kg$^{-1}$ & heat of pyrolysis \\
+\code{moisture} & 0.058 & kg water per kg dry fuel \\
+\code{pyrolysis} & \code{linear} & \code{linear} or \code{arrhenius} \\
+\code{T\_pyr}, \code{T\_pyr\_end} & 400~K, 500~K & range of linear pyrolysis \\
+\code{A}, \code{T\_act}, \code{Y\_f} & $10^9$~s$^{-1}$, 18040.85~K, 70 & Arrhenius pyrolysis (with \code{[temperature] T\_pc} = 523~K) \\
+\code{slab} & \code{True} & solid terms and drag on the fuel rows only (bitwise identical) \\
+-- & $c_w=4184$, $L_v=2.259\times10^6$, $T_\text{boil}=373.15$, $h_c=1.42$ & water properties, natural convection coefficient \\
+\psec{combustion}
+\code{s\_O2} & 1.185 & kg of oxygen per kg of fuel gas \\
+\code{tau\_mix} & $\sqrt{2\Delta/|g|}$ & mixing time (s) \\
+\code{Y\_O2\_amb} & 0.232 & ambient oxygen \\
+\psec{radiation}
+\code{kappa\_gas} & 0.1~m$^{-1}$ & gray gas absorption coefficient \\
+\code{n\_polar}, \code{n\_azimuth} & 12, 16 & angular quadrature (even) \\
+\code{update\_every} & 5 & steps between radiation solves \\
+\psec{wind}
+\code{u\_r}, \code{z\_r} & 4.8~m\,s$^{-1}$, 2~m & reference wind speed and height \\
+\code{shape} & \code{monin-obukhov} & \code{monin-obukhov}, \code{log}, \code{constant}, \code{power law} \\
+\code{z\_0}, \code{L} & 0.03~m, neutral & roughness and Obukhov lengths \\
+\code{forcing}, \code{forcing\_time} & \code{profile}, 1~s & wind forcing and its relaxation time \\
+\psec{wall}
+\code{model}, \code{z\_0} & \code{log}, wind $z_0$ & ground wall model and its roughness \\
+\psec{ignition}
+\code{model} & \code{temperature} & \code{temperature} (hot gas) or \code{burner} \\
+\code{hrrpua} & 1460~kW\,m$^{-2}$ & burner heat release per unit area \\
+\code{x\_start}, \code{x\_end} & 0, 3.3~m & burner strip \\
+\code{y\_start}, \code{y\_end} & $-87$, 87~m & burner strip (3D) \\
+\code{ramp} & \code{0 0, 1 1, 11 1, 12 0} & time since lit (s) and fraction of \code{hrrpua} \\
+\code{spread\_rate} & 1.56~m\,s$^{-1}$ & lighting speed of the strip (0: all at once) \\
+\code{x\_origin}, \code{y\_origin} & 0, 0 & where the lighting starts \\
+\psec{temperature}
+\code{T\_inf} & 288.15~K & ambient temperature (F19: 307.15~K, FDS \code{TMPA}); $\rho_\infty$ follows it \\
+\code{T\_hot}, \code{shape} & $T_\infty+500$~K, \code{gaussian} & hot-gas ignition \\
+\code{x\_start}\dots\code{z\_end} & 0, 6, --, --, 0, 1~m & hot-gas extent \\
+\code{t\_source} & $-1$ (off) & hold the hot gas until this time \\
+\code{T\_min}, \code{T\_max} & $T_\infty$, 2500~K & temperature bounds \\
+\psec{topography}
+\code{shape} & \code{flat} & \code{flat}, \code{hill}, \code{slope} (2D) \\
+\psec{output}
+\code{z\_slice}, \code{y\_slice} & 1~m, center & planes saved in 3D \\
+\code{full\_interval} & 0 (off) & seconds between full snapshots \\
+\code{full\_dtype} & \code{float32} & precision of the snapshots \\
 \end{longtable}
 
 %======================================================================
@@ -851,23 +890,30 @@ turns each solve into two dense products along $z$. \code{auto} selects \code{ei
 small or medium grids on CPU. Both agree to round-off.
 
 \subsection{Parameters of the published model}\label{app:params}
-\begin{longtable}{p{4.6cm}p{2.6cm}p{7.6cm}}
+\begin{longtable}{>{\raggedright\arraybackslash}p{3.9cm}>{\raggedright\arraybackslash}p{3.5cm}>{\raggedright\arraybackslash}p{7.3cm}}
 \toprule
-Key & Default & Meaning \\
+Key & Default & Published model \\
 \midrule
 \endhead
-\code{[fuel] solid\_temperature} & \code{True} & \code{False}: single temperature (published model) \\
-\code{[radiation] model} & \code{transport} & \code{diffusion}: $4\sigma\delta T^3$ conductivity \\
-\code{[temperature] delta} & 0.1 m & optical path length (diffusion radiation) \\
-\code{[fuel] reaction} & \code{exact} & \code{exact} or \code{explicit} (single temperature) \\
-\code{[temperature] sink, h\_c} & \code{surface}, 1.42 & convective exchange (single temperature) \\
-\code{[numerics] T\_advection} & \code{koren} & \code{central}: original scheme \\
-\code{[pressure] projection} & \code{face} & \code{nodal}: original projection \\
-\code{[pressure] poisson} & \code{auto} & \code{auto}, \code{thomas}, \code{eig} (nodal projection) \\
-\code{[pressure] dilatation} & \code{consistent} & \code{published}: original thermal expansion \\
-\code{[numerics] scalar\_transport} & \code{density} & \code{temperature}: advect $T$ and $Y_k$ (original) \\
-\code{[wind] shape} & \code{monin-obukhov} & \code{power law}: $u_r(d_w/z_r)^{\alpha_u}$, $\alpha_u=1/7$ \\
 \bottomrule
+\endfoot
+\psec{fuel}
+\code{solid\_temperature} & \code{True} & \code{False}: single temperature \\
+\code{reaction} & \code{exact} & \code{exact} or \code{explicit} (single temperature) \\
+\psec{radiation}
+\code{model} & \code{transport} & \code{diffusion}: $4\sigma\delta T^3$ conductivity \\
+\psec{temperature}
+\code{delta} & 0.1~m & optical path length (diffusion radiation) \\
+\code{sink}, \code{h\_c} & \code{surface}, 1.42 & convective exchange (single temperature) \\
+\psec{numerics}
+\code{T\_advection} & \code{koren} & \code{central}: original scheme \\
+\code{scalar\_transport} & \code{density} & \code{temperature}: advect $T$ and $Y_k$ \\
+\psec{pressure}
+\code{projection} & \code{face} & \code{nodal}: original projection \\
+\code{poisson} & \code{auto} & \code{auto}, \code{thomas}, \code{eig} (nodal projection) \\
+\code{dilatation} & \code{consistent} & \code{published}: original thermal expansion \\
+\psec{wind}
+\code{shape} & \code{monin-obukhov} & \code{power law}: $u_r(d_w/z_r)^{\alpha_u}$, $\alpha_u=1/7$ \\
 \end{longtable}
 
 \section*{References}
