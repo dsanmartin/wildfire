@@ -203,7 +203,10 @@ class Model:
     def apply_solids(self, y, homogeneous=False):
         """Wall conditions of the buildings (see _init_solids)."""
         flat = y.view(y.shape[0], -1)
-        flat[:, self.solid_idx] = 0.0 if homogeneous else self.solid_values
+        if homogeneous:                       # index_fill_: no host-to-device copy (CUDA graphs)
+            flat.index_fill_(1, self.solid_idx, 0.0)
+        else:
+            flat[:, self.solid_idx] = self.solid_values
         for k in self.neumann:
             flat[k, self.wall_idx] = (flat[k][self.wall_nb] * self.wall_w).sum(1)
 
@@ -631,8 +634,12 @@ class Model:
             for k in self.neumann:
                 flat[k, self.cut] = extrap(flat[k, self.cut_up1], flat[k, self.cut_up2]) if legacy \
                     else flat[k, self.cut_up1]
-            flat[:nd, self.cut] = 0.0 if homogeneous else self.vel_bottom.reshape(nd, -1)[:, self.cut_h]
-            flat[:, self.dead] = 0.0 if homogeneous else self.dead_values
+            if homogeneous:                   # index_fill_: no host-to-device copy (CUDA graphs)
+                flat[:nd].index_fill_(1, self.cut, 0.0)
+                flat.index_fill_(1, self.dead, 0.0)
+            else:
+                flat[:nd, self.cut] = self.vel_bottom.reshape(nd, -1)[:, self.cut_h]
+                flat[:, self.dead] = self.dead_values
             if not self.cfg.legacy:
                 flat[nd, self.dead] = flat[nd, self.dead_surface]
         if self.cfg.wall_model == 'log':
@@ -641,7 +648,7 @@ class Model:
             flat = y.view(y.shape[0], -1)
             for i in range(nd - 1):
                 flat[i, self.wall_W] = flat[i, self.wall_U]
-            flat[nd - 1, self.wall_W] = 0.0
+            flat[nd - 1].index_fill_(0, self.wall_W, 0.0)
         if self.has_solids:
             self.apply_solids(y, homogeneous)
         return y
@@ -694,7 +701,7 @@ class Model:
         c, op, nd, dt = self.cfg, self.op, self.nd, self.dt
         flat = y1.view(y1.shape[0], -1)
         for _ in range(c.wall_iterations):
-            flat[:nd, self.solid_idx] = 0.0
+            flat[:nd].index_fill_(1, self.solid_idx, 0.0)
             div = op.half(y1[0], 0)
             for j in range(1, nd):
                 div = div + op.half(y1[j], j)
@@ -704,7 +711,7 @@ class Model:
             for j in range(nd):
                 y1[j] -= dt / rho_n * grad[j]
             p = p + dp
-        flat[:nd, self.solid_idx] = 0.0
+        flat[:nd].index_fill_(1, self.solid_idx, 0.0)
         div = op.half(y1[0], 0)
         for j in range(1, nd):
             div = div + op.half(y1[j], j)
