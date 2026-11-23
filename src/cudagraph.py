@@ -15,6 +15,8 @@ The state, the pressure, the face fluxes, the radiation field and the time step 
 in persistent buffers updated in place, so each replay reads the result of the previous one. On a CPU
 the runner calls the same functions directly ("emulated"), which tests the buffer logic.
 """
+import os
+import traceback
 import torch
 
 
@@ -32,13 +34,14 @@ def graph_problems(model):
 
 
 class GraphRunner:
-    def __init__(self, model, y, p, chunk=None):
+    def __init__(self, model, y, p, chunk=None, log=print, error_dir=None):
         self.model = model
         c = model.cfg
         self.chunk = chunk or c.pcg_chunk
         self.max_iter = max(c.max_iter, 200)
         self.tol = c.tol
         self.emulate = y.device.type != 'cuda'
+        self.log, self.error_dir = log, error_dir
         # Persistent buffers
         self.y = y.clone()
         self.p = p.clone()
@@ -48,17 +51,21 @@ class GraphRunner:
         else:
             model._p.copy_(p)
         P = model.face_proj
-        self.functions = {
+        self.functions = {                                        # in replay order
             'radiation': lambda: model.update_radiation(self.y),
             'predict': self._predict,
             'pcg': lambda: P.pcg_iterate(self.chunk),
             'finalize': self._finalize,
         }
+        self.capture_order = ['radiation', 'pcg', 'predict', 'finalize']   # most valuable first
         if c.radiation != 'transport':
             del self.functions['radiation']
         self.graphs = {}
+        self.failed = None
         if not self.emulate:
             self._capture()
+            if not self.graphs:
+                raise RuntimeError(f"no part could be captured (first failure: {self.failed})")
 
     def _predict(self):
         self.y1.copy_(self.model.predict(self.y))
@@ -79,17 +86,35 @@ class GraphRunner:
             tensors.append(m.G)
         return tensors
 
+    def _report(self, name, exc):
+        """Log a capture failure and write its full traceback to graph_capture_error.txt."""
+        self.failed = f"{name}: {type(exc).__name__}: {str(exc).splitlines()[0] if str(exc) else ''}"
+        self.log(f"CUDA graphs: part '{name}' runs without a graph ({self.failed})")
+        if self.error_dir:
+            path = os.path.join(self.error_dir, 'graph_capture_error.txt')
+            with open(path, 'a') as f:
+                f.write(f"=== part '{name}'\n{traceback.format_exc()}\n")
+            self.log(f"CUDA graphs: traceback written to {path}")
+
     def _capture(self):
         m = self.model
-        P = m.face_proj
-        # Allocate every persistent buffer with one direct step on the static tensors, then restore
         saved = [t.clone() for t in self._state()]
+        restore = lambda: [t.copy_(s) for t, s in zip(self._state(), saved)]
+        # 1. Allocate every persistent buffer with one direct pass, and find hidden host
+        #    synchronizations (sync debug mode raises at the offending line)
+        usable = []
         for name in self.functions:
-            self.functions[name]()
-        for t, s in zip(self._state(), saved):
-            t.copy_(s)
-        # Warm-up on a side stream (lazy initializations such as cuFFT plans), as recommended
-        saved = [t.clone() for t in self._state()]
+            try:
+                torch.cuda.set_sync_debug_mode('error')
+                self.functions[name]()
+                usable.append(name)
+            except Exception as e:
+                self._report(name + ' (host synchronization)', e)
+            finally:
+                torch.cuda.set_sync_debug_mode('default')
+        torch.cuda.synchronize()
+        restore()
+        # 2. Warm-up on a side stream (lazy initializations such as cuFFT plans), as recommended
         stream = torch.cuda.Stream()
         stream.wait_stream(torch.cuda.current_stream())
         with torch.cuda.stream(stream):
@@ -98,23 +123,33 @@ class GraphRunner:
                     self.functions[name]()
         torch.cuda.current_stream().wait_stream(stream)
         torch.cuda.synchronize()
-        for t, s in zip(self._state(), saved):
-            t.copy_(s)
-        # Capture, in replay order
-        for name in self.functions:
-            g = torch.cuda.CUDAGraph()
-            with torch.cuda.graph(g):
-                self.functions[name]()
-            self.graphs[name] = g
+        restore()
+        # 3. Capture each part separately; stop at the first failure (the CUDA context may be
+        #    unreliable for further captures) and run the remaining parts without graphs
+        for name in self.capture_order:
+            if name not in usable:
+                continue
+            try:
+                g = torch.cuda.CUDAGraph()
+                with torch.cuda.graph(g):
+                    self.functions[name]()
+                torch.cuda.synchronize()
+                self.graphs[name] = g
+            except Exception as e:
+                self._report(name, e)
+                break
         torch.cuda.synchronize()
-        # Capturing records without executing; the restored state is still the current one
-        P.pcg_residual()
+        restore()                                                 # capture records without executing
+        if self.graphs:
+            missing = [n for n in self.functions if n not in self.graphs]
+            self.log(f"CUDA graphs: captured {', '.join(self.graphs)}"
+                     + (f"; without graph: {', '.join(missing)}" if missing else ""))
 
     def _run(self, name):
-        if self.emulate:
-            self.functions[name]()
-        else:
+        if name in self.graphs:
             self.graphs[name].replay()
+        else:
+            self.functions[name]()
 
     # ------------------------------------------------------------------ step
     def step(self):

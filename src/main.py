@@ -110,9 +110,9 @@ def make_runner(model, y, p, say):
         say(f"CUDA graphs disabled: {problems}")
         return None
     try:
-        runner = GraphRunner(model, y, p)
-        say(f"CUDA graphs: {'emulated on ' + str(y.device) if runner.emulate else 'captured'} "
-            f"(PCG chunks of {runner.chunk} iterations)")
+        runner = GraphRunner(model, y, p, log=say, error_dir=model.cfg.save_path)
+        if runner.emulate:
+            say(f"CUDA graphs: emulated on {y.device} (PCG chunks of {runner.chunk} iterations)")
         return runner
     except Exception as e:                                       # fall back to direct execution
         say(f"CUDA graphs disabled: capture failed ({type(e).__name__}: {e})")
