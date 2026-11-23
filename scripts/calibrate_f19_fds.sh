@@ -5,6 +5,7 @@
 #   bash scripts/calibrate_f19_fds.sh              # write them and run all at once (default; on the 4090
 #                                                  # parallel runs barely slow each other on this grid)
 #   bash scripts/calibrate_f19_fds.sh sequential   # write them and run one after another
+#   bash scripts/calibrate_f19_fds.sh parallel graph   # add "graph" to run with --cuda-graph
 #
 # Common to all runs:
 #   wind: Monin-Obukhov profile of FDS Case_F19 (4.9 m/s at 2 m, z_0 = 0.03 m, L = -500 m), kept by the
@@ -19,6 +20,11 @@
 set -e
 cd "$(dirname "$0")/.."
 mode=${1:-parallel}
+extra=""
+if [ "$2" = "graph" ] || [ "$1" = "graph" ]; then
+    extra="--cuda-graph"
+    [ "$1" = "graph" ] && mode=parallel
+fi
 dir=data/input/2D/calibration_fds
 mkdir -p "$dir"
 
@@ -76,12 +82,12 @@ echo "parameter files in $dir: $runs"
 if [ "$mode" = "write" ]; then
     exit 0
 elif [ "$mode" = "sequential" ]; then
-    nohup bash -c "for r in $runs; do python -u src/main.py $dir/\$r.ini -n \$r --device cuda > \$r.out 2>&1; done" \
+    nohup bash -c "for r in $runs; do python -u src/main.py $dir/\$r.ini -n \$r --device cuda $extra > \$r.out 2>&1; done" \
         > calibration_fds.out 2>&1 &
     echo "started the runs one after another; follow with: tail -f fds_hc21_kg01.out"
 else
     for r in $runs; do
-        nohup python -u src/main.py "$dir/$r.ini" -n "$r" --device cuda > "$r.out" 2>&1 &
+        nohup python -u src/main.py "$dir/$r.ini" -n "$r" --device cuda $extra > "$r.out" 2>&1 &
     done
-    echo "started all runs in parallel; follow with: tail -f fds_hc21_kg01.out"
+    echo "started all runs in parallel${extra:+ with CUDA graphs}; follow with: tail -f fds_hc21_kg01.out"
 fi
