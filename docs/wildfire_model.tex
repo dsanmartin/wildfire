@@ -69,6 +69,46 @@ $p$ & hydrodynamic pressure (\code{p}) \\
 \section{Gas phase}\label{sec:gas}
 %======================================================================
 
+\subsection{Structure of the gas-phase model}\label{sec:structure}
+The gas is described by the velocity $\vu$, the hydrodynamic pressure $p$, one thermodynamic variable
+and the species mass fractions $\Yf$, $\YO$. At low Mach number the thermodynamic pressure is
+constant, so density and temperature are tied by the gas law, $\rho=\rho_\infty T_\infty/T$, and they
+are \emph{one} variable: the code stores $T$ and computes $\rho$ from it wherever it is needed. Each
+equation has one role:
+\begin{center}
+\begin{tabular}{p{4.2cm}p{10.2cm}}
+\toprule
+Equation & Role \\
+\midrule
+continuity \eqref{eq:continuity} & advances $\rho$, hence $T$ (conservative, exact mass balance) \\
+species \eqref{eq:species} & advance $\rho\Yf$, $\rho\YO$ with the same mass fluxes \\
+energy \eqref{eq:energy} & gives the heating rate $\dot q$; it is not integrated in time \\
+constraint \eqref{eq:div} & turns $\dot q$ (and the added gas) into the velocity divergence $D$ \\
+momentum \eqref{eq:momentum} + projection & advance $\vu$ and give $p$, with $\nabla\cdot\vu=D$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+The heating therefore changes the temperature through the expansion it imposes: a heated cell has
+$D>0$, sends out more mass than it receives, its density falls and its temperature rises. In the
+continuous equations this is the same as integrating the energy equation; discretely it conserves
+mass exactly, and mixing of hot and cold gas, physical or numerical, gives the mass-weighted
+temperature, as it should. One time step (forward Euler):
+\begin{enumerate}
+  \item from the state $(\vu^n, T^n, Y_k^n)$ and the face fluxes $F^n$ of the previous projection,
+        evaluate all right-hand sides; with $\rho^n=\rho_\infty T_\infty/T^n$,
+        $\rho^{n+1}=\rho^n-\Delta t\,[\nabla\cdot(\rho F^n)-\dot m''']$ and
+        $(\rho Y_k)^{n+1}=(\rho Y_k)^n+\Delta t\,[\dots]$, then $T^{n+1}=\rho_\infty T_\infty/\rho^{n+1}$ and
+        $Y_k^{n+1}=(\rho Y_k)^{n+1}/\rho^{n+1}$; provisional velocity $\vu^*$ from the momentum equation;
+  \item compute $D^{n+1}$ from the heating rate $\dot q$ at the new state (constraint \eqref{eq:div});
+  \item project: pressure and face fluxes $F^{n+1}$ with discrete divergence $D^{n+1}$, corrected node
+        velocities $\vu^{n+1}$ (Section~\ref{sec:projection});
+  \item boundary conditions, bounds, solid fuel fixes, energy and mass budgets.
+\end{enumerate}
+The heating thus reaches the temperature one step later, through $F^{n+1}$. The solid fuel
+(Section~\ref{sec:solid}) is advanced in step 1 with its own ordinary differential equations.
+\code{[numerics] scalar\_transport = temperature} instead integrates the energy equation for $T$ and
+the advective form of the species equations (the original approach, Appendix~\ref{app:corrections}).
+
 \subsection{Low Mach number approximation}
 The thermodynamic pressure is constant, so the ideal gas law gives
 \begin{equation}
@@ -98,15 +138,19 @@ with $\nu=\mu/\rho$, the imposed divergence $D$ of \eqref{eq:div}, the drag of t
 the subgrid stresses $\boldsymbol{\tau}_{sgs}$ of Section~\ref{sec:turbulence} and the wind forcing
 $\mathbf f$ of Section~\ref{sec:forcing}.
 
-\subsection{Energy}
+\subsection{Energy: the heating rate}
+The energy equation in temperature form,
 \begin{equation}\label{eq:energy}
   \frac{\partial T}{\partial t} + \vu\cdot\nabla T = \frac{\dot q}{\rho c_p} - q_{sgs}(T),\qquad
   \dot q = \nabla\cdot(\kappa\nabla T) + \kappa_g\,(G-4\sigma T^4) + \dot\omega_F H_C - Q_{conv},
 \end{equation}
-with molecular conduction, radiation absorbed minus emitted by the gas (incident radiation $G$,
-Section~\ref{sec:radiation}; gray absorption coefficient $\kappa_g$), the heat of gas-phase
-combustion (Section~\ref{sec:combustion}) and the convective heat transferred to the fuel
-(Section~\ref{sec:solid}).
+defines the net heating $\dot q$: molecular conduction, radiation absorbed minus emitted by the gas
+(incident radiation $G$, Section~\ref{sec:radiation}; gray absorption coefficient $\kappa_g$), the heat
+of gas-phase combustion (Section~\ref{sec:combustion}) and the convective heat transferred to the fuel
+(Section~\ref{sec:solid}); the subgrid heat flux $q_{sgs}$ adds to it. This heating rate enters the
+constraint \eqref{eq:div}; the temperature itself follows from the density (Section~\ref{sec:structure}).
+With constant pressure and $c_p$, $\rho c_pT$ is constant, so the enthalpy leaving the domain equals the
+heat released as long as the volume flux matches $\int D\dd V$, which the projection enforces.
 
 \paragraph{Specific heat.} By default (\code{[gas] cp\_model = mixture}) the specific heat is
 weighted by composition, $c_p=\sum_kY_kc_{p,k}(T)$ over N$_2$, O$_2$, CO$_2$ and H$_2$O (rounded JANAF
@@ -128,20 +172,17 @@ $(T+T_s)/2$. Molecular transport is orders of magnitude smaller than the subgrid
 resolutions used, so its main effect is on the heat transfer to the fuel. \code{constant} keeps
 $\mu_0$ and $\kappa_0$.
 
-\paragraph{Density transport.} Equation \eqref{eq:energy} defines the heating rate that enters the
-constraint \eqref{eq:div}, but the temperature is not advanced with it. Instead the density is
-advanced with the continuity equation in conservative form,
+\subsection{Continuity: density and temperature}
 \begin{equation}\label{eq:continuity}
   \frac{\partial\rho}{\partial t} + \nabla\cdot(\rho\vu) = \dot m''',\qquad T=\frac{\rho_\infty T_\infty}{\rho},
 \end{equation}
-and the species as $\rho\Yf$ and $\rho\YO$ (Section~\ref{sec:combustion}). With the velocity satisfying
-\eqref{eq:div}, this is equivalent to \eqref{eq:energy} in the continuous equations, and the heating
-reaches $T$ through $\nabla\cdot\vu$. Discretely the gas mass is conserved exactly, and mixing of hot and
-cold gas, whether physical or numerical, conserves mass and enthalpy: it gives the mass-weighted
-temperature. Advancing $T$ itself conserves its volume integral instead, and mixing then gives the
-volume-weighted temperature (744~K instead of 464~K for equal volumes at 1200 and 288~K): mixed gas
-too hot and too light, and mass lost without any flux (Appendix~\ref{app:corrections}).
-\code{[numerics] scalar\_transport = temperature} restores the advection of $T$.
+with $\dot m'''$ the pyrolysis and burner gas. This is the only equation that changes the gas
+temperature. With the velocity satisfying \eqref{eq:div}, it is equivalent to \eqref{eq:energy}. Why
+the density and not the temperature is advanced: an advection scheme for $T$ conserves $\int T\dd V$,
+so wherever hot and cold gas mix, numerically or through the subgrid model, the mixed temperature is
+the volume-weighted one (744~K for equal volumes at 1200 and 288~K) instead of the mass-weighted one
+(464~K), the mixed gas is too hot and too light, and mass disappears without any flux
+(Appendix~\ref{app:corrections}).
 
 %======================================================================
 \section{Solid fuel}\label{sec:solid}
@@ -207,7 +248,7 @@ In both cases $\dot m'''\le\rho_bY/\Delta t$ (no more fuel than is present).
 %======================================================================
 \section{Gas-phase combustion}\label{sec:combustion}
 %======================================================================
-\begin{align}
+\begin{align}\label{eq:species}
   \frac{\partial(\rho\Yf)}{\partial t} + \nabla\cdot(\rho\vu\Yf) &= \rho\mathcal{D}\nabla^2\Yf - \rho\,q_{sgs}(\Yf)
     + \dot m''' - \dot\omega_F,\\
   \frac{\partial(\rho\YO)}{\partial t} + \nabla\cdot(\rho\vu\YO) &= \rho\mathcal{D}\nabla^2\YO - \rho\,q_{sgs}(\YO)
@@ -500,7 +541,9 @@ ground. The projection
   \sum_j\frac{1}{h_j^2}\Big[\frac{p_{i+1}-p_i}{\rho_{i+1/2}}-\frac{p_i-p_{i-1}}{\rho_{i-1/2}}\Big]
   = \frac{D_i(F^*)-D^*_i}{\Delta t},
 \end{equation}
-with arithmetic face densities and $D^*$ the divergence \eqref{eq:div} at the provisional state,
+with arithmetic face densities (an interpolation of the same $\rho$, chosen to keep the operator
+symmetric; the transport uses Koren-limited face values of $\rho$, Section~\ref{sec:numerics}) and $D^*$
+the divergence \eqref{eq:div} at the provisional state,
 makes the face fluxes satisfy the discrete constraint to the solver tolerance (about
 $10^{-11}$~s$^{-1}$, also for density ratios of 8 and with buildings). The subgrid heat flux in $D^*$
 uses the eddy viscosity of the step. Faces next to solid nodes are closed: zero flux through walls
