@@ -596,6 +596,23 @@ is computed everywhere, since it burns in the plume. The results are bitwise ide
 the whole grid, and the solid source terms cost about 1/8 as much. The slab is used by default
 (\code{[fuel] slab = False} turns it off) and never with \code{--legacy}.
 
+\subsection{Mass budget}
+The density is not transported: it follows from the temperature, $\rho=\rho_\infty T_\infty/T$, and
+mass enters through the divergence constraint. Continuity therefore holds only as far as the
+constraint is consistent with the energy equation, and only to truncation error. With the face
+projection the log reports the budget of the control volume formed by the fluid nodes of rows $0$ to
+$N_z-2$ (row 0 a half cell), whose only open boundary is the vertical face below the top row (the
+ground and the building faces are closed and the horizontal directions are periodic):
+\[
+  M(t)-M(0) = \int_0^t \dot m_{pyr}\,dt - \int_0^t \sum_{\text{top faces}} \rho_f F_z\,A\,dt + R,
+  \qquad M=\sum \rho\, w\, \Delta V,
+\]
+with $\rho_f$ upwinded with the face flux, the fluxes of the start of each step (exact for Euler), and
+$R$ the residual, reported as a fraction of the outflow since the start and since the last output.
+The cumulative values are saved as \code{M\_total}, \code{M\_outflow}, \code{M\_pyrolysis} and
+\code{M\_residual} in \code{data.npz}. Terrain dead nodes are left out of $M$, so with terrain the
+budget is approximate.
+
 \subsection{Log diagnostics}
 Besides the extreme values, the log reports the total heat release rate and the gas temperature
 weighted by the local heat release rate, $T_{flame}=\sum\dot q_c T/\sum\dot q_c$, which is comparable

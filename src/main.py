@@ -162,6 +162,9 @@ def run(cfg, verbose=True):
         next_full = t[0] + cfg.full_interval
     unit = 'kJ/m' if nd == 2 else 'kJ'
     energy = {key: [0.0] for key in ENERGY_TERMS}
+    munit = 'kg/m' if nd == 2 else 'kg'
+    mass = {'total': [float(model.mass_total(y))], 'outflow': [0.0], 'pyrolysis': [0.0], 'residual': [0.0]} \
+        if model.mass is not None else {}
     # Time stepping. Fixed step dt_max = (t_max - t_min) / Nt, or adaptive ([numerics] cfl > 0): each step
     # takes the largest dt allowed by the CFL target and the diffusion limit, at most dt_max, and steps
     # are shortened to land exactly on the output times, which stay every NT * dt_max seconds.
@@ -220,9 +223,23 @@ def run(cfg, verbose=True):
                     f"({ratio('fuel_overshoot', E)}), clip low {E['clip_low']:.4g} ({ratio('clip_low', E)}), "
                     f"clip high {E['clip_high']:.4g} ({ratio('clip_high', E)})",
                     f"Energy since last output: clip low {ratio('clip_low', dE)}, fuel overshoot {ratio('fuel_overshoot', dE)} "
-                    f"of combustion", "")
+                    f"of combustion")
                 for key in E:
                     energy[key].append(E[key])
+                if model.mass is not None:
+                    M = {'total': float(model.mass_total(y)), 'outflow': float(model.mass['outflow']),
+                         'pyrolysis': float(model.mass['pyrolysis'])}
+                    M['residual'] = (M['total'] - mass['total'][0]) - (M['pyrolysis'] - M['outflow'])
+                    dM = {key: M[key] - mass[key][-1] for key in M}
+                    share = lambda r, out: f"{100 * r / out:.2f}%" if abs(out) > 1e-9 * mass['total'][0] else "n/a"
+                    say(f"Mass since start [{munit}]: change {M['total'] - mass['total'][0]:.4g}, outflow {M['outflow']:.4g}, "
+                        f"pyrolysis {M['pyrolysis']:.4g}, residual {M['residual']:.3g} "
+                        f"({share(M['residual'], M['outflow'])} of the outflow, "
+                        f"{100 * abs(M['residual']) / mass['total'][0]:.1e}% of the initial mass)",
+                        f"Mass since last output: residual {share(dM['residual'], dM['outflow'])} of the outflow")
+                    for key in M:
+                        mass[key].append(M[key])
+                say("")
                 if not np.isfinite(T_max):
                     say("Non-finite temperature: stopping")
                     break
@@ -238,6 +255,8 @@ def run(cfg, verbose=True):
     n_saved = len(rec.times)
     for key, values in energy.items():      # cumulative, in J (per metre in 2D), at the saved times
         data['E_' + key] = np.array(values[:n_saved]) * 1e3
+    for key, values in mass.items():        # kg (per metre in 2D): mass in the domain, cumulative fluxes
+        data['M_' + key] = np.array(values[:n_saved])
     if nd == 2:
         data['y'] = grid['z']                                        # the vertical axis is called y in 2D
     else:

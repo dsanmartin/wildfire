@@ -109,6 +109,16 @@ class Model:
             self.face_proj = FaceProjection(self.shape, self.h, device, dtype,
                                             grid['solid'] if self.has_solids else None)
         self.max_divergence = 0.0
+        # Mass budget (face projection): control volume = fluid nodes of rows 0..Nz-2 (row 0: half
+        # cell), whose only open boundary is the vertical face below the top row
+        self.mass = None
+        if cfg.projection == 'face':
+            P = self.face_proj
+            keep = ~(grid['solid'] | grid['dead'])
+            self._mass_w = P.unknown * P.weight * to(keep.astype(np.float64))
+            self.dA = float(np.prod(self.h[:-1]))                 # area of a vertical face
+            self.mass = {k: torch.zeros((), dtype=dtype, device=device) for k in ('outflow', 'pyrolysis')}
+        self._last_mdot = None
         # Log-law wall model at the ground (flat ground: row 0; terrain: the cut node of each column)
         if cfg.wall_model == 'log':
             from setup import psi_m
@@ -357,6 +367,17 @@ class Model:
             out[:k] += solid['mdot'] / rho[:k]
         return out
 
+    def mass_total(self, y):
+        """Gas mass in the control volume of the mass budget, kg (kg/m in 2D)."""
+        return (self.rho(y[self.nd]) * self._mass_w).sum() * self.dV
+
+    def top_outflow(self, T, F_top):
+        """Mass flux out through the vertical faces below the top row, kg/s (kg/(m s) in 2D), with
+        the density upwinded by the face flux F_top (upward positive)."""
+        nz = self.shape[0]
+        rho_face = torch.where(F_top > 0, self.rho(T[nz - 2]), self.rho(T[nz - 1]))
+        return (rho_face * F_top).sum() * self.dA
+
     def slab_to_full(self, a):
         """A field computed on the fuel slab, extended by zeros to the whole grid."""
         out = torch.zeros(self.shape, dtype=a.dtype, device=a.device)
@@ -554,6 +575,7 @@ class Model:
         solid = self.solid_rates(y, rho) if c.solid_temperature else None
         if solid is not None and self._first_stage:
             self._last_omega, self._first_stage = solid['omega'], False
+            self._last_mdot = solid['mdot']
         heat = self.heat(y, rho, grad_T, lap_T, solid)
         speed2 = vel[0] ** 2
         for u in vel[1:]:
@@ -823,6 +845,11 @@ class Model:
             raise ValueError(f"unknown time method '{c.method}'")
         if c.solid_temperature:   # heat of combustion released this step (exact for Euler)
             self.energy['combustion'] += self._last_omega.sum() * (c.H_C * dt * self.dV)
+        if self.mass is not None:  # mass budget: fluxes of the start of the step (exact for Euler)
+            self.mass['outflow'] += self.top_outflow(y[nd], self._F[nd - 1][-2]) * dt
+            if c.solid_temperature:
+                w = self._mass_w[:self.k_fuel]
+                self.mass['pyrolysis'] += (self._last_mdot * w).sum() * (self.dV * dt)
         if c.projection == 'face':
             self.project_begin(y1, y[nd], self._p)
         return y1
