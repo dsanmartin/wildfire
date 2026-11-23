@@ -95,6 +95,15 @@ class Model:
             self.face_proj = FaceProjection(self.shape, self.h, device, dtype,
                                             grid['solid'] if self.has_solids else None)
         self.max_divergence = 0.0
+        # Wind forcing (periodic domains): target = horizontal mean of the initial velocity at each height
+        if cfg.forcing == 'profile':
+            hdims = tuple(range(1, nd))
+            solid0 = torch.as_tensor(grid['solid'] | grid['dead'], device=device)
+            self.force_mask = (~solid0).to(dtype)
+            count = self.force_mask.sum(hdims, keepdim=True).clamp(min=1)
+            vel0 = to(state0[:nd])
+            self.force_target = [(v * self.force_mask).sum(hdims, keepdim=True) / count for v in vel0]
+            self.force_count = count
         # Pressure solver
         lengths = [cfg.x_max - cfg.x_min] + ([cfg.y_max - cfg.y_min] if nd == 3 else [])
         legacy_length = cfg.x_max if (cfg.legacy and nd == 2) else None
@@ -261,6 +270,19 @@ class Model:
             s = solid if solid is not None else self.solid_rates(y, rho)
             return out + (s['Q_comb'] - s['Q_conv']) / rho_cp
         return out + self.q(T, Y)
+
+    def wind_forcing(self, vel):
+        """Body force that relaxes the horizontal-mean velocity at each height toward the initial
+        profile, (target - mean) / forcing_time, uniform in the horizontal (so it does not distort the
+        local flow around the fire) and applied in the fluid only. In a periodic domain nothing else
+        drives the wind, and ground friction would slowly decelerate it."""
+        c, nd = self.cfg, self.nd
+        hdims = tuple(range(1, nd))
+        out = []
+        for i in range(nd):
+            mean = (vel[i] * self.force_mask).sum(hdims, keepdim=True) / self.force_count
+            out.append((self.force_target[i] - mean) / c.forcing_time * self.force_mask)
+        return out
 
     def flux_advection(self, phi, F, divF):
         """u . grad(phi) in conservative form with the face fluxes F: div(F phi_face) - phi div(F),
@@ -469,6 +491,7 @@ class Model:
             F = self.faces if self.faces is not None else self.face_proj.to_faces(vel)
             divF = self.face_proj.divergence(F)
             self._F, self._divF = F, divF
+        forcing = self.wind_forcing(vel) if c.forcing == 'profile' else None
         for i in range(nd):
             if face_mode:
                 conv = self.flux_advection(vel[i], F, divF)
@@ -479,6 +502,8 @@ class Model:
             force = self.gravity[i] * buoyancy - drag * vel[i]
             if grad_div is not None:
                 force = force + nu * grad_div[i] / 3
+            if forcing is not None:
+                force = force + forcing[i]
             out[i] = nu * op.lap(vel[i]) - conv + force - sgs_u[i]
         if face_mode:
             adv = self.flux_advection(T, F, divF)

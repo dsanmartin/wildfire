@@ -161,12 +161,20 @@ python src/firefront.py data/output/RUN1 data/output/RUN2 --obs f19_front.csv --
 `firefront.py` writes the head and back fire positions, the rate of spread and, with `--obs` (CSV of
 `t [s], x [m]`), the comparison with observations.
 
+## Wind profile and forcing
+
+`[wind] shape = monin-obukhov` with `z_0`, `L`, `u_r` and `z_r` gives the Monin-Obukhov
+similarity profile used by FDS (Case F19: `u_r = 4.9`, `z_r = 2`, `z_0 = 0.03`, `L = -500`).
+In a periodic domain the near-ground wind decays without forcing: `[wind] forcing = profile`
+(relaxation time `forcing_time`, default 1 s) nudges the horizontal-mean wind at each height back
+to the initial profile. Details in `docs/wildfire_model.tex`.
+
 ## Turbulence filter width
 
 By default the Smagorinsky filter width is `(dx dz)^(1/2)` in 2D (`(dx dy dz)^(1/3)` in
 3D), so the subgrid mixing length `C_s * width` shrinks as the grid is refined and the
 solution does not converge: in the paper case the spread rate rose by about a third per
-halving of dx, and at dx = 0.29 m the fire went out. With a fixed width, set in metres
+halving of dx, and at dx = 0.29 m the fire went out. With a fixed width, set in meters
 with `[turbulence] filter_width`, the spread rate changed by about 6% between dx = 1.17
 and 0.29 m. The width is then a model parameter to calibrate, like `Y_f`.
 
@@ -175,7 +183,7 @@ and 0.29 m. The width is then a model parameter to calibrate, like `Y_f`.
 Every saved step the log reports the cumulative heat of the fuel burned and, when the
 bounds are on, the energy they add or remove: `clip low` (temperatures raised to
 `T_min`), `clip high` (lowered to `T_max`) and `fuel overshoot` (heat released from
-fuel that went negative and was reset to 0). The same values, in J (per metre of depth
+fuel that went negative and was reset to 0). The same values, in J (per meter of depth
 in 2D), are saved in `data.npz` as `E_combustion`, `E_clip_low`, `E_clip_high` and
 `E_fuel_overshoot`. With the defaults (Koren advection, exact reaction, no fuel
 boundary condition) both `clip low` and `fuel overshoot` should be near zero. With

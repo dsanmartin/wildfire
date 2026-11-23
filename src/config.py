@@ -114,7 +114,10 @@ class Config:
     T0_z_end: float = 1.0
     t_source: float = -1.0
     # Wind
-    initial_u_type: str = 'power law'   # power law, log, constant
+    initial_u_type: str = 'power law'   # power law, log, constant, monin-obukhov
+    L_obukhov: float = None             # Obukhov length, m (monin-obukhov; None: neutral). FDS Case_F19: -500
+    forcing: str = 'none'               # none, or profile: nudge the horizontal-mean wind to the initial profile
+    forcing_time: float = 1.0           # relaxation time of the wind forcing, s
     u_r: float = 4.8
     z_r: float = 2.0
     alpha_u: float = 1.0 / 7.0
@@ -201,6 +204,8 @@ _KEYS = {
     ('temperature', 'shape'): ('T0_shape', str), ('temperature', 'delta'): ('delta', float),
     ('temperature', 'h_c'): ('h_c', float), ('temperature', 'T_pc'): ('T_pc', float),
     ('wind', 'u_r'): ('u_r', float), ('wind', 'shape'): ('initial_u_type', str),
+    ('wind', 'z_r'): ('z_r', float), ('wind', 'z_0'): ('u_z_0', float), ('wind', 'L'): ('L_obukhov', float),
+    ('wind', 'forcing'): ('forcing', str), ('wind', 'forcing_time'): ('forcing_time', float),
     ('pressure', 'tol'): ('tol', float), ('pressure', 'max_iter'): ('max_iter', int),
     ('pressure', 'log_solver'): ('log_solver', bool), ('pressure', 'poisson'): ('poisson', str),
     ('pressure', 'wall_iterations'): ('wall_iterations', int), ('pressure', 'projection'): ('projection', str),
@@ -265,12 +270,14 @@ def load_config(path: str, **overrides) -> Config:
     if cfg.legacy:  # everything as in src_legacy/
         cfg.reaction, cfg.sink, cfg.T_advection = 'explicit', 'legacy', 'central'
         cfg.solid_temperature, cfg.radiation, cfg.projection, cfg.cp_model = False, 'diffusion', 'nodal', 'constant'
-        cfg.transport, cfg.cfl = 'constant', 0.0
+        cfg.transport, cfg.cfl, cfg.forcing = 'constant', 0.0, 'none'
     for key, allowed in (('reaction', ('exact', 'explicit')), ('sink', ('surface', 'legacy')),
                          ('T_advection', ('upwind', 'koren', 'central')),
                          ('radiation', ('transport', 'diffusion')), ('pyrolysis', ('linear', 'arrhenius')),
                          ('model', ('vertical', 'planview')), ('projection', ('face', 'nodal')),
-                         ('cp_model', ('constant', 'variable', 'mixture')), ('transport', ('constant', 'sutherland'))):
+                         ('cp_model', ('constant', 'variable', 'mixture')), ('transport', ('constant', 'sutherland')),
+                         ('initial_u_type', ('power law', 'log', 'constant', 'monin-obukhov')),
+                         ('forcing', ('none', 'profile'))):
         if getattr(cfg, key) not in allowed:
             raise ValueError(f"{key} must be one of {allowed}, got '{getattr(cfg, key)}'")
     return cfg

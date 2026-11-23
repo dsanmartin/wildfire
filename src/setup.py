@@ -6,6 +6,26 @@ def gaussian(x, z, x0, z0, sx, sz):
     return np.exp(-((x - x0) ** 2 / sx ** 2 + (z - z0) ** 2 / sz ** 2))
 
 
+def psi_m(zeta):
+    """Integrated stability function for momentum, zeta = z / L. Unstable (zeta < 0): Paulson (1970)
+    with the Businger-Dyer form phi_m = (1 - 16 zeta)^(-1/4); stable: psi_m = -5 zeta."""
+    zeta = np.asarray(zeta, dtype=np.float64)
+    x = (1 - 16 * np.minimum(zeta, 0.0)) ** 0.25
+    unstable = 2 * np.log((1 + x) / 2) + np.log((1 + x ** 2) / 2) - 2 * np.arctan(x) + np.pi / 2
+    return np.where(zeta < 0, unstable, -5 * zeta)
+
+
+def monin_obukhov(z, u_ref, z_ref, z0, L, kappa=0.41):
+    """Wind speed of Monin-Obukhov similarity theory,
+        u(z) = u*/kappa [ln(z/z0) - psi_m(z/L) + psi_m(z0/L)],
+    with the friction velocity u* chosen so that u(z_ref) = u_ref; zero below z0. L = None: neutral."""
+    psi = (lambda zz: psi_m(np.asarray(zz) / L)) if L else (lambda zz: np.zeros_like(np.asarray(zz, dtype=np.float64)))
+    shape = lambda zz: np.log(zz / z0) - psi(zz) + psi(z0)
+    u_star = kappa * u_ref / shape(z_ref)
+    zc = np.maximum(z, z0)
+    return np.where(z > z0, u_star / kappa * shape(zc), 0.0), u_star
+
+
 def topography(cfg):
     """Returns f(x) (2D) or f(x, y) (3D): terrain height."""
     shape = cfg.topography_shape
@@ -55,6 +75,8 @@ def build(cfg):
         u = np.where(H > 0, cfg.u_ast / cfg.von_karman * np.log(np.where(H > 0, H - cfg.d, 1.0) / cfg.u_z_0), 0.0)
     elif cfg.initial_u_type == 'constant':
         u = cfg.u_r + Xm * 0
+    elif cfg.initial_u_type == 'monin-obukhov':
+        u, _ = monin_obukhov(H, cfg.u_r, cfg.z_r, cfg.u_z_0, cfg.L_obukhov, cfg.von_karman)
     else:
         raise ValueError(f"unknown wind profile '{cfg.initial_u_type}'")
     velocity = [u] + [np.zeros_like(u) for _ in range(cfg.ndim - 1)]

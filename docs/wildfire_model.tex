@@ -27,7 +27,7 @@ one flow solver: the \emph{published model} of San Mart\'in \& Torres (2025), wi
 temperature for gas and fuel and radiation as diffusion, and an \emph{extended model} with a
 separate solid fuel temperature, fuel moisture, heat-driven pyrolysis, transported fuel gas and
 oxygen with mixing-limited combustion, and radiation transport. Section~\ref{sec:numerics}
-describes the discretisation and solvers, Section~\ref{sec:params} lists every input parameter.
+describes the discretization and solvers, Section~\ref{sec:params} lists every input parameter.
 Status: the extended model is verified for consistency (analytic radiation test, energy budget,
 equality of 2D runs and $y$-invariant 3D runs, exact reproduction of the original code in legacy
 mode) but not yet calibrated or validated against the CSIRO F19 experiment.
@@ -152,7 +152,7 @@ replaced by $\nabla\cdot(k(T)\nabla T)$.
 
 \subsection{Fuel bed}
 The fuel occupies the nodes up to a height $Y_h$ above the terrain (optionally limited
-horizontally), with $Y=1$ initially. The elements are characterised by the solid volume fraction
+horizontally), with $Y=1$ initially. The elements are characterized by the solid volume fraction
 $\alpha_s$, the surface-to-volume ratio $\sigma_s$ (equivalent cylinder diameter $d=4/\sigma_s$) and,
 in the extended model, the dry bulk density $\rho_b$. Fuel surface per unit volume:
 $a=\alpha_s\sigma_s Y$.
@@ -173,7 +173,7 @@ coefficient $a/4$). Wet fuel ($W>0$) at $T_{boil}$ keeps its temperature and eva
 \begin{equation}
   \rho_b\frac{\dd W}{\dd t} = -\frac{\max(Q_{conv}+Q_{rad},0)}{L_v}.
 \end{equation}
-Water vapour is not tracked. Only dry fuel pyrolyses. Where the fuel is used up
+Water vapor is not tracked. Only dry fuel pyrolyses. Where the fuel is used up
 ($Y\le10^{-3}$, $W=0$), $T_s$ is set equal to $T$.
 
 \subsection{Pyrolysis (extended model)}
@@ -266,8 +266,24 @@ at their own temperature. At uniform $T_\infty$, $G=4\sigma T_\infty^4$ and ther
 
 \subsection{Initial conditions}
 \begin{itemize}
-  \item Wind: $u=u_r(d_w/z_r)^{1/7}$ (power law, default), logarithmic, or constant, with $d_w$ the
-        height above the terrain; other components zero.
+  \item Wind (\code{[wind] shape}), with $d_w$ the height above the terrain; other components zero:
+    \begin{itemize}
+      \item \code{power law} (default): $u=u_r(d_w/z_r)^{1/7}$;
+      \item \code{monin-obukhov}: Monin--Obukhov similarity theory, as in the FDS \code{\&WIND} input,
+            \begin{equation}
+              u = \frac{u_*}{\kappa}\Big[\ln\frac{d_w}{z_0} - \psi_m\Big(\frac{d_w}{L}\Big) + \psi_m\Big(\frac{z_0}{L}\Big)\Big],
+            \end{equation}
+            with the roughness length $z_0$ (\code{z\_0}), the Obukhov length $L$ (\code{L}; omitted: neutral),
+            $\kappa=0.41$, zero below $z_0$, and $u_*$ chosen so that $u(z_r)=u_r$. Stability function
+            (Businger--Dyer, integrated by Paulson 1970): for $\zeta=d_w/L<0$, with $x=(1-16\zeta)^{1/4}$,
+            $\psi_m=2\ln\frac{1+x}{2}+\ln\frac{1+x^2}{2}-2\arctan x+\frac{\pi}{2}$; for $\zeta\ge0$,
+            $\psi_m=-5\zeta$. The FDS Case F19 values are $u_r=4.9$~m\,s$^{-1}$ at $z_r=2$~m, $z_0=0.03$~m,
+            $L=-500$~m ($u_*=0.48$~m\,s$^{-1}$). Near the ground this profile is much weaker than the
+            power law: 1.4, 2.5 and 3.3~m\,s$^{-1}$ at 0.1, 0.25 and 0.51~m, against 3.1, 3.6 and
+            4.0~m\,s$^{-1}$. Only the velocity is initialized from the similarity theory; the temperature
+            stays uniform.
+      \item \code{log} (neutral logarithmic profile from $u_*$) or \code{constant}.
+    \end{itemize}
   \item Fuel: $Y=1$ in the bed, $0$ elsewhere.
   \item Gas temperature: $T=T_\infty+(T_{hot}-T_\infty)\,S$ with the ignition shape $S$:
     \begin{itemize}
@@ -294,7 +310,7 @@ Top $z_{\max}$ & zero gradient & zero gradient & zero gradient & $p=0$ \\
 \bottomrule
 \end{tabular}
 \end{center}
-Discretisation of the zero-gradient conditions: velocities use the second-order extrapolation
+Discretization of the zero-gradient conditions: velocities use the second-order extrapolation
 $\phi_0=(4\phi_1-\phi_2)/3$; the scalars ($T$, $\Yf$, $\YO$) use the first-order form $\phi_0=\phi_1$.
 The second-order form leaves the range of the interior values where the profile is curved: at the
 fire front, with a hot layer just above cold ground ($T_1=348$~K, $T_2=584$~K), it gives 270~K, below
@@ -303,11 +319,28 @@ combustion over the first 6~s of the F19 case at $\Delta x=1.17$~m). The publish
 with \code{--legacy}, uses the second-order form for all variables.
 $Y$, $T_s$ and $W$ are not transported and need no boundary condition.
 
+\subsection{Wind forcing}
+In a periodic domain nothing drives the wind: ground friction drains its momentum and the
+near-ground wind decays. Without fire, on a 4.7~m~$\times$~0.31~m grid, the horizontal-mean wind at
+2~m fell from 4.8 to 2.2~m\,s$^{-1}$ in 60~s, and at 0.3~m from 2.7 to 0.6~m\,s$^{-1}$; only the upper
+layers kept their speed. With \code{[wind] forcing = profile} a body force relaxes the horizontal-mean
+velocity at each height toward the initial profile,
+\begin{equation}
+  \mathbf{f}(z) = \frac{\overline{\vu}_0(z) - \overline{\vu}(z,t)}{\tau_f},
+\end{equation}
+where the overbar is the average over the fluid nodes of a horizontal plane and $\tau_f$ is
+\code{forcing\_time} (default 1~s). The force is uniform in the horizontal, so it does not distort
+the local flow around the fire; with a large domain the fire changes the plane averages only
+slightly. In the test above, $\tau_f=0.5$~s held the wind at 2~m and above within 1\%, but the
+lowest cells still lost 18--25\%: on coarse grids the no-slip ground overestimates the wall friction.
+A log-law wall model (wall stress from the first-cell velocity and $z_0$, as in FDS) would remove
+this remaining deficit and is not yet implemented.
+
 \subsection{Buildings}
 Buildings are boxes standing on the ground, defined in the \code{[buildings]} section, one per key:
-\code{name = x0, x1, height} (2D) or \code{name = x0, x1, y0, y1, height} (3D), in metres. Solid nodes have
-zero velocity, no fuel and ambient values. Solid nodes with a fluid face neighbour (wall nodes) take
-the average of their fluid neighbours for $T$ and the species: adiabatic, impermeable walls. With
+\code{name = x0, x1, height} (2D) or \code{name = x0, x1, y0, y1, height} (3D), in meters. Solid nodes have
+zero velocity, no fuel and ambient values. Solid nodes with a fluid face neighbor (wall nodes) take
+the average of their fluid neighbors for $T$ and the species: adiabatic, impermeable walls. With
 the face-based projection the faces between solid and fluid carry no flux. Solids are opaque to
 radiation at the temperature of their wall nodes, and the turbulence damping uses the distance to
 the nearest building as well as the height above the ground.
@@ -332,7 +365,7 @@ solved over the whole domain.
 %======================================================================
 \code{[model] type = planview} selects a reduced 2D model in the horizontal plane, of the
 reaction--diffusion--convection type (Asensio \& Ferragut 2002). It has no vertical direction: the
-plume, the indraft and the flame tilt are not resolved but parameterised, and the wind is
+plume, the indraft and the flame tilt are not resolved but parameterized, and the wind is
 prescribed. It is a fire-spread model for the fuel-bed layer, not an atmosphere--fire model, and
 complements the coupled model (for example for fast parameter sweeps or plan-view fire shapes).
 
@@ -358,7 +391,7 @@ Ignition and fuel extent use the 3D keys (\code{[temperature] shape}, \code{x\_s
 \code{[fuel] x\_start}\dots\code{y\_end}).
 
 Status: $\chi$, $h_{top}$ and the wind factor carry the missing vertical physics and are not
-calibrated. In a first test (F19 plot, line ignition, $\Delta x=0.5$~m) the behaviour was
+calibrated. In a first test (F19 plot, line ignition, $\Delta x=0.5$~m) the behavior was
 all-or-nothing: with $\chi=0.1$ the fire died, with $\chi=0.15$--$0.25$ it spread at about 3~m\,s$^{-1}$
 but the bed temperature reached the 2500~K bound. Calibration of $\chi$, $h_{top}$, $T_{pc}$ and the
 Arrhenius rate together, for example against the coupled model, is needed.
@@ -589,14 +622,16 @@ $c_w$, $L_v$, $T_{boil}$ & 4184, $2.259\times10^6$, 373.15 & water properties (S
 \code{[radiation] update\_every} & 5 & steps between radiation solves \\
 \code{[temperature] delta} & 0.1 m & optical path length (diffusion radiation) \\
 \multicolumn{3}{l}{\emph{Initial conditions}}\\
-\code{[wind] u\_r, shape} & 4.8 m\,s$^{-1}$, power law & reference wind at $z_r=2$ m \\
+\code{[wind] u\_r, z\_r, shape} & 4.8 m\,s$^{-1}$, 2 m, power law & reference wind and profile \\
+\code{[wind] z\_0, L} & 0.05 m, neutral & roughness and Obukhov length (\code{monin-obukhov}) \\
+\code{[wind] forcing, forcing\_time} & \code{none}, 1 s & wind forcing (\code{profile}) and its relaxation time \\
 \code{[temperature] T\_hot, shape} & 788.15 K, \code{gaussian} & ignition temperature and shape \\
 \code{[temperature] x\_start}\dots\code{z\_end} & 0, 6, -, -, 0, 1 m & ignition extent \\
 \code{[temperature] t\_source} & $-1$ (off) & sustained source until this time \\
 \code{[temperature] T\_min, T\_max} & $T_\infty$, 2500 K & temperature bounds \\
 \code{[topography] shape} & \code{flat} & \code{flat}, \code{hill}, \code{slope} (2D) \\
 \multicolumn{3}{l}{\emph{Output}}\\
-\code{[output] z\_slice, y\_slice} & 1 m, centre & planes saved in 3D \\
+\code{[output] z\_slice, y\_slice} & 1 m, center & planes saved in 3D \\
 \code{[output] full\_interval} & 0 (off) & seconds between full snapshots \\
 \code{[output] full\_dtype} & \code{float32} & precision of the snapshots \\
 \bottomrule
@@ -611,9 +646,11 @@ $c_w$, $L_v$, $T_{boil}$ & 4184, $2.259\times10^6$, 373.15 & water properties (S
         $H_C$ of the solid rather than of the pyrolysis gas, weak flame radiation).
   \item Constant $c_p$; no dissociation; one gray absorption coefficient for the gas, independent of
         soot or products.
-  \item Water vapour from drying and combustion products are not transported.
+  \item Water vapor from drying and combustion products are not transported.
   \item The ignition is a hot-gas pulse at $t=0$, not the timed burner of the FDS F19 setup.
-  \item Periodic horizontal boundaries instead of open ones.
+  \item Periodic horizontal boundaries instead of open ones; without \code{[wind] forcing} the
+        near-ground wind decays during a run (Section~\ref{sec:ibc}). No wall model: the no-slip ground
+        overestimates the friction on coarse grids.
   \item The intermittent activity of the lower temperature bound seen on the 1.17~m F19 grid was
         traced to the second-order zero-gradient condition at the ground (Section~\ref{sec:ibc}) and
         fixed: over the first 5~s of that case the energy added by the bound fell from 16\% to 1.6\% of
@@ -626,7 +663,7 @@ $c_w$, $L_v$, $T_{boil}$ & 4184, $2.259\times10^6$, 373.15 & water properties (S
         simulation of 2D wildland fires. \emph{Computer Physics Communications}.
         \url{https://doi.org/10.1016/j.cpc.2025.109746}
   \item Mell, W., Jenkins, M.~A., Gould, J., \& Cheney, P. (2007). A physics-based approach to
-        modelling grassland fires. \emph{International Journal of Wildland Fire}, 16, 1--22.
+        modeling grassland fires. \emph{International Journal of Wildland Fire}, 16, 1--22.
   \item McGrattan, K., et al. \emph{Fire Dynamics Simulator, Technical Reference Guide}. NIST.
   \item Wrede, H., et al. (2025). Fire-X: Extinguishing fire with stoichiometric heat release.
         \emph{ACM Transactions on Graphics}, 44(6), 269.
@@ -634,6 +671,9 @@ $c_w$, $L_v$, $T_{boil}$ & 4184, $2.259\times10^6$, 373.15 & water properties (S
         placed in a fully developed channel flow. \emph{Journal of Fluids Engineering}, 115, 85--92.
   \item Rhie, C.~M., \& Chow, W.~L. (1983). Numerical study of the turbulent flow past an airfoil
         with trailing edge separation. \emph{AIAA Journal}, 21, 1525--1532.
+  \item Paulson, C.~A. (1970). The mathematical representation of wind speed and temperature
+        profiles in the unstable atmospheric surface layer. \emph{Journal of Applied Meteorology}, 9,
+        857--861.
   \item Koren, B. (1993). A robust upwind discretization method for advection, diffusion and
         source terms. In \emph{Numerical Methods for Advection--Diffusion Problems}, Vieweg.
 \end{itemize}
