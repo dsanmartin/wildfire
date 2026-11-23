@@ -163,13 +163,23 @@ python src/firefront.py data/output/RUN1 data/output/RUN2 --obs f19_front.csv --
 
 ## Wind profile and forcing
 
-`[wind] shape = monin-obukhov` with `z_0`, `L`, `u_r` and `z_r` gives the Monin-Obukhov
-similarity profile used by FDS (Case F19: `u_r = 4.9`, `z_r = 2`, `z_0 = 0.03`, `L = -500`).
-In a periodic domain the near-ground wind decays without forcing: `[wind] forcing = profile`
-(relaxation time `forcing_time`, default 1 s) nudges the horizontal-mean wind at each height back
-to the initial profile. `[wall] model = log` replaces the no-slip ground by a log-law wall model
-(roughness `[wall] z_0`, default the wind's `z_0`); with both, the profile holds within about 2%.
-Details in `docs/wildfire_model.tex`.
+`[wind] shape = monin-obukhov` (default) with `z_0` (default 0.03 m), `L` (default: neutral),
+`u_r` and `z_r` gives the Monin-Obukhov similarity profile used by FDS (Case F19: `u_r = 4.9`,
+`z_r = 2`, `z_0 = 0.03`, `L = -500`). In a periodic domain the near-ground wind decays without
+forcing: `[wind] forcing = profile` (default; relaxation time `forcing_time`, default 1 s) nudges
+the horizontal-mean wind at each height back to the initial profile. `[wall] model = log`
+(default) replaces the no-slip ground by a log-law wall model (roughness `[wall] z_0`, default the
+wind's `z_0`); with both, the profile holds within about 2%. Details in `docs/wildfire_model.tex`.
+
+## Defaults
+
+The defaults are the consistent, FDS-like setup: `[pressure] dilatation = consistent`,
+`[gas] cp_model = mixture` (`variable` without the solid fuel model), `[gas] transport =
+sutherland`, the wind profile, forcing and wall model above, `[fuel] moisture = 0.058`, and
+`[numerics] cuda_graph = auto` (CUDA graphs on a CUDA device; `--cuda-graph` / `--no-cuda-graph`).
+Values specific to a case (`[wind] L`, `u_r`, ambient temperature, ignition) and the calibration
+parameters (`H_C`, `kappa_gas`) stay in the input files. `--legacy` still reproduces `src_legacy/`
+exactly: it switches all of these back (power-law wind with `z_0 = 0.05` unless the file sets them).
 
 ## Turbulence filter width
 

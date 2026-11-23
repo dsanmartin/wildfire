@@ -175,6 +175,7 @@ def run(cfg, verbose=True):
     next_out = t[0] + out_dt
     dt_min_seen, dt_max_seen = np.inf, 0.0
     runner = None
+    use_graph = cfg.cuda_graph == 'on' or (cfg.cuda_graph == 'auto' and device.type == 'cuda')
     start = last = time.perf_counter()
     with torch.no_grad():
         while t_now < t_end - 1e-9 * out_dt:
@@ -182,7 +183,7 @@ def run(cfg, verbose=True):
             dt = min(dt, next_out - t_now, t_end - t_now)
             model.set_dt(dt)
             dt_min_seen, dt_max_seen = min(dt_min_seen, dt), max(dt_max_seen, dt)
-            if runner is None and cfg.cuda_graph and n == 3:     # capture after a few direct steps
+            if runner is None and use_graph and n == 3:          # capture after a few direct steps
                 runner = make_runner(model, y, p, say)
             if runner is not None:
                 y, p = runner.step()
@@ -319,8 +320,10 @@ def main():
     ap.add_argument('--legacy', action='store_true', default=None,
                     help='reproduce the original src_legacy/ code, defects included (see src/README.md)')
     ap.add_argument('--threads', type=int, default=None, help='CPU threads')
-    ap.add_argument('--cuda-graph', action='store_true', default=None,
-                    help='replay each time step as CUDA graphs (GPU; emulated on CPU for testing)')
+    ap.add_argument('--cuda-graph', dest='cuda_graph', action='store_const', const='on', default=None,
+                    help='replay each time step as CUDA graphs (default: auto, on with CUDA; emulated on CPU)')
+    ap.add_argument('--no-cuda-graph', dest='cuda_graph', action='store_const', const='off',
+                    help='run every step directly, without CUDA graphs')
     args = ap.parse_args()
     if args.threads:
         torch.set_num_threads(args.threads)

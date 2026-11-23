@@ -115,17 +115,19 @@ with $\nu=\mu/\rho$, the imposed divergence $D$ of \eqref{eq:div}, the drag of t
 and the subgrid stresses $\boldsymbol{\tau}_{sgs}$ of Section~\ref{sec:turbulence}.
 
 \subsection{Energy}
-The specific heat $c_p$ is constant by default; with \code{[gas] cp\_model = variable} it is the
+The specific heat follows the composition by default (\code{[gas] cp\_model = mixture}, below; without
+the species of the extended model it falls back to \code{variable}). With \code{constant} it is $c_p$;
+with \code{variable} it is the
 temperature-dependent value of air from ideal-gas tables (1005~J\,kg$^{-1}$K$^{-1}$ at 300~K, 1142 at
 1000~K, 1253 at 2000~K, interpolated linearly), used in the energy equation, the low-Mach constraint
 \eqref{eq:div} and the energy budget. With \code{cp\_model = mixture} (extended model) it is weighted
-by composition, $c_p=\sum_kY_kc_{p,k}(T)$ over N$_2$, O$_2$, CO$_2$ and H$_2$O (rounded JANAF values). The
+by composition (default), $c_p=\sum_kY_kc_{p,k}(T)$ over N$_2$, O$_2$, CO$_2$ and H$_2$O (rounded JANAF values). The
 products are inferred from the oxygen consumed: the deficit $Y_{O_2,\infty}(1-\Yf)-\YO$ corresponds to
 $(1+1/s)$~kg of products per kg of oxygen, split into CO$_2$ and H$_2$O by the cellulose stoichiometry
 C$_6$H$_{10}$O$_5$ + 6\,O$_2$ $\to$ 6\,CO$_2$ + 5\,H$_2$O; the fuel gas and the rest are counted as N$_2$.
 Fully burned gas has $c_p\approx1480$~J\,kg$^{-1}$K$^{-1}$ at 2000~K, 18\% more than air.
 
-Transport properties are constant by default. With \code{[gas] transport = sutherland} the viscosity
+By default (\code{[gas] transport = sutherland}) the viscosity
 and the conductivity follow Sutherland's law, $\mu(T)=\mu_\infty(T/T_\infty)^{3/2}(T_\infty+S)/(T+S)$,
 with $S=110.4$~K for $\mu$ and 194~K for $\kappa$, scaled to the constant values at $T_\infty$. The
 conduction term is then $\nabla\cdot(\kappa\nabla T)=\kappa\nabla^2T+\kappa'|\nabla T|^2$, the gradient of
@@ -280,8 +282,7 @@ at their own temperature. At uniform $T_\infty$, $G=4\sigma T_\infty^4$ and ther
 \begin{itemize}
   \item Wind (\code{[wind] shape}), with $d_w$ the height above the terrain; other components zero:
     \begin{itemize}
-      \item \code{power law} (default): $u=u_r(d_w/z_r)^{1/7}$;
-      \item \code{monin-obukhov}: Monin--Obukhov similarity theory, as in the FDS \code{\&WIND} input,
+      \item \code{monin-obukhov} (default): Monin--Obukhov similarity theory, as in the FDS \code{\&WIND} input,
             \begin{equation}
               u = \frac{u_*}{\kappa}\Big[\ln\frac{d_w}{z_0} - \psi_m\Big(\frac{d_w}{L}\Big) + \psi_m\Big(\frac{z_0}{L}\Big)\Big],
             \end{equation}
@@ -294,6 +295,7 @@ at their own temperature. At uniform $T_\infty$, $G=4\sigma T_\infty^4$ and ther
             power law: 1.4, 2.5 and 3.3~m\,s$^{-1}$ at 0.1, 0.25 and 0.51~m, against 3.1, 3.6 and
             4.0~m\,s$^{-1}$. Only the velocity is initialized from the similarity theory; the temperature
             stays uniform.
+      \item \code{power law} (original model, \code{--legacy}): $u=u_r(d_w/z_r)^{1/7}$;
       \item \code{log} (neutral logarithmic profile from $u_*$) or \code{constant}.
     \end{itemize}
   \item Fuel: $Y=1$ in the bed, $0$ elsewhere.
@@ -335,7 +337,7 @@ $Y$, $T_s$ and $W$ are not transported and need no boundary condition.
 In a periodic domain nothing drives the wind: ground friction drains its momentum and the
 near-ground wind decays. Without fire, on a 4.7~m~$\times$~0.31~m grid, the horizontal-mean wind at
 2~m fell from 4.8 to 2.2~m\,s$^{-1}$ in 60~s, and at 0.3~m from 2.7 to 0.6~m\,s$^{-1}$; only the upper
-layers kept their speed. With \code{[wind] forcing = profile} a body force relaxes the horizontal-mean
+layers kept their speed. With \code{[wind] forcing = profile} (default) a body force relaxes the horizontal-mean
 velocity at each height toward the initial profile,
 \begin{equation}
   \mathbf{f}(z) = \frac{\overline{\vu}_0(z) - \overline{\vu}(z,t)}{\tau_f},
@@ -348,7 +350,7 @@ no-slip ground the lowest cells still lost 18--25\%: on coarse grids the no-slip
 overestimates the wall friction. The wall model below removes this deficit.
 
 \subsection{Wall model}
-With \code{[wall] model = log} the no-slip condition at the ground (and on terrain surfaces) is
+With \code{[wall] model = log} (default) the no-slip condition at the ground (and on terrain surfaces) is
 replaced by a wall-stress model. The friction velocity follows from the log law at the first node
 above the ground, at height $z_1$, with the horizontal velocity $\mathbf{u}_1$:
 \begin{equation}
@@ -583,7 +585,8 @@ with the Koren scheme it is normally negligible.
 \subsection{CUDA graphs}
 On 2D grids each GPU operation takes microseconds and a step has thousands of them, so the run is
 limited by the Python thread issuing them (about 44\% GPU use on an RTX 4090 with one CPU core at
-100\%). With \code{--cuda-graph} (or \code{[numerics] cuda\_graph = True}) each step is replayed from
+100\%). By default (\code{[numerics] cuda\_graph = auto}; \code{on}/\code{off}, or \code{--cuda-graph} and
+\code{--no-cuda-graph}) each step on a CUDA device is replayed from
 CUDA graphs: the radiation solve, the prediction (right-hand side, provisional state, PCG setup), a
 chunk of \code{pcg\_chunk} PCG iterations replayed until the residual is below the tolerance (one host
 check per chunk), and the finalization (projection correction, boundary conditions, bounds, energy
@@ -665,8 +668,8 @@ Key & Default & Meaning \\
 \code{[density] constant} & \code{False} & constant density (incompressible) \\
 \multicolumn{3}{l}{\emph{Gas and turbulence}}\\
 $c_p$, $\rho_\infty$, $\mu$, $\kappa$ & 1007, 1.225, $1.802\times10^{-5}$, 0.02476 & SI units (not in the input file) \\
-\code{[gas] cp\_model} & \code{constant} & \code{constant}, \code{variable} ($c_p(T)$ of air), \code{mixture} \\
-\code{[gas] transport} & \code{constant} & \code{constant} or \code{sutherland} \\
+\code{[gas] cp\_model} & \code{mixture} & \code{constant}, \code{variable} ($c_p(T)$ of air), \code{mixture} \\
+\code{[gas] transport} & \code{sutherland} & \code{constant} or \code{sutherland} \\
 \code{[temperature] T\_inf} & 288.15 K & ambient temperature \\
 \code{[turbulence] enabled} & \code{True} & Smagorinsky model \\
 \code{[turbulence] C\_s} & 0.2 & Smagorinsky constant \\
@@ -685,7 +688,7 @@ $Pr$ & 0.7323 & Prandtl number (also turbulent) \\
 \code{[fuel] rho\_bulk} & 0.6144 kg\,m$^{-3}$ & dry bulk density (FDS Case F19) \\
 \code{[fuel] c\_s} & 1500 J\,kg$^{-1}$K$^{-1}$ & specific heat of dry fuel \\
 \code{[fuel] H\_pyr} & $4.16\times10^5$ J\,kg$^{-1}$ & heat of pyrolysis \\
-\code{[fuel] moisture} & 0 & moisture content (F19: 0.058) \\
+\code{[fuel] moisture} & 0.058 & moisture content (F19, FDS Case\_F19) \\
 \code{[fuel] pyrolysis} & \code{linear} & \code{linear} or \code{arrhenius} \\
 \code{[fuel] T\_pyr, T\_pyr\_end} & 400 K, 500 K & pyrolysis range \\
 \code{[fuel] slab} & \code{True} & solid terms and drag on the fuel rows only (bitwise identical) \\
@@ -700,10 +703,10 @@ $c_w$, $L_v$, $T_{boil}$ & 4184, $2.259\times10^6$, 373.15 & water properties (S
 \code{[radiation] update\_every} & 5 & steps between radiation solves \\
 \code{[temperature] delta} & 0.1 m & optical path length (diffusion radiation) \\
 \multicolumn{3}{l}{\emph{Initial conditions}}\\
-\code{[wind] u\_r, z\_r, shape} & 4.8 m\,s$^{-1}$, 2 m, power law & reference wind and profile \\
-\code{[wind] z\_0, L} & 0.05 m, neutral & roughness and Obukhov length (\code{monin-obukhov}) \\
-\code{[wind] forcing, forcing\_time} & \code{none}, 1 s & wind forcing (\code{profile}) and its relaxation time \\
-\code{[wall] model, z\_0} & \code{none}, wind $z_0$ & ground wall model (\code{log}) and its roughness \\
+\code{[wind] u\_r, z\_r, shape} & 4.8 m\,s$^{-1}$, 2 m, \code{monin-obukhov} & reference wind and profile \\
+\code{[wind] z\_0, L} & 0.03 m, neutral & roughness and Obukhov length (\code{monin-obukhov}) \\
+\code{[wind] forcing, forcing\_time} & \code{profile}, 1 s & wind forcing (\code{profile}) and its relaxation time \\
+\code{[wall] model, z\_0} & \code{log}, wind $z_0$ & ground wall model (\code{log}) and its roughness \\
 \code{[temperature] T\_hot, shape} & 788.15 K, \code{gaussian} & ignition temperature and shape \\
 \code{[temperature] x\_start}\dots\code{z\_end} & 0, 6, -, -, 0, 1 m & ignition extent \\
 \code{[temperature] t\_source} & $-1$ (off) & sustained source until this time \\

@@ -37,13 +37,14 @@ class Config:
     NT: int = 100
     method: str = 'euler'           # euler, RK2, RK4
     cfl: float = 0.4                # adaptive time step: target CFL (dt <= (t_max - t_min) / Nt); 0: fixed dt
-    cuda_graph: bool = False        # replay each step as CUDA graphs (face projection only)
+    cuda_graph: str = 'auto'        # replay each step as CUDA graphs: auto (on with CUDA), on, off
     pcg_chunk: int = 4              # PCG iterations per replayed chunk (convergence checked between chunks)
     experiment: str = 'fire'
     # Gas
     c_p: float = 1007.0
-    cp_model: str = 'constant'      # constant (c_p); variable: c_p(T) of air; mixture: species-weighted c_p(T)
-    transport: str = 'constant'     # constant mu and kappa, or sutherland: mu(T), kappa(T) (Sutherland's law)
+    cp_model: str = 'mixture'       # constant (c_p); variable: c_p(T) of air; mixture: species-weighted c_p(T)
+                                    # (needs the species: falls back to variable without solid_temperature)
+    transport: str = 'sutherland'   # constant mu and kappa, or sutherland: mu(T), kappa(T) (Sutherland's law)
     rho_inf: float = 1.225
     mu: float = 1.802e-5
     kappa: float = 0.02476
@@ -74,7 +75,7 @@ class Config:
     rho_bulk: float = 0.6144        # dry fuel mass per bed volume, kg/m^3 (FDS Case_F19)
     c_s: float = 1500.0             # specific heat of the dry fuel, J/(kg K)
     H_pyr: float = 4.16e5           # heat absorbed by pyrolysis, J/kg (Mell et al. 2007)
-    moisture: float = 0.0           # initial moisture, kg water per kg dry fuel (F19: 0.058)
+    moisture: float = 0.058         # initial moisture, kg water per kg dry fuel (CSIRO F19, FDS Case_F19)
     c_w: float = 4184.0             # specific heat of liquid water, J/(kg K)
     L_v: float = 2.259e6            # latent heat of vaporisation of water, J/kg
     T_boil: float = 373.15          # temperature at which the fuel moisture evaporates, K
@@ -117,16 +118,16 @@ class Config:
     T0_z_end: float = 1.0
     t_source: float = -1.0
     # Wind
-    initial_u_type: str = 'power law'   # power law, log, constant, monin-obukhov
+    initial_u_type: str = 'monin-obukhov'   # monin-obukhov (neutral log law if L is unset), power law, log, constant
     L_obukhov: float = None             # Obukhov length, m (monin-obukhov; None: neutral). FDS Case_F19: -500
-    forcing: str = 'none'               # none, or profile: nudge the horizontal-mean wind to the initial profile
+    forcing: str = 'profile'            # profile: nudge the horizontal-mean wind to the initial profile; none
     forcing_time: float = 1.0           # relaxation time of the wind forcing, s
-    wall_model: str = 'none'            # none (no-slip ground) or log: wall stress from the log law
+    wall_model: str = 'log'             # log: wall stress from the log law; none: no-slip ground
     wall_z0: float = None               # roughness length of the wall model, m; None: the wind's z_0
     u_r: float = 4.8
     z_r: float = 2.0
     alpha_u: float = 1.0 / 7.0
-    u_z_0: float = 0.05
+    u_z_0: float = 0.03             # roughness length, m (open grassland; FDS Case_F19)
     d: float = 0.0
     u_ast: float = 0.1
     von_karman: float = 0.41
@@ -203,7 +204,7 @@ _KEYS = {
     ('temperature', 'T_inf'): ('T_inf', float), ('numerics', 'bound'): ('bound', bool),
     ('gas', 'cp_model'): ('cp_model', str), ('gas', 'transport'): ('transport', str),
     ('numerics', 'T_advection'): ('T_advection', str), ('fuel', 'threshold'): ('fuel_threshold', float),
-    ('numerics', 'cfl'): ('cfl', float), ('numerics', 'cuda_graph'): ('cuda_graph', bool),
+    ('numerics', 'cfl'): ('cfl', float), ('numerics', 'cuda_graph'): ('cuda_graph', str),
     ('numerics', 'pcg_chunk'): ('pcg_chunk', int),
     ('fuel', 'x_start'): ('fuel_x_start', float), ('fuel', 'x_end'): ('fuel_x_end', float),
     ('fuel', 'y_start'): ('fuel_y_start', float), ('fuel', 'y_end'): ('fuel_y_end', float),
@@ -265,8 +266,6 @@ def load_config(path: str, **overrides) -> Config:
         cfg.z_min, cfg.z_max, cfg.Nz = cfg.y_min, cfg.y_max, cfg.Ny
     if cfg.experiment != 'fire':
         raise NotImplementedError(f"experiment '{cfg.experiment}' is not ported; only 'fire' is (use src_legacy/ for the others)")
-    if cfg.cp_model == 'mixture' and not cfg.solid_temperature:
-        raise ValueError("cp_model = mixture needs the species of the extended model (solid_temperature = True)")
     for name, box in cfg.buildings:
         if len(box) != (3 if cfg.ndim == 2 else 5):
             raise ValueError(f"[buildings] {name}: expected {'x0, x1, height' if cfg.ndim == 2 else 'x0, x1, y0, y1, height'}")
@@ -282,6 +281,21 @@ def load_config(path: str, **overrides) -> Config:
         cfg.solid_temperature, cfg.radiation, cfg.projection, cfg.cp_model = False, 'diffusion', 'nodal', 'constant'
         cfg.transport, cfg.cfl, cfg.forcing, cfg.wall_model = 'constant', 0.0, 'none', 'none'
         cfg.dilatation = 'published'
+        if cfg.cuda_graph == 'auto':
+            cfg.cuda_graph = 'off'
+        for attr, value in (('initial_u_type', 'power law'), ('u_z_0', 0.05)):   # original defaults
+            if attr not in given:
+                setattr(cfg, attr, value)
+    if cfg.cp_model == 'mixture' and not cfg.solid_temperature:
+        if 'cp_model' in given:
+            raise ValueError("cp_model = mixture needs the species of the extended model (solid_temperature = True)")
+        cfg.cp_model = 'variable'                 # default without species: c_p(T) of air
+    graph = str(cfg.cuda_graph).strip().lower()
+    on_off = {'auto': 'auto', 'on': 'on', 'true': 'on', 'yes': 'on', '1': 'on',
+              'off': 'off', 'false': 'off', 'no': 'off', '0': 'off'}
+    if graph not in on_off:
+        raise ValueError(f"cuda_graph must be auto, on or off, got '{cfg.cuda_graph}'")
+    cfg.cuda_graph = on_off[graph]
     for key, allowed in (('reaction', ('exact', 'explicit')), ('sink', ('surface', 'legacy')),
                          ('T_advection', ('upwind', 'koren', 'central')),
                          ('radiation', ('transport', 'diffusion')), ('pyrolysis', ('linear', 'arrhenius')),
