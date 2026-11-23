@@ -267,8 +267,9 @@ class Model:
         return Y_N2 * cp('N2') + Y_O * cp('O2') + Y_CO2 * cp('CO2') + Y_H2O * cp('H2O')
 
     def _sutherland(self, T, ref, S):
-        """Sutherland's law scaled to the value ref at T_inf; returns the value and its derivative."""
-        T0 = self.cfg.T_inf
+        """Sutherland's law scaled to the value ref at 288.15 K (mu and kappa are given for air at
+        15 C, whatever the ambient temperature); returns the value and its derivative."""
+        T0 = 288.15
         v = ref * (T / T0) ** 1.5 * (T0 + S) / (T + S)
         return v, v * (1.5 / T - 1 / (T + S))
 

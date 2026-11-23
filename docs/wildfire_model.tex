@@ -600,9 +600,26 @@ $10^{-4}$ in the fields; direct execution itself is bitwise reproducible. It req
 projection and is not available with \code{t\_source} or \code{--legacy}; if the capture fails the
 run continues without graphs.
 
+\subsection{Fuel parameters from FDS Case F19}\label{sec:fds-fuel}
+The fuel defaults are those of the FDS validation case \code{Case\_F19.fds} (with
+\code{vegetation\_model.txt}): surface-to-volume ratio $\sigma_s=12240$~m$^{-1}$ (cylindrical blades
+of diameter $4/\sigma_s=0.33$~mm), bulk density 0.6144~kg\,m$^{-3}$ and particle density
+500~kg\,m$^{-3}$, so the packing ratio is $\alpha_s=0.6144/500=0.00123$, bed height 0.49~m, moisture
+0.058 and heat of pyrolysis 418~kJ\,kg$^{-1}$. For a cylindrical particle FDS takes the drag area as
+$2\pi rL$ times a shape factor 1/4 (random orientation), so the drag on the gas per unit volume is
+$\tfrac12 C_{d,\mathrm{FDS}}(\beta\sigma/4)|\vu|\vu$; with $\mathbf F_d=\tfrac12C_d\alpha_s\sigma_s|\vu|\vu$
+here, its \code{DRAG\_COEFFICIENT} of 2.8 corresponds to $C_d=0.7$. The absorption coefficient of the
+fuel, $\alpha_s\sigma_sY/4$, is the same as in FDS. FDS converts 75\% of the dry fuel into a gas with
+a heat of combustion of 17.4~MJ\,kg$^{-1}$ and the rest into char that oxidizes at the surface; this
+model gasifies all of it, so $H_C=13.1$~MJ per kg of dry fuel matches the FDS gas-phase heat release.
+Not reproduced: the char oxidation, the temperature-dependent fuel heat capacity of FDS (1.1 to
+2.0~kJ\,kg$^{-1}$K$^{-1}$ from 0 to 200~$^\circ$C; here constant $c_s$) and its Arrhenius pyrolysis
+(here linear). \code{--legacy} keeps the original values ($C_d=0.15$, $\alpha_s=0.002$,
+$\sigma_s=4000$~m$^{-1}$, $Y_h=0.51$~m).
+
 \subsection{Fuel slab}
 The solid fuel variables $Y$, $T_s$ and $W$ are stored on the whole grid, but the fuel bed fills only
-a few rows of it (0.51\,m of a 20\,m domain in the F19 setup). Neither $Y$ nor $W$ is transported and
+a few rows of it (0.49\,m of a 20\,m domain in the F19 setup). Neither $Y$ nor $W$ is transported and
 both can only decrease, so no fuel ever appears above the highest row that holds fuel or moisture at
 $t=0$. The solid source terms (convection and radiation to the fuel, pyrolysis, evaporation, the rates
 of $Y$, $T_s$ and $W$, their mass source in the species and the divergence) and the drag are computed
@@ -670,14 +687,14 @@ Key & Default & Meaning \\
 $c_p$, $\rho_\infty$, $\mu$, $\kappa$ & 1007, 1.225, $1.802\times10^{-5}$, 0.02476 & SI units (not in the input file) \\
 \code{[gas] cp\_model} & \code{mixture} & \code{constant}, \code{variable} ($c_p(T)$ of air), \code{mixture} \\
 \code{[gas] transport} & \code{sutherland} & \code{constant} or \code{sutherland} \\
-\code{[temperature] T\_inf} & 288.15 K & ambient temperature \\
+\code{[temperature] T\_inf} & 288.15 K & ambient temperature (F19: 307.15 K, FDS \code{TMPA}); $\rho_\infty$ follows it, the Sutherland reference stays at 288.15 K \\
 \code{[turbulence] enabled} & \code{True} & Smagorinsky model \\
 \code{[turbulence] C\_s} & 0.2 & Smagorinsky constant \\
 \code{[turbulence] filter\_width} & grid & fixed filter width (m) \\
 $Pr$ & 0.7323 & Prandtl number (also turbulent) \\
 \multicolumn{3}{l}{\emph{Fuel}}\\
-\code{[fuel] Y\_h} & 0.51 m & fuel bed height \\
-\code{[fuel] C\_d, alpha\_s, sigma\_s} & 0.15, 0.002, 4000 m$^{-1}$ & drag coefficient, solid fraction, surface-to-volume \\
+\code{[fuel] Y\_h} & 0.49 m & fuel bed height (FDS Case\_F19) \\
+\code{[fuel] C\_d, alpha\_s, sigma\_s} & 0.7, 0.00123, 12240 m$^{-1}$ & drag coefficient, packing ratio, surface-to-volume (FDS Case\_F19, see Sec.~\ref{sec:fds-fuel}) \\
 \code{[fuel] x\_start}\dots\code{y\_end} & whole domain & horizontal extent of the bed \\
 \code{[fuel] H\_C} & $21\times10^6$ J\,kg$^{-1}$ & heat of combustion \\
 \code{[fuel] A, T\_act, Y\_f} & $10^9$ s$^{-1}$, 18040.85 K, 70 & Arrhenius rate (published model, \code{arrhenius} pyrolysis) \\

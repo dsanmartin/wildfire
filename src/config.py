@@ -59,16 +59,17 @@ class Config:
     filter_width: float = None      # Smagorinsky filter width in m; None: (dx dz)^(1/2) or (dx dy dz)^(1/3)
     Pr: float = 0.7323
     # Fuel / reaction
-    C_d: float = 0.15
-    alpha_s: float = 0.002
-    sigma_s: float = 4000.0
+    C_d: float = 0.7                # drag of the fuel elements; FDS Case_F19 DRAG_COEFFICIENT 2.8 times its
+                                    # projected-area factor 1/4 (FDS uses beta sigma / 4, here alpha_s sigma_s)
+    alpha_s: float = 0.0012288      # packing ratio: bulk density 0.6144 / particle density 500 (FDS Case_F19)
+    sigma_s: float = 12240.0        # surface-to-volume ratio of the fuel elements, 1/m (FDS Case_F19)
     T_pc: float = (573 + 473) / 2
     H_C: float = 21e6
     A: float = 1e9
     T_act: float = 18040.8533
     h_c: float = 1.42
     Y_f: float = 70.0
-    Y_h: float = 0.51
+    Y_h: float = 0.49               # fuel bed height, m (FDS Case_F19)
     reaction: str = 'exact'         # exact: fuel decay integrated exactly over dt; explicit: original rate
     # Solid fuel phase: its own temperature T_s, heated by convection and radiation, and moisture W
     solid_temperature: bool = True  # False: one temperature for gas and fuel (published model)
@@ -283,9 +284,12 @@ def load_config(path: str, **overrides) -> Config:
         cfg.dilatation = 'published'
         if cfg.cuda_graph == 'auto':
             cfg.cuda_graph = 'off'
-        for attr, value in (('initial_u_type', 'power law'), ('u_z_0', 0.05)):   # original defaults
+        for attr, value in (('initial_u_type', 'power law'), ('u_z_0', 0.05), ('C_d', 0.15),   # original
+                            ('alpha_s', 0.002), ('sigma_s', 4000.0), ('Y_h', 0.51)):         # defaults
             if attr not in given:
                 setattr(cfg, attr, value)
+    if 'T_inf' in given and 'rho_inf' not in given and not cfg.legacy:
+        cfg.rho_inf = 1.225 * T_INF / cfg.T_inf     # ideal gas at the same pressure (1.225 kg/m^3 at 15 C)
     if cfg.cp_model == 'mixture' and not cfg.solid_temperature:
         if 'cp_model' in given:
             raise ValueError("cp_model = mixture needs the species of the extended model (solid_temperature = True)")
