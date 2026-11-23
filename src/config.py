@@ -159,6 +159,8 @@ class Config:
     poisson: str = 'auto'               # auto, thomas, eig (nodal projection)
     projection: str = 'face'            # face: discretely conservative face fluxes; nodal: original projection
     dilatation: str = 'consistent'      # consistent: div u = (1/T) DT/Dt; published: divided again by rho c_p
+    scalar_transport: str = 'density'   # density: rho and rho Y_k conservative, T = rho_inf T_inf / rho (exact
+                                        # mass conservation); temperature: T and Y_k advected (original)
     # Reproduce the original src_legacy/ code, defects included (see README of this folder)
     legacy: bool = False
     # Buildings (immersed solids): boxes standing on the ground, (x0, x1, height) in 2D and
@@ -234,6 +236,7 @@ _KEYS = {
     ('pressure', 'log_solver'): ('log_solver', bool), ('pressure', 'poisson'): ('poisson', str),
     ('pressure', 'wall_iterations'): ('wall_iterations', int), ('pressure', 'projection'): ('projection', str),
     ('pressure', 'dilatation'): ('dilatation', str),
+    ('numerics', 'scalar_transport'): ('scalar_transport', str),
     ('ignition', 'model'): ('ignition', str), ('ignition', 'hrrpua'): ('burner_hrrpua', float),
     ('ignition', 'x_start'): ('burner_x_start', float), ('ignition', 'x_end'): ('burner_x_end', float),
     ('ignition', 'y_start'): ('burner_y_start', float), ('ignition', 'y_end'): ('burner_y_end', float),
@@ -300,6 +303,7 @@ def load_config(path: str, **overrides) -> Config:
         cfg.solid_temperature, cfg.radiation, cfg.projection, cfg.cp_model = False, 'diffusion', 'nodal', 'constant'
         cfg.transport, cfg.cfl, cfg.forcing, cfg.wall_model = 'constant', 0.0, 'none', 'none'
         cfg.dilatation = 'published'
+        cfg.scalar_transport = 'temperature'
         if cfg.cuda_graph == 'auto':
             cfg.cuda_graph = 'off'
         for attr, value in (('initial_u_type', 'power law'), ('u_z_0', 0.05), ('C_d', 0.15),   # original
@@ -327,7 +331,8 @@ def load_config(path: str, **overrides) -> Config:
                          ('cp_model', ('constant', 'variable', 'mixture')), ('transport', ('constant', 'sutherland')),
                          ('initial_u_type', ('power law', 'log', 'constant', 'monin-obukhov')),
                          ('forcing', ('none', 'profile')), ('wall_model', ('none', 'log')),
-                         ('dilatation', ('consistent', 'published')), ('ignition', ('temperature', 'burner'))):
+                         ('dilatation', ('consistent', 'published')), ('ignition', ('temperature', 'burner')),
+                         ('scalar_transport', ('density', 'temperature'))):
         if getattr(cfg, key) not in allowed:
             raise ValueError(f"{key} must be one of {allowed}, got '{getattr(cfg, key)}'")
     return cfg

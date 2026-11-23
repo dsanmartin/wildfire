@@ -112,6 +112,10 @@ class Model:
             self.face_proj = FaceProjection(self.shape, self.h, device, dtype,
                                             grid['solid'] if self.has_solids else None)
         self.max_divergence = 0.0
+        # Density transport (needs the face fluxes and a variable density)
+        self.density_mode = (cfg.scalar_transport == 'density' and cfg.projection == 'face'
+                             and not cfg.density_constant)
+        self._drho, self._drhoY, self._mflux_top = None, {}, None
         # Mass budget (face projection): control volume = fluid nodes of rows 0..Nz-2 (row 0: half
         # cell), whose only open boundary is the vertical face below the top row
         self.mass = None
@@ -641,7 +645,9 @@ class Model:
         if wall_drag is not None:   # wall stress as a momentum sink in the first cell above the ground
             for i in range(nd - 1):
                 out[i].view(-1).index_add_(0, self.wall_U, wall_drag[i])
-        if face_mode:
+        if self.density_mode:
+            adv = None                                            # T follows from the density below
+        elif face_mode:
             adv = self.flux_advection(T, F, divF)
         elif c.T_advection == 'central':   # original: oscillates at the fire front (cell Peclet number >> 1)
             adv = vel[0] * grad_T[0]
@@ -652,7 +658,19 @@ class Model:
             adv = scheme(vel[0], T, 0)
             for j in range(1, nd):
                 adv = adv + scheme(vel[j], T, j)
-        out[nd] = heat - adv - sgs_T
+        if self.density_mode:
+            # Continuity in conservative form with the projected face fluxes: d(rho)/dt = -div(rho_f F)
+            # + mdot, rho_f Koren-limited and upwinded with F; T = rho_inf T_inf / rho. The heating enters
+            # through div F (the low-Mach constraint), so the gas mass is conserved exactly and mixing
+            # conserves mass and enthalpy (the advection of T conserved its volume integral instead).
+            mflux = [F[j] * face_values(F[j], rho, nd - 1 - j, nd - 1 - j == 0) for j in range(nd)]
+            drho = -self.face_proj.divergence(mflux)
+            if solid is not None:
+                drho[:k] += solid['mdot']
+            out[nd] = -T / rho * drho                             # dT/dt of T = rho_inf T_inf / rho
+            self._drho, self._mflux_top = drho, mflux[nd - 1][-2]
+        else:
+            out[nd] = heat - adv - sgs_T
         if solid is not None:
             out[nd + 1:nd + 4, k:] = 0.0                              # above the fuel slab
             out[nd + 1, :k], out[nd + 2, :k], out[nd + 3, :k] = solid['dY'], solid['dT_s'], solid['dW']
@@ -666,6 +684,23 @@ class Model:
             num_F[:k] += mdot * (1 - y[nd + 4, :k])
             num_O[:k] += mdot * y[nd + 5, :k]
             sources = {nd + 4: num_F / rho, nd + 5: -num_O / rho}
+            if self.density_mode:                                 # conservative rho Y_k (see T above)
+                src_F, src_O = -omega, -c.s_O2 * omega
+                src_F[:k] += mdot
+                for i_sp, src in ((nd + 4, src_F), (nd + 5, src_O)):
+                    Yk = y[i_sp]
+                    flux = [mflux[j] * face_values(F[j], Yk, nd - 1 - j, nd - 1 - j == 0) for j in range(nd)]
+                    lap = op.lap_s(Yk)
+                    drhoY = -self.face_proj.divergence(flux) + rho * D * lap + src
+                    if c.turbulence:
+                        grad_Yk = op.grad_s(Yk)
+                        acc = self._mu_sgs * lap
+                        for j in range(nd):
+                            acc = acc + self._grad_mu[j] * grad_Yk[j]
+                        drhoY = drhoY + acc / c.Pr
+                    out[i_sp] = (drhoY - Yk * drho) / rho          # d(rho Y / rho)/dt
+                    self._drhoY[i_sp] = drhoY
+                sources = {}
             for i_sp, src in sources.items():
                 Yk = y[i_sp]
                 if face_mode:
@@ -916,10 +951,20 @@ class Model:
             y1 = y + (dt / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
         else:
             raise ValueError(f"unknown time method '{c.method}'")
+        if self.density_mode and c.method == 'euler':
+            # Exact conservative update: rho^{n+1} = rho^n + dt d(rho)/dt, (rho Y)^{n+1} likewise
+            rho0 = self.rho(y[nd])
+            rho1 = (rho0 + dt * self._drho).clamp(min=c.rho_inf * c.T_inf / (10 * c.T_max))
+            y1[nd] = c.rho_inf * c.T_inf / rho1
+            for i_sp, drhoY in self._drhoY.items():
+                y1[i_sp] = (rho0 * y[i_sp] + dt * drhoY) / rho1
         if c.solid_temperature:   # heat of combustion released this step (exact for Euler)
             self.energy['combustion'] += self._last_omega.sum() * (c.H_C * dt * self.dV)
         if self.mass is not None:  # mass budget: fluxes of the start of the step (exact for Euler)
-            self.mass['outflow'] += self.top_outflow(y[nd], self._F[nd - 1][-2]) * dt
+            if self.density_mode:                                 # the mass flux of the transport
+                self.mass['outflow'] += self._mflux_top.sum() * (self.dA * dt)
+            else:
+                self.mass['outflow'] += self.top_outflow(y[nd], self._F[nd - 1][-2]) * dt
             if c.solid_temperature:
                 w = self._mass_w[:self.k_fuel]
                 self.mass['pyrolysis'] += (self._last_mdot * w).sum() * (self.dV * dt)

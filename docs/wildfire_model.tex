@@ -128,6 +128,21 @@ $(T+T_s)/2$. Molecular transport is orders of magnitude smaller than the subgrid
 resolutions used, so its main effect is on the heat transfer to the fuel. \code{constant} keeps
 $\mu_0$ and $\kappa_0$.
 
+\paragraph{Density transport.} Equation \eqref{eq:energy} defines the heating rate that enters the
+constraint \eqref{eq:div}, but the temperature is not advanced with it. Instead the density is
+advanced with the continuity equation in conservative form,
+\begin{equation}\label{eq:continuity}
+  \frac{\partial\rho}{\partial t} + \nabla\cdot(\rho\vu) = \dot m''',\qquad T=\frac{\rho_\infty T_\infty}{\rho},
+\end{equation}
+and the species as $\rho\Yf$ and $\rho\YO$ (Section~\ref{sec:combustion}). With the velocity satisfying
+\eqref{eq:div}, this is equivalent to \eqref{eq:energy} in the continuous equations, and the heating
+reaches $T$ through $\nabla\cdot\vu$. Discretely the gas mass is conserved exactly, and mixing of hot and
+cold gas, whether physical or numerical, conserves mass and enthalpy: it gives the mass-weighted
+temperature. Advancing $T$ itself conserves its volume integral instead, and mixing then gives the
+volume-weighted temperature (744~K instead of 464~K for equal volumes at 1200 and 288~K): mixed gas
+too hot and too light, and mass lost without any flux (Appendix~\ref{app:corrections}).
+\code{[numerics] scalar\_transport = temperature} restores the advection of $T$.
+
 %======================================================================
 \section{Solid fuel}\label{sec:solid}
 %======================================================================
@@ -193,14 +208,14 @@ In both cases $\dot m'''\le\rho_bY/\Delta t$ (no more fuel than is present).
 \section{Gas-phase combustion}\label{sec:combustion}
 %======================================================================
 \begin{align}
-  \frac{\partial\Yf}{\partial t} + \vu\cdot\nabla\Yf &= \mathcal{D}\nabla^2\Yf - q_{sgs}(\Yf)
-    + \frac{\dot m'''(1-\Yf) - \dot\omega_F}{\rho},\\
-  \frac{\partial\YO}{\partial t} + \vu\cdot\nabla\YO &= \mathcal{D}\nabla^2\YO - q_{sgs}(\YO)
-    - \frac{s\,\dot\omega_F + \dot m'''\YO}{\rho},
+  \frac{\partial(\rho\Yf)}{\partial t} + \nabla\cdot(\rho\vu\Yf) &= \rho\mathcal{D}\nabla^2\Yf - \rho\,q_{sgs}(\Yf)
+    + \dot m''' - \dot\omega_F,\\
+  \frac{\partial(\rho\YO)}{\partial t} + \nabla\cdot(\rho\vu\YO) &= \rho\mathcal{D}\nabla^2\YO - \rho\,q_{sgs}(\YO)
+    - s\,\dot\omega_F,
 \end{align}
 with $\mathcal{D}=\kappa/(\rho c_p)$ (unit Lewis number) and turbulent Schmidt number equal to $Pr$.
-The terms with $\dot m'''$ account for the added mass of pyrolysis (and burner) gas. Combustion is
-mixing limited:
+With \eqref{eq:continuity} this is equivalent to the advective form, in which $\dot m'''$ also dilutes
+the species already present. Combustion is mixing limited:
 \begin{equation}
   \dot\omega_F = \frac{\rho\,\min(\Yf,\ \YO/s)}{\tau_{mix}},\qquad \tau_{mix}=\sqrt{2\Delta/|g|}
 \end{equation}
@@ -440,19 +455,24 @@ the half cell.
 $a^\pm=\max/\min(a,0)$; in the two rows next to a wall the stencil that stays inside the domain is
 used.
 
-\paragraph{Temperature and species: Koren-limited, conservative.}
-With the projected face fluxes $F$ (Section~\ref{sec:projection}),
+\paragraph{Density and species: Koren-limited, conservative.}
+With the projected face fluxes $F$ (Section~\ref{sec:projection}) and the mass fluxes
+$m_{j,i+1/2}=F_{j,i+1/2}\,\rho_{i+1/2}$,
 \begin{equation}
-  \vu\cdot\nabla\phi\approx\sum_j\frac{F_{j,i+1/2}\phi_{i+1/2}-F_{j,i-1/2}\phi_{i-1/2}}{h_j}-\phi_iD_i,
+  \frac{\rho_i^{n+1}-\rho_i^n}{\Delta t} = -\sum_j\frac{m_{j,i+1/2}-m_{j,i-1/2}}{h_j} + \dot m'''_i,\qquad
+  \frac{(\rho Y)_i^{n+1}-(\rho Y)_i^n}{\Delta t} = -\sum_j\frac{m_{j,i+1/2}Y_{i+1/2}-m_{j,i-1/2}Y_{i-1/2}}{h_j} + \dots,
 \end{equation}
-exact for a uniform $\phi$, with face values reconstructed from the upwind side,
+then $T=\rho_\infty T_\infty/\rho^{n+1}$ and $Y=(\rho Y)^{n+1}/\rho^{n+1}$ (exact with forward Euler; with RK2
+and RK4 the stages use the equivalent rates of $T$ and $Y$). The face values $\rho_{i+1/2}$, $Y_{i+1/2}$ are
+reconstructed from the upwind side,
 \begin{equation}
   \phi_{i+1/2} = \phi_i + \tfrac12\,\psi(r_i)\,(\phi_{i+1}-\phi_i),\qquad
   r_i=\frac{\phi_i-\phi_{i-1}}{\phi_{i+1}-\phi_i},\qquad
   \psi(r)=\max\!\big(0,\min(2r,\tfrac{1+2r}{3},2)\big)
 \end{equation}
 for $F_{i+1/2}\ge0$ (mirrored otherwise). The scheme is third order where $\phi$ is smooth and falls
-back to first-order upwind at extrema, so it creates no new extrema.
+back to first-order upwind at extrema. Momentum uses the same face fluxes in the advective form
+$\sum_j(F_{j,i+1/2}u_{i+1/2}-F_{j,i-1/2}u_{i-1/2})/h_j-u_iD_i$, exact for a uniform velocity.
 
 \subsection{Time integration}
 Explicit. The time step is adaptive by default (\code{[numerics] cfl}, target 0.4): each step takes
@@ -557,17 +577,19 @@ $0$ to $N_z-2$ (row 0 a half cell), whose only open boundary is the vertical fac
   M(t)-M(0) = \int_0^t \dot m\,dt - \int_0^t \sum_{\text{top faces}} \rho_f F_z\,A\,dt + R,
   \qquad M=\sum \rho\, w\, \Delta V,
 \]
-with $\dot m$ the pyrolysis and burner gas, $\rho_f$ upwinded with the face flux, the fluxes of the
-start of each step (exact for Euler), and $R$ the residual, reported as a fraction of the outflow
+with $\dot m$ the pyrolysis and burner gas, $\rho_f F_z$ the mass flux of the density transport at the
+top faces (with the temperature transport: $\rho_f$ upwinded), the fluxes of the start of each step,
+and $R$ the residual, reported as a fraction of the outflow
 since the start and since the last output. The cumulative values are saved as \code{M\_total},
 \code{M\_outflow}, \code{M\_pyrolysis} and \code{M\_residual} in \code{data.npz}. Terrain dead nodes are
 left out of $M$, so with terrain the budget is approximate.
 
-Results: in a 2D fire ignited by hot gas the residual stays within 2--7\% of the outflow; it does not
-change when $\Delta t$ is halved and halves when the grid is refined (first-order truncation error at
-the flame front). Gas injected without combustion closes to 0.3\%. With the burner, whose flame burns
-at the ground, the residual reaches about 30\% of the outflow and barely changes with grid
-refinement (Section~\ref{sec:limitations}).
+With the density transport and forward Euler the budget closes to round-off, apart from the mass
+changed by the temperature bounds: $10^{-9}$~kg\,m$^{-1}$ for a 2D fire ignited by hot gas, $2\times10^{-4}$
+(0.0005\% of the outflow) with the burner. With the temperature transport the residual was 2--7\% of
+the outflow for the hot-gas ignition and about 30\% with the burner, and a hot blob in the wind, with
+no combustion, lost 6--10~kg\,m$^{-1}$ in 3~s while $\int T\dd V$ stayed constant to $10^{-5}$: the
+volume-weighted mixing of $T$ described in Section~\ref{sec:gas}.
 
 \subsection{Log diagnostics and output}
 Besides the extreme values and the budgets, the log reports the total heat release rate and the gas
@@ -667,12 +689,6 @@ $c_w$, $L_v$, $T_{boil}$, $h_c$ & 4184, $2.259\times10^6$, 373.15, 1.42 & water 
         only 71~m in the first 86~s and at least 3.6~m\,s$^{-1}$ afterwards. Most of the slow start is the
         progressive lighting of the 174~m line (56~s) and the growth of the head-fire width, which only
         3D runs with the burner can represent.
-  \item Mass budget with the burner: the residual reaches about 30\% of the outflow when the flame
-        burns at the ground, against 2--7\% for a lifted flame, and is distributed through the plume
-        rather than at the ground; grid refinement barely reduces it. One candidate is the numerical
-        mixing of $T$ by the advection scheme: it conserves the volume average of $T$, while the
-        density follows $1/T$, so mixing hot and cold gas loses mass that no flux accounts for
-        (physical diffusion is in the constraint, numerical diffusion is not). Under investigation.
   \item No dissociation; one gray absorption coefficient for the gas, independent of soot or
         products. No char oxidation; constant fuel heat capacity.
   \item Water vapor from drying and combustion products are not transported.
@@ -723,7 +739,7 @@ overshoots, and with RK2/RK4 drives $Y$ negative within the stages.
 
 \subsection{What \code{--legacy} restores}
 Single temperature, radiation as diffusion, central temperature advection, explicit reaction, the
-original sink term, the nodal projection with the published divergence, constant $c_p$ and transport
+original sink term, the nodal projection with the published divergence, the advection of $T$, constant $c_p$ and transport
 properties, fixed time step, second-order extrapolation of all variables at both walls (including $Y$
 and the ground row of the scalars), no wind forcing, no-slip ground, no CUDA graphs, and the original
 values of the options that now have other defaults (unless the input file sets them): power-law wind
@@ -733,6 +749,12 @@ $Y_h=0.51$~m. Near the ground the power law is much stronger than the Monin--Obu
 
 \subsection{Corrections to the published code}\label{app:corrections}
 \begin{itemize}
+  \item \textbf{Temperature transport.} Advancing $T$ with an advection scheme conserves $\int T\dd V$,
+        not the mass: wherever hot and cold gas mix, numerically or through the subgrid model, the
+        mixed temperature is the volume-weighted one, too hot, and mass disappears without a flux. A
+        hot blob in the wind with no combustion lost 6--10~kg\,m$^{-1}$ in 3~s, almost independently of
+        the grid, and the mass residual of a fire with the burner reached 30\% of the outflow. The
+        density is now transported instead (Section~\ref{sec:gas}).
   \item \textbf{Thermal expansion.} The original code divides the heating rate in K\,s$^{-1}$,
         $\dot q/(\rho c_p)$, once more by $\rho c_p T$, which makes the thermal expansion $\rho c_p$
         times too small (about 1000 in ambient air, 300 in the flame): the density of the heated gas
@@ -800,6 +822,7 @@ Key & Default & Meaning \\
 \code{[pressure] projection} & \code{face} & \code{nodal}: original projection \\
 \code{[pressure] poisson} & \code{auto} & \code{auto}, \code{thomas}, \code{eig} (nodal projection) \\
 \code{[pressure] dilatation} & \code{consistent} & \code{published}: original thermal expansion \\
+\code{[numerics] scalar\_transport} & \code{density} & \code{temperature}: advect $T$ and $Y_k$ (original) \\
 \code{[wind] shape} & \code{monin-obukhov} & \code{power law}: $u_r(d_w/z_r)^{\alpha_u}$, $\alpha_u=1/7$ \\
 \bottomrule
 \end{longtable}

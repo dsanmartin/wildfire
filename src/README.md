@@ -173,7 +173,9 @@ wind's `z_0`); with both, the profile holds within about 2%. Details in `docs/wi
 
 ## Defaults
 
-The defaults are the consistent, FDS-like setup: `[pressure] dilatation = consistent`,
+The defaults are the consistent, FDS-like setup: `[numerics] scalar_transport = density` (the
+density and `rho Y_k` are transported conservatively and `T = rho_inf T_inf / rho`, so the gas mass is
+conserved exactly; `temperature` advects `T` as before), `[pressure] dilatation = consistent`,
 `[gas] cp_model = mixture` (`variable` without the solid fuel model), `[gas] transport =
 sutherland`, the wind profile, forcing and wall model above, `[fuel] moisture = 0.058`, and
 `[numerics] cuda_graph = auto` (CUDA graphs on a CUDA device; `--cuda-graph` / `--no-cuda-graph`).
