@@ -46,7 +46,7 @@ def fronts(d, threshold=0.5):
 
 def ros(t, xf, window):
     m = (t >= window[0]) & (t <= window[1]) & np.isfinite(xf)
-    if m.sum() < 3:
+    if m.sum() < 2:
         return np.nan
     return float(np.polyfit(t[m], xf[m], 1)[0])
 
@@ -89,8 +89,9 @@ def main():
         dt = np.gradient(t)
         axes[1].plot(t, np.gradient(head, t) if len(t) > 2 else head * 0, color=lh.get_color(), label=name)
     if obs is not None:
-        r_obs = ros(obs[:, 0], obs[:, 1], args.window or (obs[:, 0].max() / 2, obs[:, 0].max()))
-        print(f"observations: ROS = {r_obs:.2f} m/s")
+        # the observations have their own times: fit over all of them (two points: their slope)
+        r_obs = ros(obs[:, 0], obs[:, 1], (obs[:, 0].min(), obs[:, 0].max()))
+        print(f"observations: ROS = {r_obs:.2f} m/s over {obs[:, 0].min():.0f}-{obs[:, 0].max():.0f} s")
         axes[0].plot(obs[:, 0], obs[:, 1], 'ko', ms=4, label=f'observed (ROS {r_obs:.2f} m/s)')
     axes[0].set(xlabel='t [s]', ylabel='x [m]', title='Head fire (solid) and back fire (dotted)')
     axes[1].set(xlabel='t [s]', ylabel='dx/dt [m/s]', title='Instantaneous head-fire speed')
