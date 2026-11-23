@@ -64,10 +64,9 @@ class GraphRunner:
             del self.functions['radiation']
         self.graphs = {}
         self.failed = None
-        if not self.emulate:
-            self._capture()
-            if not self.graphs:
-                raise RuntimeError(f"no part could be captured (first failure: {self.failed})")
+        self._capture()                                           # emulated: same warm-up and restore
+        if not self.emulate and not self.graphs:
+            raise RuntimeError(f"no part could be captured (first failure: {self.failed})")
 
     def _predict(self):
         self.y1.copy_(self.model.predict(self.y))
@@ -81,12 +80,32 @@ class GraphRunner:
 
     # ------------------------------------------------------------------ capture
     def _state(self):
-        """Tensors a warm-up run changes and that must be restored before the real steps."""
-        m = self.model
-        tensors = [self.y, self.p, self.y1, m._p] + list(m.faces or []) + list(m.energy.values())
-        if m.G is not None:
-            tensors.append(m.G)
-        return tensors
+        """Every tensor a warm-up run may change, by name: the runner's buffers and all tensor
+        attributes of the model and the face projection (state, pressure, faces, radiation, energy,
+        wall friction velocity, eddy viscosity, divergence target, PCG vectors, ...). Taking all of
+        them, instead of a hand-made list, keeps the restore exact when a new buffer is added."""
+        out = {'runner.y': self.y, 'runner.p': self.p, 'runner.y1': self.y1}
+        for prefix, obj in (('model', self.model), ('proj', self.model.face_proj)):
+            for name, value in vars(obj).items():
+                if isinstance(value, torch.Tensor):
+                    out[f'{prefix}.{name}'] = value
+                elif isinstance(value, (list, tuple)):
+                    for i, v in enumerate(value):
+                        if isinstance(v, torch.Tensor):
+                            out[f'{prefix}.{name}[{i}]'] = v
+                elif isinstance(value, dict):
+                    for k, v in value.items():
+                        if isinstance(v, torch.Tensor):
+                            out[f'{prefix}.{name}[{k}]'] = v
+        return out
+
+    def _restore(self, saved):
+        current = self._state()
+        for key, s in saved.items():
+            current[key].copy_(s)
+        new = set(current) - set(saved)
+        if new:                                    # first allocated by the warm-up: not restored
+            self.log(f"CUDA graphs: warning, buffers allocated during the warm-up: {', '.join(sorted(new))}")
 
     def _report(self, name, exc):
         """Log a capture failure and write its full traceback to graph_capture_error.txt."""
@@ -99,33 +118,44 @@ class GraphRunner:
             self.log(f"CUDA graphs: traceback written to {path}")
 
     def _capture(self):
-        m = self.model
-        saved = [t.clone() for t in self._state()]
-        restore = lambda: [t.copy_(s) for t, s in zip(self._state(), saved)]
+        cuda = not self.emulate
+        sync = torch.cuda.synchronize if cuda else (lambda: None)
+        saved = {k: t.clone() for k, t in self._state().items()}
         # 1. Allocate every persistent buffer with one direct pass, and find hidden host
         #    synchronizations (sync debug mode raises at the offending line)
         usable = []
         for name in self.functions:
             try:
-                torch.cuda.set_sync_debug_mode('error')
+                if cuda:
+                    torch.cuda.set_sync_debug_mode('error')
                 self.functions[name]()
                 usable.append(name)
             except Exception as e:
+                if not cuda:
+                    raise
                 self._report(name + ' (host synchronization)', e)
             finally:
-                torch.cuda.set_sync_debug_mode('default')
-        torch.cuda.synchronize()
-        restore()
+                if cuda:
+                    torch.cuda.set_sync_debug_mode('default')
+        sync()
+        self._restore(saved)
         # 2. Warm-up on a side stream (lazy initializations such as cuFFT plans), as recommended
-        stream = torch.cuda.Stream()
-        stream.wait_stream(torch.cuda.current_stream())
-        with torch.cuda.stream(stream):
+        if cuda:
+            stream = torch.cuda.Stream()
+            stream.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(stream):
+                for _ in range(2):
+                    for name in self.functions:
+                        self.functions[name]()
+            torch.cuda.current_stream().wait_stream(stream)
+        else:
             for _ in range(2):
                 for name in self.functions:
                     self.functions[name]()
-        torch.cuda.current_stream().wait_stream(stream)
-        torch.cuda.synchronize()
-        restore()
+        sync()
+        self._restore(saved)
+        if not cuda:
+            return
         # 3. Capture each part separately; stop at the first failure (the CUDA context may be
         #    unreliable for further captures) and run the remaining parts without graphs
         for name in self.capture_order:
@@ -141,7 +171,7 @@ class GraphRunner:
                 self._report(name, e)
                 break
         torch.cuda.synchronize()
-        restore()                                                 # capture records without executing
+        self._restore(saved)                                      # capture records without executing
         if self.graphs:
             missing = [n for n in self.functions if n not in self.graphs]
             self.log(f"CUDA graphs: captured {', '.join(self.graphs)}"
