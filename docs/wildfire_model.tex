@@ -568,6 +568,19 @@ the heat of combustion (\code{E\_clip\_low}, \code{E\_clip\_high}, \code{E\_comb
 original central scheme the lower bound added several times the combustion heat near the flame;
 with the Koren scheme it is normally negligible.
 
+\subsection{CUDA graphs}
+On 2D grids each GPU operation takes microseconds and a step has thousands of them, so the run is
+limited by the Python thread issuing them (about 44\% GPU use on an RTX 4090 with one CPU core at
+100\%). With \code{--cuda-graph} (or \code{[numerics] cuda\_graph = True}) each step is replayed from
+CUDA graphs: the radiation solve, the prediction (right-hand side, provisional state, PCG setup), a
+chunk of \code{pcg\_chunk} PCG iterations replayed until the residual is below the tolerance (one host
+check per chunk), and the finalization (projection correction, boundary conditions, bounds, energy
+budget). The state, pressure, face fluxes, radiation field and time step live in persistent device
+buffers. Results differ from direct execution only by the coarser convergence check of the
+pressure solver (relative differences of about $10^{-12}$ in a CPU emulation). It requires the face
+projection and is not available with \code{t\_source} or \code{--legacy}; if the capture fails the
+run continues without graphs.
+
 \subsection{Log diagnostics}
 Besides the extreme values, the log reports the total heat release rate and the gas temperature
 weighted by the local heat release rate, $T_{flame}=\sum\dot q_c T/\sum\dot q_c$, which is comparable

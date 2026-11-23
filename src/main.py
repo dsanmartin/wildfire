@@ -102,6 +102,23 @@ def save_full(cfg, grid, names, y, p, extra, t):
     np.savez(os.path.join(folder, f't_{t:09.3f}.npz'), **data)
 
 
+def make_runner(model, y, p, say):
+    """CUDA-graph runner, or None (with a message) if it cannot be used."""
+    from cudagraph import GraphRunner, graph_problems
+    problems = graph_problems(model)
+    if problems:
+        say(f"CUDA graphs disabled: {problems}")
+        return None
+    try:
+        runner = GraphRunner(model, y, p)
+        say(f"CUDA graphs: {'emulated on ' + str(y.device) if runner.emulate else 'captured'} "
+            f"(PCG chunks of {runner.chunk} iterations)")
+        return runner
+    except Exception as e:                                       # fall back to direct execution
+        say(f"CUDA graphs disabled: capture failed ({type(e).__name__}: {e})")
+        return None
+
+
 def run(cfg, verbose=True):
     device = pick_device(cfg.device)
     dtype = getattr(torch, cfg.dtype)
@@ -151,14 +168,20 @@ def run(cfg, verbose=True):
     t_now, n, steps_since = t[0], 0, 0
     next_out = t[0] + out_dt
     dt_min_seen, dt_max_seen = np.inf, 0.0
+    runner = None
     start = last = time.perf_counter()
     with torch.no_grad():
         while t_now < t_end - 1e-9 * out_dt:
             dt = model.stable_dt(y, dt_max) if cfg.cfl > 0 else dt_max
             dt = min(dt, next_out - t_now, t_end - t_now)
-            model.dt = dt
+            model.set_dt(dt)
             dt_min_seen, dt_max_seen = min(dt_min_seen, dt), max(dt_max_seen, dt)
-            y, p = model.step(t_now, y, p)
+            if runner is None and cfg.cuda_graph and n == 3:     # capture after a few direct steps
+                runner = make_runner(model, y, p, say)
+            if runner is not None:
+                y, p = runner.step()
+            else:
+                y, p = model.step(t_now, y, p)
             t_now += dt
             n += 1
             steps_since += 1
@@ -167,6 +190,7 @@ def run(cfg, verbose=True):
                 next_full += cfg.full_interval
             if t_now >= next_out - 1e-9 * out_dt or t_now >= t_end - 1e-9 * out_dt:
                 next_out += out_dt
+                model.update_diagnostics()
                 cfl, T_min, T_max, Y_min, Y_max = model.diagnostics(y)     # also synchronises the device
                 now = time.perf_counter()
                 say(f"Time step: {n:6d}, Simulation time: {t_now:.4f} s",
@@ -273,12 +297,14 @@ def main():
     ap.add_argument('--legacy', action='store_true', default=None,
                     help='reproduce the original src_legacy/ code, defects included (see src/README.md)')
     ap.add_argument('--threads', type=int, default=None, help='CPU threads')
+    ap.add_argument('--cuda-graph', action='store_true', default=None,
+                    help='replay each time step as CUDA graphs (GPU; emulated on CPU for testing)')
     args = ap.parse_args()
     if args.threads:
         torch.set_num_threads(args.threads)
     save_path = args.save_path or f'./data/output/{args.name}/'
     cfg = load_config(args.parameters_file, sim_name=args.name, save_path=save_path, device=args.device,
-                      dtype=args.dtype, poisson=args.poisson, legacy=args.legacy)
+                      dtype=args.dtype, poisson=args.poisson, legacy=args.legacy, cuda_graph=args.cuda_graph)
     save_provenance(cfg, args.parameters_file, pick_device(cfg.device))
     run(cfg)
     print("Simulation name:", cfg.sim_name)

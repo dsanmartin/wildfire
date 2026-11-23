@@ -148,43 +148,97 @@ class FaceProjection:
         return torch.cat([z, torch.zeros_like(z[:1])], 0)
 
     # ------------------------------------------------------------------ solve
-    def solve(self, rhs, beta, rho_ref, p0=None, tol=1e-10, max_iter=200):
-        """PCG for L p = rhs on the unknowns (fluid nodes below the top row).
-        Returns p and the number of iterations. tol: relative residual (volume-weighted 2-norm)."""
-        m, wgt = self.unknown, self.weight
-        dot = lambda a, b: (a * b * wgt).sum()
-        A = lambda x: -self.laplacian(x * m, beta) * m        # positive definite on the unknowns
+    # The PCG state lives in persistent buffers updated in place, and an iteration needs no host
+    # synchronization, so a chunk of iterations can be captured in a CUDA graph and replayed.
+    def _dot(self, a, b):
+        return (a * b * self.weight).sum()
+
+    def _A(self, x):
+        """Positive definite operator on the unknowns: -L x (with the face coefficients of pcg_setup)."""
+        m = self.unknown
+        return -self.laplacian(x * m, self._beta) * m
+
+    def _M(self, r):
+        """Preconditioner: -rho_ref L0^{-1} r on the unknowns."""
+        return -self.precondition(r) * self._rho_ref * self.unknown
+
+    def _keep(self, name, value):
+        """Store value in the persistent buffer name (allocated on first use, then updated in place)."""
+        buf = getattr(self, name, None)
+        if buf is None or buf.shape != value.shape:
+            setattr(self, name, value.clone())
+        else:
+            buf.copy_(value)
+
+    def pcg_setup(self, rhs, beta, rho_ref, p0=None):
+        """Start PCG for L p = rhs. beta: face coefficients, rho_ref: scaling of the preconditioner."""
+        self._beta, self._rho_ref = beta, rho_ref
+        m = self.unknown
         b = -rhs * m
         x = torch.zeros_like(rhs) if p0 is None else p0 * m
-        r = b - A(x)
-        b_norm = float(dot(b, b).sqrt()) or 1.0
-        z = -self.precondition(r) * rho_ref * m
-        d = z.clone()
-        rz = dot(r, z)
-        for it in range(1, max_iter + 1):
-            Ad = A(d)
-            alpha = rz / dot(d, Ad)
-            x = x + alpha * d
-            r = r - alpha * Ad
-            if float(dot(r, r).sqrt()) < tol * b_norm:
-                return x, it
-            z = -self.precondition(r) * rho_ref * m
-            rz_new = dot(r, z)
-            d = z + (rz_new / rz) * d
-            rz = rz_new
-        return x, max_iter
+        r = b - self._A(x)
+        z = self._M(r)
+        self._keep('_x', x); self._keep('_r', r); self._keep('_d', z)
+        self._keep('_rz', self._dot(r, z)); self._keep('_b2', self._dot(b, b))
 
-    def project(self, vel, rho, target, dt, tol, max_iter, p0=None):
-        """Face fluxes from the node velocities vel, projected so that D(F) = target. Returns
-        (F, p, iterations). rho: node densities (face values are arithmetic means)."""
+    def pcg_iterate(self, k=1):
+        """k PCG iterations, in place, without host synchronization (safe after convergence)."""
+        x, r, d, rz = self._x, self._r, self._d, self._rz
+        zero = torch.zeros_like(rz)
+        for _ in range(k):
+            Ad = self._A(d)
+            dAd = self._dot(d, Ad)
+            alpha = torch.where(dAd != 0, rz / torch.where(dAd != 0, dAd, torch.ones_like(dAd)), zero)
+            x.add_(alpha * d)
+            r.sub_(alpha * Ad)
+            z = self._M(r)
+            rz_new = self._dot(r, z)
+            beta = torch.where(rz != 0, rz_new / torch.where(rz != 0, rz, torch.ones_like(rz)), zero)
+            d.mul_(beta).add_(z)
+            rz.copy_(rz_new)
+
+    def pcg_residual(self):
+        """Relative residual |r| / |b| (volume-weighted), as a tensor."""
+        b2 = self._b2
+        return torch.sqrt(self._dot(self._r, self._r) / torch.where(b2 > 0, b2, torch.ones_like(b2)))
+
+    def solve(self, rhs, beta, rho_ref, p0=None, tol=1e-10, max_iter=200):
+        """PCG for L p = rhs on the unknowns (fluid nodes below the top row), checking convergence
+        after every iteration. Returns p and the number of iterations."""
+        self.pcg_setup(rhs, beta, rho_ref, p0)
+        for it in range(1, max_iter + 1):
+            self.pcg_iterate(1)
+            if float(self.pcg_residual()) < tol:
+                return self._x, it
+        return self._x, max_iter
+
+    def project_begin(self, vel, rho, target, dt, p0=None):
+        """First half of the projection: provisional face fluxes, the pressure equation and PCG setup.
+        dt may be a tensor (CUDA graphs)."""
         nd = self.nd
-        F = self.to_faces(vel)
+        self._F_star = self.to_faces(vel)
         beta = [self.open[j] * 2.0 / (rho + self._shift(rho, nd - 1 - j, 1)) for j in range(nd)]
         for j in range(nd):                                   # vertical faces of the top row are unused
             if nd - 1 - j == 0:
                 beta[j][-1] = 0.0
-        rhs = (self.divergence(F) - target) / dt
-        rho_ref = float(rho[self.unknown > 0].mean())
-        p, iters = self.solve(rhs, beta, rho_ref, p0, tol, max_iter)
-        F = [F[j] - dt * beta[j] * self.face_gradient(p, j) for j in range(nd)]
-        return F, p, iters
+        rhs = (self.divergence(self._F_star) - target) / dt
+        rho_ref = (rho * self.unknown).sum() / self.unknown.sum()
+        self._dt = dt
+        self.pcg_setup(rhs, beta, rho_ref, p0)
+
+    def project_end(self):
+        """Second half: projected face fluxes F = F* - dt beta grad_f p and the pressure p."""
+        p = self._x
+        F = [self._F_star[j] - self._dt * self._beta[j] * self.face_gradient(p, j) for j in range(self.nd)]
+        return F, p
+
+    def project(self, vel, rho, target, dt, tol, max_iter, p0=None):
+        """Face fluxes from the node velocities vel, projected so that D(F) = target. Returns
+        (F, p, iterations). rho: node densities (face values are arithmetic means)."""
+        self.project_begin(vel, rho, target, dt, p0)
+        for it in range(1, max_iter + 1):
+            self.pcg_iterate(1)
+            if float(self.pcg_residual()) < tol:
+                break
+        F, p = self.project_end()
+        return F, p, it

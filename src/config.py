@@ -37,6 +37,8 @@ class Config:
     NT: int = 100
     method: str = 'euler'           # euler, RK2, RK4
     cfl: float = 0.4                # adaptive time step: target CFL (dt <= (t_max - t_min) / Nt); 0: fixed dt
+    cuda_graph: bool = False        # replay each step as CUDA graphs (face projection only)
+    pcg_chunk: int = 4              # PCG iterations per replayed chunk (convergence checked between chunks)
     experiment: str = 'fire'
     # Gas
     c_p: float = 1007.0
@@ -198,7 +200,8 @@ _KEYS = {
     ('temperature', 'T_inf'): ('T_inf', float), ('numerics', 'bound'): ('bound', bool),
     ('gas', 'cp_model'): ('cp_model', str), ('gas', 'transport'): ('transport', str),
     ('numerics', 'T_advection'): ('T_advection', str), ('fuel', 'threshold'): ('fuel_threshold', float),
-    ('numerics', 'cfl'): ('cfl', float),
+    ('numerics', 'cfl'): ('cfl', float), ('numerics', 'cuda_graph'): ('cuda_graph', bool),
+    ('numerics', 'pcg_chunk'): ('pcg_chunk', int),
     ('fuel', 'x_start'): ('fuel_x_start', float), ('fuel', 'x_end'): ('fuel_x_end', float),
     ('fuel', 'y_start'): ('fuel_y_start', float), ('fuel', 'y_end'): ('fuel_y_end', float),
     ('temperature', 'T_hot'): ('T_hot', float), ('temperature', 'T_min'): ('T_min', float),

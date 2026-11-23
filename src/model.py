@@ -49,6 +49,9 @@ class Model:
         self.nd = nd = cfg.ndim
         self.device, self.dtype = device, dtype
         self.dt = float(grid['dt'])
+        self.dt_t = torch.tensor(self.dt, dtype=dtype, device=device)   # dt on the device (CUDA graphs)
+        self._p = None                                            # pressure of the last step (warm start)
+        self._target = None                                       # divergence target of the last projection
         self.h = tuple(float(s) for s in grid['spacings'])
         self.op = Operators(self.h, legacy=cfg.legacy)
         to = lambda a: torch.as_tensor(np.ascontiguousarray(a), dtype=dtype, device=device)
@@ -376,7 +379,7 @@ class Model:
             mdot = share * Q_in.clamp(min=0) / c.H_pyr
         else:
             mdot = c.rho_bulk * c.Y_f * self.reaction(T_s) * Y * dry
-        mdot = torch.minimum(mdot, c.rho_bulk * Y / self.dt)        # cannot pyrolyse more than is left
+        mdot = torch.minimum(mdot, c.rho_bulk * Y / self.dt_t)      # cannot pyrolyse more than is left
         Q_net = Q_in - mdot * c.H_pyr
         evap = (W > 0) & (T_s >= c.T_boil)
         dW = torch.where(evap, -Q_net.clamp(min=0) / (c.rho_bulk * c.L_v), torch.zeros_like(W))
@@ -401,7 +404,11 @@ class Model:
             kappa = torch.where(self.solid_mask, torch.full_like(kappa, 1e3), kappa)
             Ib = torch.where(self.solid_mask, c.sigma * T ** 4 / np.pi, Ib)
         I_ground = c.sigma * T[0] ** 4 / np.pi
-        self.G = self.rad.solve(kappa, Ib, I_ground, c.sigma * c.T_inf ** 4 / np.pi)
+        G = self.rad.solve(kappa, Ib, I_ground, c.sigma * c.T_inf ** 4 / np.pi)
+        if self.G is None:
+            self.G = G
+        else:                                                     # in place: a persistent buffer
+            self.G.copy_(G)
 
     def reaction(self, T):
         """Rate R(T) of the fuel equation dY/dt = -Y_f R Y: Arrhenius K(T) times the phase-change step H(T).
@@ -414,7 +421,7 @@ class Model:
         c = self.cfg
         R = c.A * torch.exp(-c.T_act / T) * (T > c.T_pc).to(T.dtype)
         if c.reaction == 'exact' and c.Y_f > 0:
-            R = -torch.expm1(-c.Y_f * self.dt * R) / (c.Y_f * self.dt)
+            R = -torch.expm1(-c.Y_f * self.dt_t * R) / (c.Y_f * self.dt_t)
         return R
 
     def q(self, T, Y):
@@ -500,7 +507,12 @@ class Model:
         acc = mu_sgs * lap_T
         for j in range(nd):
             acc = acc + grad_mu[j] * grad_T[j]
-        self._mu_sgs, self._grad_mu = mu_sgs, grad_mu                # reused for the species
+        if getattr(self, '_mu_sgs', None) is None:                    # reused for the species and the time step
+            self._mu_sgs, self._grad_mu = mu_sgs, list(grad_mu)
+        else:                                                         # in place: persistent buffers
+            self._mu_sgs.copy_(mu_sgs)
+            for g_old, g_new in zip(self._grad_mu, grad_mu):
+                g_old.copy_(g_new)
         return out, -acc / (c.Pr * rho)
 
     def rhs(self, y):
@@ -644,24 +656,6 @@ class Model:
         for j in range(1, nd):
             div = div + op.half(y1[j], j)
         target = 0.0
-        if c.projection == 'face':
-            if not c.density_constant:
-                rho1 = self.rho(T1)
-                solid1 = self.solid_rates(y1, rho1) if c.solid_temperature else None
-                target = self.dilatation(self.heat(y1, rho1, op.grad(T1), op.lap(T1), solid1), rho1, T1, solid1, y1)
-            P = self.face_proj
-            F_star = P.to_faces(y1[:nd])
-            F, p, its = P.project(y1[:nd], rho_n, target, dt, c.tol, max(c.max_iter, 200), p0=p)
-            # Node velocities: the average of the corrections of the two adjacent faces (Rhie-Chow)
-            for j in range(nd):
-                dF = F[j] - F_star[j]
-                y1[j] += 0.5 * (dF + P._shift(dF, nd - 1 - j, -1))
-            self.faces, self.pressure_iterations = F, its
-            m = P.unknown > 0
-            self.max_divergence = float((P.divergence(F) - target)[m].abs().max())
-            if self.has_solids:
-                self.wall_divergence = float((P.divergence(F) - target)[self.near_wall & m].abs().max())
-            return p
         if c.density_constant:
             p = self.poisson.solve(rho_n / dt * div)
             self.pressure_iterations = 1
@@ -717,11 +711,63 @@ class Model:
         self.wall_divergence = float(((div - target) * self.near_wall).abs().max())
         return p
 
-    def step(self, t_n, y, p):
-        c, nd, dt = self.cfg, self.nd, self.dt
-        if c.radiation == 'transport' and (self.G is None or self.step_count % c.rad_every == 0):
-            self.update_radiation(y)
-        self.step_count += 1
+    def set_dt(self, dt):
+        """Set the time step (host float and device tensor)."""
+        self.dt = float(dt)
+        self.dt_t.fill_(self.dt)
+
+    def project_begin(self, y1, T_n, p0):
+        """Face projection, first half: divergence target and pressure equation (PCG setup)."""
+        c, op, nd = self.cfg, self.op, self.nd
+        T1 = y1[nd]
+        rho_n = self.rho(T_n)
+        if c.density_constant:
+            target = torch.zeros_like(T1)
+        else:
+            rho1 = self.rho(T1)
+            solid1 = self.solid_rates(y1, rho1) if c.solid_temperature else None
+            target = self.dilatation(self.heat(y1, rho1, op.grad(T1), op.lap(T1), solid1), rho1, T1, solid1, y1)
+        if self._target is None:
+            self._target = target.clone()
+        else:
+            self._target.copy_(target)
+        self._rho_n = rho_n
+        self.face_proj.project_begin(y1[:nd], rho_n, target, self.dt_t, p0)
+
+    def project_end(self, y1):
+        """Face projection, second half: projected face fluxes, and node velocities corrected by the
+        average of the corrections of their two faces (Rhie-Chow). Updates y1 in place."""
+        nd, P = self.nd, self.face_proj
+        F, p = P.project_end()
+        for j in range(nd):
+            dF = F[j] - P._F_star[j]
+            y1[j] += 0.5 * (dF + P._shift(dF, nd - 1 - j, -1))
+        if self.faces is None:
+            self.faces = [f.clone() for f in F]
+        else:                                                     # in place: persistent buffers
+            for f_old, f_new in zip(self.faces, F):
+                f_old.copy_(f_new)
+        if self._p is None:
+            self._p = p.clone()
+        else:
+            self._p.copy_(p)
+        return self._p
+
+    def update_diagnostics(self):
+        """Divergence errors of the last face projection (host synchronization: call at outputs)."""
+        if self.cfg.projection != 'face' or self.faces is None:
+            return
+        P = self.face_proj
+        m = P.unknown > 0
+        err = (P.divergence(self.faces) - self._target).abs()
+        self.max_divergence = float(err[m].max())
+        if self.has_solids:
+            self.wall_divergence = float(err[self.near_wall & m].max())
+
+    def predict(self, y):
+        """Provisional state y1 of a step (time integration of everything but the pressure), and for
+        the face projection the start of the pressure solve."""
+        c, nd, dt = self.cfg, self.nd, self.dt_t
         self._first_stage = True
         if c.method == 'euler':
             y1 = y + dt * self.rhs(y)
@@ -739,7 +785,14 @@ class Model:
             raise ValueError(f"unknown time method '{c.method}'")
         if c.solid_temperature:   # heat of combustion released this step (exact for Euler)
             self.energy['combustion'] += self._last_omega.sum() * (c.H_C * dt * self.dV)
-        p = self.project(y1, y[nd], p)
+        if c.projection == 'face':
+            self.project_begin(y1, y[nd], self._p)
+        return y1
+
+    def finalize(self, y, y1):
+        """End of a step after the projection: boundary conditions, solid fuel fixes, bounds and the
+        energy budget. Updates y1 in place and returns it."""
+        c, nd = self.cfg, self.nd
         self.apply_bc(y1)
         if c.solid_temperature:
             y1[nd + 3].clamp_(min=0)
@@ -769,6 +822,33 @@ class Model:
         if not c.solid_temperature:
             burned = (y[nd + 1] - y1[nd + 1]).clamp(min=0)
             self.energy['combustion'] += (fuel_density(y1[nd]) * burned).sum() * self.dV
+        return y1
+
+    def radiation_due(self):
+        c = self.cfg
+        return c.radiation == 'transport' and (self.G is None or self.step_count % c.rad_every == 0)
+
+    def step(self, t_n, y, p):
+        """One time step, executed directly (see cudagraph.GraphRunner for the captured version)."""
+        c, nd = self.cfg, self.nd
+        if self.radiation_due():
+            self.update_radiation(y)
+        self.step_count += 1
+        if c.projection == 'face':
+            if self._p is None:
+                self._p = p.clone()
+            y1 = self.predict(y)
+            P = self.face_proj
+            for it in range(1, max(c.max_iter, 200) + 1):
+                P.pcg_iterate(1)
+                if float(P.pcg_residual()) < c.tol:
+                    break
+            self.pressure_iterations = it
+            p = self.project_end(y1)
+        else:
+            y1 = self.predict(y)
+            p = self.project(y1, y[nd], p)
+        y1 = self.finalize(y, y1)
         if t_n <= c.t_source:
             y1[nd][self.source_mask] = self.T0[self.source_mask]
         return y1, p
