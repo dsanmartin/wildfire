@@ -118,6 +118,19 @@ class Config:
     T0_z_start: float = 0.0
     T0_z_end: float = 1.0
     t_source: float = -1.0
+    # Ignition: temperature (the hot patch above, the original model) or burner (FDS-like: a ground strip
+    # releasing fuel gas at hrrpua / H_C with a time ramp, lit progressively at spread_rate from the
+    # origin; defaults: FDS Case_F19). The burner needs the solid fuel model (it releases fuel gas).
+    ignition: str = 'temperature'
+    burner_hrrpua: float = 1460e3   # heat release rate per unit area at full ramp, W/m^2
+    burner_x_start: float = 0.0
+    burner_x_end: float = 3.3
+    burner_y_start: float = -87.0   # 3D only
+    burner_y_end: float = 87.0
+    burner_ramp: str = '0 0, 1 1, 11 1, 12 0'   # time since the point was lit [s] and fraction of hrrpua
+    burner_spread_rate: float = 1.56    # speed at which the ignition spreads from the origin, m/s; 0: all at once
+    burner_x_origin: float = 0.0
+    burner_y_origin: float = 0.0
     # Wind
     initial_u_type: str = 'monin-obukhov'   # monin-obukhov (neutral log law if L is unset), power law, log, constant
     L_obukhov: float = None             # Obukhov length, m (monin-obukhov; None: neutral). FDS Case_F19: -500
@@ -221,6 +234,11 @@ _KEYS = {
     ('pressure', 'log_solver'): ('log_solver', bool), ('pressure', 'poisson'): ('poisson', str),
     ('pressure', 'wall_iterations'): ('wall_iterations', int), ('pressure', 'projection'): ('projection', str),
     ('pressure', 'dilatation'): ('dilatation', str),
+    ('ignition', 'model'): ('ignition', str), ('ignition', 'hrrpua'): ('burner_hrrpua', float),
+    ('ignition', 'x_start'): ('burner_x_start', float), ('ignition', 'x_end'): ('burner_x_end', float),
+    ('ignition', 'y_start'): ('burner_y_start', float), ('ignition', 'y_end'): ('burner_y_end', float),
+    ('ignition', 'ramp'): ('burner_ramp', str), ('ignition', 'spread_rate'): ('burner_spread_rate', float),
+    ('ignition', 'x_origin'): ('burner_x_origin', float), ('ignition', 'y_origin'): ('burner_y_origin', float),
     ('density', 'constant'): ('density_constant', bool),
     ('turbulence', 'enabled'): ('turbulence', bool), ('turbulence', 'C_s'): ('C_s', float),
     ('turbulence', 'filter_width'): ('filter_width', float),
@@ -294,6 +312,8 @@ def load_config(path: str, **overrides) -> Config:
         if 'cp_model' in given:
             raise ValueError("cp_model = mixture needs the species of the extended model (solid_temperature = True)")
         cfg.cp_model = 'variable'                 # default without species: c_p(T) of air
+    if cfg.ignition == 'burner' and (cfg.legacy or not cfg.solid_temperature or cfg.model == 'planview'):
+        raise ValueError("ignition = burner needs the vertical model with solid_temperature = True (not --legacy)")
     graph = str(cfg.cuda_graph).strip().lower()
     on_off = {'auto': 'auto', 'on': 'on', 'true': 'on', 'yes': 'on', '1': 'on',
               'off': 'off', 'false': 'off', 'no': 'off', '0': 'off'}
@@ -307,7 +327,7 @@ def load_config(path: str, **overrides) -> Config:
                          ('cp_model', ('constant', 'variable', 'mixture')), ('transport', ('constant', 'sutherland')),
                          ('initial_u_type', ('power law', 'log', 'constant', 'monin-obukhov')),
                          ('forcing', ('none', 'profile')), ('wall_model', ('none', 'log')),
-                         ('dilatation', ('consistent', 'published'))):
+                         ('dilatation', ('consistent', 'published')), ('ignition', ('temperature', 'burner'))):
         if getattr(cfg, key) not in allowed:
             raise ValueError(f"{key} must be one of {allowed}, got '{getattr(cfg, key)}'")
     return cfg

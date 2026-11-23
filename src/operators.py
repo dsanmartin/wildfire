@@ -32,6 +32,21 @@ def d2_vertical(phi, h):
     return out
 
 
+def d1_vertical_wall(phi, h):
+    """d1_vertical with a zero normal gradient at the ground (row 0)."""
+    out = d1_vertical(phi, h)
+    out[0] = 0.0
+    return out
+
+
+def d2_vertical_wall(phi, h):
+    """d2_vertical with the ground row as a half cell whose lower face is an adiabatic wall:
+    (1 / (h/2)) ((phi_1 - phi_0) / h - 0) = 2 (phi_1 - phi_0) / h^2."""
+    out = d2_vertical(phi, h)
+    out[0] = 2 * (phi[1] - phi[0]) / h ** 2
+    return out
+
+
 def upwind_periodic(a, phi, h, axis):
     """a * dphi/dx with second-order upwinding along a periodic axis."""
     m1, p1 = torch.roll(phi, 1, axis), torch.roll(phi, -1, axis)
@@ -163,5 +178,26 @@ class Operators:
     def lap(self, phi):
         out = self.d2(phi, 0)
         for j in range(1, self.ndim):
+            out = out + self.d2(phi, j)
+        return out
+
+    def _wall(self):
+        return not (self.legacy or self.all_periodic)
+
+    def grad_s(self, phi):
+        """Gradient of a scalar (T, species) with the ground row as a half cell next to an adiabatic,
+        impermeable wall: zero vertical gradient there. Legacy: the one-sided closures (grad)."""
+        if not self._wall():
+            return self.grad(phi)
+        nz = self.ndim - 1
+        return [self.d1(phi, j) if j != nz else d1_vertical_wall(phi, self.h[j]) for j in range(self.ndim)]
+
+    def lap_s(self, phi):
+        """Laplacian of a scalar with the zero-flux half cell at the ground (see grad_s)."""
+        if not self._wall():
+            return self.lap(phi)
+        nz = self.ndim - 1
+        out = d2_vertical_wall(phi, self.h[nz])
+        for j in range(nz):
             out = out + self.d2(phi, j)
         return out

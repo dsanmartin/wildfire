@@ -177,6 +177,10 @@ The defaults are the consistent, FDS-like setup: `[pressure] dilatation = consis
 `[gas] cp_model = mixture` (`variable` without the solid fuel model), `[gas] transport =
 sutherland`, the wind profile, forcing and wall model above, `[fuel] moisture = 0.058`, and
 `[numerics] cuda_graph = auto` (CUDA graphs on a CUDA device; `--cuda-graph` / `--no-cuda-graph`).
+Ignition: `[ignition] model = temperature` (default, the hot-gas patch of `[temperature]`) or
+`burner`, the FDS-like burner (fuel gas from a ground strip with a time ramp, lit progressively;
+defaults from FDS Case_F19). The ground row of `T` and the species is a half cell next to an
+adiabatic wall (no longer copied from the row above).
 Values specific to a case (`[wind] L`, `u_r`, ambient temperature, ignition) and the calibration
 parameters (`H_C`, `kappa_gas`) stay in the input files. `--legacy` still reproduces `src_legacy/`
 exactly: it switches all of these back (power-law wind with `z_0 = 0.05` unless the file sets them).

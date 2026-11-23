@@ -15,22 +15,24 @@
 \newcommand{\YO}{Y_{O_2}}
 
 \title{Coupled atmosphere--fire model: equations, boundary conditions\\and numerical methods of the PyTorch implementation}
-\author{Documentation of \code{src/} (branch \code{more-physics})}
+\author{Documentation of \code{src/} (branch \code{wui})}
 \date{November 2026}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-This document describes the model solved by the PyTorch code in \code{src/}. Two variants share
-one flow solver: the \emph{published model} of San Mart\'in \& Torres (2025), with a single
-temperature for gas and fuel and radiation as diffusion, and an \emph{extended model} with a
-separate solid fuel temperature, fuel moisture, heat-driven pyrolysis, transported fuel gas and
-oxygen with mixing-limited combustion, and radiation transport. Section~\ref{sec:numerics}
-describes the discretization and solvers, Section~\ref{sec:params} lists every input parameter.
-Status: the extended model is verified for consistency (analytic radiation test, energy budget,
-equality of 2D runs and $y$-invariant 3D runs, exact reproduction of the original code in legacy
-mode) but not yet calibrated or validated against the CSIRO F19 experiment.
+This document describes the model solved by the PyTorch code in \code{src/}: a low Mach number,
+variable-density LES of the atmosphere coupled to a grass fuel bed with its own temperature and
+moisture, heat-driven pyrolysis, transported fuel gas and oxygen with mixing-limited combustion, and
+radiation transport. The default setup follows the FDS validation case of the CSIRO grassland fire
+F19 (wind profile, fuel properties, ignition burner). Sections~\ref{sec:gas}--\ref{sec:ibc} give the
+equations, Section~\ref{sec:numerics} the discretization and solvers, Section~\ref{sec:params} every
+input parameter. The published single-temperature model of San Mart\'in \& Torres (2025), which the
+code still reproduces with \code{--legacy}, and the corrections made to it are described in
+Appendix~\ref{app:legacy}. Status: verified for consistency (analytic radiation test, energy and
+mass budgets, equality of 2D runs and $y$-invariant 3D runs, CUDA graphs against direct execution,
+exact reproduction of the original code in legacy mode); calibration against F19 is in progress.
 \end{abstract}
 
 \tableofcontents
@@ -38,16 +40,6 @@ mode) but not yet calibrated or validated against the CSIRO F19 experiment.
 %======================================================================
 \section{Overview}
 %======================================================================
-
-\paragraph{Model variants.}
-\begin{itemize}
-  \item \textbf{Published model}: \code{[fuel] solid\_temperature = False},
-        \code{[radiation] model = diffusion}. The option \code{--legacy} additionally restores the
-        original numerics (central temperature advection, explicit reaction, original sink term,
-        original pressure scaling), reproducing \code{src\_legacy/} to round-off.
-  \item \textbf{Extended model} (default): sections~\ref{sec:solid}, \ref{sec:combustion} and
-        \ref{sec:radiation}.
-\end{itemize}
 
 \paragraph{Notation.} Velocity $\vu = (u,[v,]w)$ with $w$ vertical; in 2D output files the
 vertical velocity is stored as \code{v} and the vertical coordinate as \code{y}. Gas temperature
@@ -57,108 +49,84 @@ $(z,y,x)$ in 3D.
 
 \paragraph{State variables.}
 \begin{center}
-\begin{tabular}{lll}
+\begin{tabular}{ll}
 \toprule
-Symbol & Field (output name) & Model \\
+Symbol & Field (output name) \\
 \midrule
-$\vu$ & velocity (\code{u}, \code{v}[, \code{w}]) & both \\
-$T$ & gas temperature (\code{T}) & both \\
-$Y$ & fuel fraction left in the bed (\code{Y}) & both \\
-$T_s$ & solid fuel temperature (\code{Ts}) & extended \\
-$W$ & fuel moisture, kg water per kg dry fuel (\code{W}) & extended \\
-$\Yf$ & mass fraction of pyrolysis gas (\code{YF}) & extended \\
-$\YO$ & mass fraction of oxygen (\code{YO2}) & extended \\
-$p$ & hydrodynamic pressure (\code{p}) & both \\
+$\vu$ & velocity (\code{u}, \code{v}[, \code{w}]) \\
+$T$ & gas temperature (\code{T}) \\
+$Y$ & fuel fraction left in the bed (\code{Y}) \\
+$T_s$ & solid fuel temperature (\code{Ts}) \\
+$W$ & fuel moisture, kg water per kg dry fuel (\code{W}) \\
+$\Yf$ & mass fraction of pyrolysis gas (\code{YF}) \\
+$\YO$ & mass fraction of oxygen (\code{YO2}) \\
+$p$ & hydrodynamic pressure (\code{p}) \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 %======================================================================
-\section{Gas phase}
+\section{Gas phase}\label{sec:gas}
 %======================================================================
 
 \subsection{Low Mach number approximation}
 The thermodynamic pressure is constant, so the ideal gas law gives
 \begin{equation}
-  \rho = \frac{\rho_\infty T_\infty}{T}
+  \rho = \frac{\rho_\infty T_\infty}{T},
 \end{equation}
-(with \code{[density] constant = True}, $\rho=\rho_\infty$). Mass conservation becomes a constraint
-on the velocity divergence:
+with $\rho_\infty$ following the ambient temperature ($1.225$~kg\,m$^{-3}$ at 288.15~K). Mass
+conservation becomes a constraint on the velocity divergence:
 \begin{equation}\label{eq:div}
   \nabla\cdot\vu = D \equiv \frac{\dot q}{\rho c_p T} + \frac{\dot m'''}{\rho},
 \end{equation}
 where $\dot q$ (W\,m$^{-3}$) is the net heating of the gas (all terms of the energy equation except
-advection, including the subgrid heat flux) and $\dot m'''$ (kg\,m$^{-3}$\,s$^{-1}$) the gas produced
-by pyrolysis (extended model). Since the temperature equation is solved in K\,s$^{-1}$, the code
-evaluates the first term as $(1/T)\,\dot q/(\rho c_p)$, the relative heating rate.
-
-\paragraph{Correction to the published model.} The original code (and \code{--legacy}) divides the
-heating rate in K\,s$^{-1}$, $\dot q/(\rho c_p)$, once more by $\rho c_p T$. This makes the thermal
-expansion $\rho c_p$ times too small (about 1000 in ambient air, 300 in the flame): the density of the
-heated gas falls as $1/T$, but its volume barely grows, so its mass is not conserved. The mass budget
-(Section~\ref{sec:mass-budget}) showed it: in a 2D fire the domain lost 50--70\% more mass than left
-through the top. With the consistent divergence, the default (\code{[pressure] dilatation =
-consistent}), the outflow is 2.5 times larger and the budget closes to a few percent, a first-order
-truncation error at the flame front that halves when the grid is refined. \code{dilatation =
-published} restores the original term.
+advection, including the subgrid heat flux) and $\dot m'''$ (kg\,m$^{-3}$\,s$^{-1}$) the gas added by
+pyrolysis and by the ignition burner. Since the temperature equation is solved in K\,s$^{-1}$, the code
+evaluates the first term as $(1/T)\,\dot q/(\rho c_p)$, the relative heating rate. (The published
+code divided this rate once more by $\rho c_p T$; see Appendix~\ref{app:corrections}.)
 
 \subsection{Momentum}
 \begin{equation}\label{eq:momentum}
   \frac{\partial\vu}{\partial t} + (\vu\cdot\nabla)\vu
   = -\frac{1}{\rho}\nabla p + \nu\nabla^2\vu + \frac{\nu}{3}\nabla D
-  + \frac{\rho-\rho_\infty}{\rho}\,\mathbf{g} - \mathbf{F}_d - \boldsymbol{\tau}_{sgs},
+  + \frac{\rho-\rho_\infty}{\rho}\,\mathbf{g} - \mathbf{F}_d - \boldsymbol{\tau}_{sgs} + \mathbf{f},
 \end{equation}
 with $\nu=\mu/\rho$, the imposed divergence $D$ of \eqref{eq:div}, the drag of the fuel elements
 \begin{equation}
   \mathbf{F}_d = \tfrac12 C_d\,\alpha_s\sigma_s\,Y\,|\vu|\,\vu,
 \end{equation}
-and the subgrid stresses $\boldsymbol{\tau}_{sgs}$ of Section~\ref{sec:turbulence}.
+the subgrid stresses $\boldsymbol{\tau}_{sgs}$ of Section~\ref{sec:turbulence} and the wind forcing
+$\mathbf f$ of Section~\ref{sec:forcing}.
 
 \subsection{Energy}
-The specific heat follows the composition by default (\code{[gas] cp\_model = mixture}, below; without
-the species of the extended model it falls back to \code{variable}). With \code{constant} it is $c_p$;
-with \code{variable} it is the
-temperature-dependent value of air from ideal-gas tables (1005~J\,kg$^{-1}$K$^{-1}$ at 300~K, 1142 at
-1000~K, 1253 at 2000~K, interpolated linearly), used in the energy equation, the low-Mach constraint
-\eqref{eq:div} and the energy budget. With \code{cp\_model = mixture} (extended model) it is weighted
-by composition (default), $c_p=\sum_kY_kc_{p,k}(T)$ over N$_2$, O$_2$, CO$_2$ and H$_2$O (rounded JANAF values). The
-products are inferred from the oxygen consumed: the deficit $Y_{O_2,\infty}(1-\Yf)-\YO$ corresponds to
-$(1+1/s)$~kg of products per kg of oxygen, split into CO$_2$ and H$_2$O by the cellulose stoichiometry
-C$_6$H$_{10}$O$_5$ + 6\,O$_2$ $\to$ 6\,CO$_2$ + 5\,H$_2$O; the fuel gas and the rest are counted as N$_2$.
-Fully burned gas has $c_p\approx1480$~J\,kg$^{-1}$K$^{-1}$ at 2000~K, 18\% more than air.
-
-By default (\code{[gas] transport = sutherland}) the viscosity
-and the conductivity follow Sutherland's law, $\mu(T)=\mu_\infty(T/T_\infty)^{3/2}(T_\infty+S)/(T+S)$,
-with $S=110.4$~K for $\mu$ and 194~K for $\kappa$, scaled to the constant values at $T_\infty$. The
-conduction term is then $\nabla\cdot(\kappa\nabla T)=\kappa\nabla^2T+\kappa'|\nabla T|^2$, the gradient of
-$\mu$ is neglected in the momentum equation, and the convective heat transfer to the fuel uses the
-gas properties at the film temperature $(T+T_s)/2$. Molecular transport is several orders of
-magnitude smaller than the subgrid transport at the resolutions used, so its main effect is on the
-heat transfer to the fuel.
 \begin{equation}\label{eq:energy}
-  \frac{\partial T}{\partial t} + \vu\cdot\nabla T = \frac{\dot q}{\rho c_p} - q_{sgs}(T).
-\end{equation}
-
-\paragraph{Published model.}
-\begin{equation}
-  \dot q = \nabla\cdot\big(k(T)\nabla T\big) + \rho c_p\,q(T,Y),\qquad k(T)=\kappa+4\sigma\delta T^3,
-\end{equation}
-where $4\sigma\delta T^3$ represents radiation as diffusion (optical path length $\delta$) and
-\begin{equation}
-  q = \frac{H_C\,Y\,R(T)}{c_p} + q_{sink}
-\end{equation}
-with the reaction rate $R$ of \eqref{eq:arrhenius} and the convective exchange $q_{sink}$ of
-Section~\ref{sec:sink}.
-
-\paragraph{Extended model.}
-\begin{equation}\label{eq:qdot-ext}
-  \dot q = \kappa\nabla^2T + \kappa_g\,(G-4\sigma T^4) + \dot\omega_F H_C - Q_{conv},
+  \frac{\partial T}{\partial t} + \vu\cdot\nabla T = \frac{\dot q}{\rho c_p} - q_{sgs}(T),\qquad
+  \dot q = \nabla\cdot(\kappa\nabla T) + \kappa_g\,(G-4\sigma T^4) + \dot\omega_F H_C - Q_{conv},
 \end{equation}
 with molecular conduction, radiation absorbed minus emitted by the gas (incident radiation $G$,
 Section~\ref{sec:radiation}; gray absorption coefficient $\kappa_g$), the heat of gas-phase
 combustion (Section~\ref{sec:combustion}) and the convective heat transferred to the fuel
-(Section~\ref{sec:solid}). With \code{[radiation] model = diffusion} the first two terms are
-replaced by $\nabla\cdot(k(T)\nabla T)$.
+(Section~\ref{sec:solid}).
+
+\paragraph{Specific heat.} By default (\code{[gas] cp\_model = mixture}) the specific heat is
+weighted by composition, $c_p=\sum_kY_kc_{p,k}(T)$ over N$_2$, O$_2$, CO$_2$ and H$_2$O (rounded JANAF
+values). The products are inferred from the oxygen consumed: the deficit $Y_{O_2,\infty}(1-\Yf)-\YO$
+corresponds to $(1+1/s)$~kg of products per kg of oxygen, split into CO$_2$ and H$_2$O by the cellulose
+stoichiometry C$_6$H$_{10}$O$_5$ + 6\,O$_2$ $\to$ 6\,CO$_2$ + 5\,H$_2$O; the fuel gas and the rest are
+counted as N$_2$. Fully burned gas has $c_p\approx1480$~J\,kg$^{-1}$K$^{-1}$ at 2000~K, 18\% more than
+air. \code{variable} uses $c_p(T)$ of air (1005~J\,kg$^{-1}$K$^{-1}$ at 300~K, 1142 at 1000~K, 1253 at
+2000~K, interpolated linearly), \code{constant} the value $c_p=1007$. The same $c_p$ enters the
+energy equation, the constraint \eqref{eq:div} and the energy budget.
+
+\paragraph{Transport properties.} By default (\code{[gas] transport = sutherland}) the viscosity and
+the conductivity follow Sutherland's law, $\mu(T)=\mu_0(T/T_0)^{3/2}(T_0+S)/(T+S)$, with $S=110.4$~K for
+$\mu$ and 194~K for $\kappa$, scaled to the values of air at $T_0=288.15$~K ($\mu_0=1.802\times10^{-5}$,
+$\kappa_0=0.02476$ in SI units) whatever the ambient temperature. The conduction term is
+$\kappa\nabla^2T+\kappa'|\nabla T|^2$, the gradient of $\mu$ is neglected in the momentum equation, and
+the convective heat transfer to the fuel uses the gas properties at the film temperature
+$(T+T_s)/2$. Molecular transport is orders of magnitude smaller than the subgrid transport at the
+resolutions used, so its main effect is on the heat transfer to the fuel. \code{constant} keeps
+$\mu_0$ and $\kappa_0$.
 
 %======================================================================
 \section{Solid fuel}\label{sec:solid}
@@ -166,12 +134,27 @@ replaced by $\nabla\cdot(k(T)\nabla T)$.
 
 \subsection{Fuel bed}
 The fuel occupies the nodes up to a height $Y_h$ above the terrain (optionally limited
-horizontally), with $Y=1$ initially. The elements are characterized by the solid volume fraction
-$\alpha_s$, the surface-to-volume ratio $\sigma_s$ (equivalent cylinder diameter $d=4/\sigma_s$) and,
-in the extended model, the dry bulk density $\rho_b$. Fuel surface per unit volume:
-$a=\alpha_s\sigma_s Y$.
+horizontally), with $Y=1$ initially. The elements are characterized by the packing ratio
+$\alpha_s$, the surface-to-volume ratio $\sigma_s$ (equivalent cylinder diameter $d=4/\sigma_s$) and
+the dry bulk density $\rho_b$. Fuel surface per unit volume: $a=\alpha_s\sigma_s Y$.
 
-\subsection{Fuel temperature and moisture (extended model)}
+\subsection{Fuel parameters from FDS Case F19}\label{sec:fds-fuel}
+The fuel defaults are those of the FDS validation case \code{Case\_F19.fds} (with
+\code{vegetation\_model.txt}): surface-to-volume ratio $\sigma_s=12240$~m$^{-1}$ (cylindrical blades
+of diameter 0.33~mm), bulk density 0.6144~kg\,m$^{-3}$ and particle density 500~kg\,m$^{-3}$, so the
+packing ratio is $\alpha_s=0.6144/500=0.00123$, bed height 0.49~m, moisture 0.058 and heat of
+pyrolysis 418~kJ\,kg$^{-1}$. For a cylindrical particle FDS takes the drag area as $2\pi rL$ times a
+shape factor 1/4 (random orientation), so the drag on the gas per unit volume is
+$\tfrac12 C_{d,\mathrm{FDS}}(\beta\sigma/4)|\vu|\vu$; with $\mathbf F_d$ above, its
+\code{DRAG\_COEFFICIENT} of 2.8 corresponds to $C_d=0.7$. The absorption coefficient of the fuel,
+$\alpha_s\sigma_sY/4$, is the same as in FDS. FDS converts 75\% of the dry fuel into a gas with a heat
+of combustion of 17.4~MJ\,kg$^{-1}$ and the rest into char that oxidizes at the surface; this model
+gasifies all of it, so $H_C=13.1$~MJ per kg of dry fuel matches the FDS gas-phase heat release. Not
+reproduced: the char oxidation, the temperature-dependent fuel heat capacity of FDS (1.1 to
+2.0~kJ\,kg$^{-1}$K$^{-1}$ from 0 to 200~$^\circ$C; here constant $c_s$) and its Arrhenius pyrolysis
+(here linear by default).
+
+\subsection{Fuel temperature and moisture}
 \begin{equation}\label{eq:solid}
   \rho_b\,(Y c_s + W c_w)\,\frac{\dd T_s}{\dd t} = Q_{conv} + Q_{rad} - \dot m''' H_{pyr},
 \end{equation}
@@ -190,7 +173,7 @@ coefficient $a/4$). Wet fuel ($W>0$) at $T_{boil}$ keeps its temperature and eva
 Water vapor is not tracked. Only dry fuel pyrolyses. Where the fuel is used up
 ($Y\le10^{-3}$, $W=0$), $T_s$ is set equal to $T$.
 
-\subsection{Pyrolysis (extended model)}
+\subsection{Pyrolysis}
 \paragraph{Linear (default, after Mell et al.\ 2007).} Dry fuel converts the fraction
 \begin{equation}
   f = \min\!\Big(\max\!\Big(\frac{T_s-T_{pyr}}{T_{pyr,end}-T_{pyr}},0\Big),1\Big)
@@ -201,29 +184,13 @@ of the heat it receives into pyrolysis:
 \end{equation}
 Above $T_{pyr,end}$ all net heat goes to pyrolysis, so $T_s$ stays near $T_{pyr,end}$ while fuel is left.
 
-\paragraph{Arrhenius.} $\dot m''' = \rho_b\,Y_f\,R(T_s)\,Y$ with $R$ of \eqref{eq:arrhenius} at the
-fuel temperature.
+\paragraph{Arrhenius.} $\dot m''' = \rho_b\,Y_f\,A\,e^{-T_{act}/T_s}\,H(T_s-T_{pc})\,Y$ ($H$ the
+Heaviside step), the rate of the published model (Appendix~\ref{app:published}) at the fuel temperature.
 
 In both cases $\dot m'''\le\rho_bY/\Delta t$ (no more fuel than is present).
 
-\subsection{Reaction rate of the published model}
-\begin{equation}\label{eq:arrhenius}
-  \frac{\dd Y}{\dd t} = -Y_f\,R(T)\,Y,\qquad R(T)=A\,e^{-T_{act}/T}\,H(T-T_{pc}),
-\end{equation}
-with the Heaviside step $H$. $Y_f$ sets how fast the fuel is consumed and the total heat per unit
-of fuel, $H_C/(c_pY_f)$ in temperature units, but not the instantaneous heat release.
-
-\subsection{Convective exchange of the published model}\label{sec:sink}
-With \code{sink = surface} (default) the top fuel node of each column (highest node with
-$Y>10^{-3}$) exchanges the flux per unit ground area
-\begin{equation}
-  Q = h\,(T_g-T_f),\qquad h=h_c\Big(\frac{|T_g-T_f|}{Y_h}\Big)^{1/4},
-\end{equation}
-with the gas node above it; $Q/(\rho c_p\Delta z)$ is added to the fuel node and subtracted from
-the gas node (energy conserving, grid independent). \code{sink = legacy} keeps the original term.
-
 %======================================================================
-\section{Gas-phase combustion (extended model)}\label{sec:combustion}
+\section{Gas-phase combustion}\label{sec:combustion}
 %======================================================================
 \begin{align}
   \frac{\partial\Yf}{\partial t} + \vu\cdot\nabla\Yf &= \mathcal{D}\nabla^2\Yf - q_{sgs}(\Yf)
@@ -232,12 +199,16 @@ the gas node (energy conserving, grid independent). \code{sink = legacy} keeps t
     - \frac{s\,\dot\omega_F + \dot m'''\YO}{\rho},
 \end{align}
 with $\mathcal{D}=\kappa/(\rho c_p)$ (unit Lewis number) and turbulent Schmidt number equal to $Pr$.
-The terms with $\dot m'''$ account for the added mass of pyrolysis gas. Combustion is mixing limited:
+The terms with $\dot m'''$ account for the added mass of pyrolysis (and burner) gas. Combustion is
+mixing limited:
 \begin{equation}
   \dot\omega_F = \frac{\rho\,\min(\Yf,\ \YO/s)}{\tau_{mix}},\qquad \tau_{mix}=\sqrt{2\Delta/|g|}
 \end{equation}
 (the FDS buoyancy time scale, $\Delta$ the filter width) unless \code{tau\_mix} is given; $s$ is the
-stoichiometric oxygen-to-fuel mass ratio. Products are not tracked individually.
+stoichiometric oxygen-to-fuel mass ratio. Products are not tracked individually. Burning the
+pyrolysis gas where it meets oxygen, rather than releasing the heat of the solid fuel locally, keeps
+peak gas temperatures near 2000~K: the physical fuel load, $\rho_bH_C\approx8$--13~MJ\,m$^{-3}$,
+released in place would heat the gas by tens of thousands of kelvin.
 
 %======================================================================
 \section{Turbulence}\label{sec:turbulence}
@@ -249,8 +220,8 @@ Smagorinsky model with Van Driest damping:
 \begin{equation}
   |S|^2 = 2\sum_i(\partial_iu_i)^2 + \sum_{i<j}(\partial_ju_i+\partial_iu_j)^2 - \tfrac23(\nabla\cdot\vu)^2,
 \end{equation}
-$z^+=d_w\rho u_\tau/\mu$ with $d_w$ the height above the terrain, $u_\tau=\sqrt{\tau_w/\rho}$ and
-$\tau_w=\mu|\partial_zu+\partial_xw|$ at the ground (plus the $y$ component in 3D). Filter width
+$z^+=d_w\rho u_\tau/\mu$ with $d_w$ the distance to the ground (or the nearest building) and $u_\tau$
+the friction velocity of the wall model (Section~\ref{sec:wall}). Filter width
 $\Delta=(\Delta x\Delta z)^{1/2}$ (2D), $(\Delta x\Delta y\Delta z)^{1/3}$ (3D), or a fixed width
 (\code{filter\_width}). With the grid-based width the mixing length shrinks under refinement and
 the results do not converge; tests on the F19 case showed a fixed width removes this.
@@ -261,7 +232,7 @@ the results do not converge; tests on the F19 case showed a fixed width removes 
 with $S$ the deviatoric strain rate and $\phi\in\{T,\Yf,\YO\}$.
 
 %======================================================================
-\section{Radiation (extended model)}\label{sec:radiation}
+\section{Radiation}\label{sec:radiation}
 %======================================================================
 Gray radiative transfer:
 \begin{equation}
@@ -269,90 +240,98 @@ Gray radiative transfer:
   \kappa_s=\frac{\alpha_s\sigma_sY}{4},\qquad
   I_b = \frac{\sigma(\kappa_gT^4+\kappa_sT_s^4)}{\pi\kappa},
 \end{equation}
-and $G=\int_{4\pi}I\dd\Omega$. In the single-temperature model with radiation transport the fuel
-emits at $T$. Boundary conditions: black ground at the temperature of the lowest gas row; ambient
-radiation $\sigma T_\infty^4/\pi$ entering at the top; periodic horizontally; terrain nodes opaque
-at their own temperature. At uniform $T_\infty$, $G=4\sigma T_\infty^4$ and there is no net exchange.
+and $G=\int_{4\pi}I\dd\Omega$. Boundary conditions: black ground at the temperature of the lowest gas
+row; ambient radiation $\sigma T_\infty^4/\pi$ entering at the top; periodic horizontally; terrain
+nodes and buildings opaque at their own temperature. At uniform $T_\infty$, $G=4\sigma T_\infty^4$ and
+there is no net exchange.
 
 %======================================================================
 \section{Initial and boundary conditions}\label{sec:ibc}
 %======================================================================
 
-\subsection{Initial conditions}
+\subsection{Wind profile}
+The initial wind (\code{[wind] shape}) depends on the height $d_w$ above the terrain; the other
+components are zero. By default it follows Monin--Obukhov similarity theory, as the FDS \code{\&WIND}
+input:
+\begin{equation}
+  u = \frac{u_*}{\kappa}\Big[\ln\frac{d_w}{z_0} - \psi_m\Big(\frac{d_w}{L}\Big) + \psi_m\Big(\frac{z_0}{L}\Big)\Big],
+\end{equation}
+with the roughness length $z_0$ (\code{z\_0}, default 0.03~m, open grassland), the Obukhov length $L$
+(\code{L}; omitted: neutral, the log law), $\kappa=0.41$, zero below $z_0$, and $u_*$ chosen so that
+$u(z_r)=u_r$. Stability function (Businger--Dyer, integrated by Paulson 1970): for $\zeta=d_w/L<0$,
+with $x=(1-16\zeta)^{1/4}$, $\psi_m=2\ln\frac{1+x}{2}+\ln\frac{1+x^2}{2}-2\arctan x+\frac{\pi}{2}$; for
+$\zeta\ge0$, $\psi_m=-5\zeta$. The FDS Case F19 values are $u_r=4.9$~m\,s$^{-1}$ at $z_r=2$~m,
+$z_0=0.03$~m, $L=-500$~m ($u_*=0.48$~m\,s$^{-1}$). Only the velocity is initialized from the
+similarity theory; the temperature stays uniform. Other shapes: \code{log} (neutral logarithmic
+profile from $u_*$), \code{constant}, and the \code{power law} of the published model
+(Appendix~\ref{app:legacy}).
+
+\subsection{Other initial values}
+Fuel: $Y=1$ in the bed, $0$ elsewhere. $T_s=\min(T,T_{pyr,end})$ (linear pyrolysis) or $T_s=T$;
+$W=$\,\code{moisture}$\cdot Y$ except where $T\ge T_{boil}$ (dry); $\Yf=0$; $\YO=0.232$. The gas
+temperature is $T_\infty$ except for the hot-gas ignition below.
+
+\subsection{Ignition}\label{sec:ignition}
+\paragraph{Burner (\code{[ignition] model = burner}, FDS-like).} A strip of the ground
+($x_{start}\le x\le x_{end}$, and $y_{start}\le y\le y_{end}$ in 3D) releases fuel gas at
+$\dot q''_b/H_C$ per unit area, which burns through the combustion model like the FDS burner. The gas
+enters through the ground face into the half cell of the ground row, as the volume source
+$\dot m'''=\dot q''_b f(t-t_{ign})/(H_C\,\Delta z/2)$, added to the pyrolysis source in the species
+and in the constraint \eqref{eq:div}. Each point is lit at $t_{ign}=r/v_{ign}$, its distance $r$ to the
+origin divided by the spread rate (0: all at once), and follows the ramp $f$, piecewise linear in the
+time since it was lit. Defaults (FDS Case F19): $\dot q''_b=1460$~kW\,m$^{-2}$, strip $0\le x\le3.3$~m,
+$-87\le y\le87$~m, ramp $f$ = 0, 1, 1, 0 at 0, 1, 11, 12~s, spread rate 1.56~m\,s$^{-1}$ from
+$(0,0)$, so the 174~m line is fully lit after 56~s. A 2D run is the plane $y=0$ of this setup, lit at
+$t=0$ in the middle of the line. The ramp is evaluated on the device from the simulation time, so it
+also runs inside CUDA graphs.
+
+\paragraph{Hot gas (\code{temperature}, default).} $T=T_\infty+(T_{hot}-T_\infty)\,S$ at $t=0$, with
+the shape $S$:
 \begin{itemize}
-  \item Wind (\code{[wind] shape}), with $d_w$ the height above the terrain; other components zero:
-    \begin{itemize}
-      \item \code{monin-obukhov} (default): Monin--Obukhov similarity theory, as in the FDS \code{\&WIND} input,
-            \begin{equation}
-              u = \frac{u_*}{\kappa}\Big[\ln\frac{d_w}{z_0} - \psi_m\Big(\frac{d_w}{L}\Big) + \psi_m\Big(\frac{z_0}{L}\Big)\Big],
-            \end{equation}
-            with the roughness length $z_0$ (\code{z\_0}), the Obukhov length $L$ (\code{L}; omitted: neutral),
-            $\kappa=0.41$, zero below $z_0$, and $u_*$ chosen so that $u(z_r)=u_r$. Stability function
-            (Businger--Dyer, integrated by Paulson 1970): for $\zeta=d_w/L<0$, with $x=(1-16\zeta)^{1/4}$,
-            $\psi_m=2\ln\frac{1+x}{2}+\ln\frac{1+x^2}{2}-2\arctan x+\frac{\pi}{2}$; for $\zeta\ge0$,
-            $\psi_m=-5\zeta$. The FDS Case F19 values are $u_r=4.9$~m\,s$^{-1}$ at $z_r=2$~m, $z_0=0.03$~m,
-            $L=-500$~m ($u_*=0.48$~m\,s$^{-1}$). Near the ground this profile is much weaker than the
-            power law: 1.4, 2.5 and 3.3~m\,s$^{-1}$ at 0.1, 0.25 and 0.51~m, against 3.1, 3.6 and
-            4.0~m\,s$^{-1}$. Only the velocity is initialized from the similarity theory; the temperature
-            stays uniform.
-      \item \code{power law} (original model, \code{--legacy}): $u=u_r(d_w/z_r)^{1/7}$;
-      \item \code{log} (neutral logarithmic profile from $u_*$) or \code{constant}.
-    \end{itemize}
-  \item Fuel: $Y=1$ in the bed, $0$ elsewhere.
-  \item Gas temperature: $T=T_\infty+(T_{hot}-T_\infty)\,S$ with the ignition shape $S$:
-    \begin{itemize}
-      \item \code{gaussian} (default): $S=\exp\!\big(-(x-x_c)^2/L^2 - z^2/H^2\big)$,
-            $x_c=(x_{start}+x_{end})/2$, $L=x_{end}-x_{start}$, $H=z_{end}-z_{start}$ (3D: also Gaussian in $y$);
-      \item \code{plate}: indicator of the box $[x_{start},x_{end}]\times[z_{start},z_{end}]$ (3D: and $[y_{start},y_{end}]$);
-      \item \code{line} (3D): the 2D Gaussian, uniform for $y_{start}\le y\le y_{end}$.
-    \end{itemize}
-  \item Extended model: $T_s=\min(T,T_{pyr,end})$ (linear pyrolysis) or $T_s=T$; $W=$\,\code{moisture}$\cdot Y$
-        except where $T\ge T_{boil}$ (dry); $\Yf=0$; $\YO=0.232$.
-  \item Optional sustained source: for $t\le$\,\code{t\_source}, $T$ is held at its initial value
-        where $S>0.01$.
+  \item \code{gaussian} (default): $S=\exp\!\big(-(x-x_c)^2/L^2 - z^2/H^2\big)$,
+        $x_c=(x_{start}+x_{end})/2$, $L=x_{end}-x_{start}$, $H=z_{end}-z_{start}$ (3D: also Gaussian in $y$);
+  \item \code{plate}: indicator of the box $[x_{start},x_{end}]\times[z_{start},z_{end}]$ (3D: and $[y_{start},y_{end}]$);
+  \item \code{line} (3D): the 2D Gaussian, uniform for $y_{start}\le y\le y_{end}$.
 \end{itemize}
+Optionally $T$ is held at its initial value where $S>0.01$ for $t\le$\,\code{t\_source}.
 
 \subsection{Boundary conditions}
 \begin{center}
-\begin{tabular}{p{2.6cm}p{4.2cm}p{2.6cm}p{2.3cm}p{1.8cm}}
+\begin{tabular}{p{2.4cm}p{4.6cm}p{2.9cm}p{2.0cm}p{1.6cm}}
 \toprule
-Boundary & Velocity & $T$ & $\Yf$, $\YO$ & $p$ \\
+Boundary & Velocity & $T$, $\Yf$, $\YO$ & $Y$, $T_s$, $W$ & $p$ \\
 \midrule
-Horizontal & periodic & periodic & periodic & periodic \\
-Ground $z_{\min}$ & Dirichlet: initial profile at the ground (zero for the power law, i.e.\ no slip) & zero gradient (adiabatic) & zero gradient & zero gradient \\
-Top $z_{\max}$ & zero gradient & zero gradient & zero gradient & $p=0$ \\
+Horizontal & periodic & periodic & -- & periodic \\
+Ground $z_{\min}$ & log-law wall model (Section~\ref{sec:wall}) & adiabatic, impermeable wall & -- & zero gradient \\
+Top $z_{\max}$ & zero gradient & zero gradient & -- & $p=0$ \\
 \bottomrule
 \end{tabular}
 \end{center}
-Discretization of the zero-gradient conditions: velocities use the second-order extrapolation
-$\phi_0=(4\phi_1-\phi_2)/3$; the scalars ($T$, $\Yf$, $\YO$) use the first-order form $\phi_0=\phi_1$.
-The second-order form leaves the range of the interior values where the profile is curved: at the
-fire front, with a hot layer just above cold ground ($T_1=348$~K, $T_2=584$~K), it gives 270~K, below
-ambient, and the temperature bound then added energy at every step (up to about 18\% of the heat of
-combustion over the first 6~s of the F19 case at $\Delta x=1.17$~m). The published code, reproduced
-with \code{--legacy}, uses the second-order form for all variables.
-$Y$, $T_s$ and $W$ are not transported and need no boundary condition.
+$Y$, $T_s$ and $W$ are not transported and need no boundary condition. The ground row of the scalars
+is a half control volume whose lower face is the wall: the face fluxes through it are zero and the
+diffusion uses the half-cell form with zero wall flux (Section~\ref{sec:derivatives}), so the ground
+row evolves by its own equation and keeps the sources released in it (pyrolysis gas, burner gas,
+combustion heat). The top row is outside the control volumes: velocities take the second-order
+extrapolation $\phi_N=(4\phi_{N-1}-\phi_{N-2})/3$, scalars $\phi_N=\phi_{N-1}$.
 
-\subsection{Wind forcing}
+\subsection{Wind forcing}\label{sec:forcing}
 In a periodic domain nothing drives the wind: ground friction drains its momentum and the
 near-ground wind decays. Without fire, on a 4.7~m~$\times$~0.31~m grid, the horizontal-mean wind at
 2~m fell from 4.8 to 2.2~m\,s$^{-1}$ in 60~s, and at 0.3~m from 2.7 to 0.6~m\,s$^{-1}$; only the upper
-layers kept their speed. With \code{[wind] forcing = profile} (default) a body force relaxes the horizontal-mean
-velocity at each height toward the initial profile,
+layers kept their speed. With \code{[wind] forcing = profile} (default) a body force relaxes the
+horizontal-mean velocity at each height toward the initial profile,
 \begin{equation}
   \mathbf{f}(z) = \frac{\overline{\vu}_0(z) - \overline{\vu}(z,t)}{\tau_f},
 \end{equation}
 where the overbar is the average over the fluid nodes of a horizontal plane and $\tau_f$ is
 \code{forcing\_time} (default 1~s). The force is uniform in the horizontal, so it does not distort
 the local flow around the fire; with a large domain the fire changes the plane averages only
-slightly. In the test above, $\tau_f=0.5$~s held the wind at 2~m and above within 1\%, but with a
-no-slip ground the lowest cells still lost 18--25\%: on coarse grids the no-slip condition
-overestimates the wall friction. The wall model below removes this deficit.
+slightly.
 
-\subsection{Wall model}
-With \code{[wall] model = log} (default) the no-slip condition at the ground (and on terrain surfaces) is
-replaced by a wall-stress model. The friction velocity follows from the log law at the first node
-above the ground, at height $z_1$, with the horizontal velocity $\mathbf{u}_1$:
+\subsection{Wall model}\label{sec:wall}
+With \code{[wall] model = log} (default) the ground (and terrain surfaces) carry a wall-stress model.
+The friction velocity follows from the log law at the first node above the ground, at height $z_1$,
+with the horizontal velocity $\mathbf{u}_1$:
 \begin{equation}
   u_\tau = \frac{\kappa\,|\mathbf{u}_1|}{\ln(z_1/z_0) - \psi_m(z_1/L) + \psi_m(z_0/L)},
 \end{equation}
@@ -360,38 +339,40 @@ with the stability function of the wind profile when an Obukhov length is given,
 length $z_0$ (\code{[wall] z\_0}, default the wind's \code{z\_0}). The tangential velocity at the wall
 is set equal to that of the first node, so the resolved stress at the wall vanishes, the vertical
 velocity at the wall is zero, and the wall stress enters as a momentum sink in the first cell,
-$-u_\tau^2\,u_i/|\mathbf{u}_1|/\Delta z$. The Van Driest damping of the turbulence model uses the modeled
-$u_\tau$. Building walls keep the no-slip condition.
+$-u_\tau^2\,u_i/|\mathbf{u}_1|/\Delta z$. The Van Driest damping uses the modeled $u_\tau$. Building
+walls are no-slip.
 
 Verification (no fire, Monin--Obukhov profile of the F19 case, 4.7~m~$\times$~0.31~m grid, 60~s):
 with the wall model and forcing ($\tau_f=1$~s) the horizontal-mean wind at 0.3, 0.6, 2 and 10~m
 was 2.68, 3.51, 4.79 and 6.72~m\,s$^{-1}$, against the initial 2.74, 3.55, 4.83 and 6.72 (within 2\%),
-and the modeled friction velocity was about 0.47~m\,s$^{-1}$, against 0.48 for the profile. With
-no-slip and the same forcing the lowest values were 1.85 and 2.60; with neither, 0.56 and 0.76.
+and the modeled friction velocity was about 0.47~m\,s$^{-1}$, against 0.48 for the profile. With a
+no-slip ground and the same forcing the lowest values were 1.85 and 2.60, with neither 0.56 and
+0.76: on coarse grids the no-slip condition overestimates the wall friction.
 
 \subsection{Buildings}
 Buildings are boxes standing on the ground, defined in the \code{[buildings]} section, one per key:
 \code{name = x0, x1, height} (2D) or \code{name = x0, x1, y0, y1, height} (3D), in meters. Solid nodes have
 zero velocity, no fuel and ambient values. Solid nodes with a fluid face neighbor (wall nodes) take
-the average of their fluid neighbors for $T$ and the species: adiabatic, impermeable walls. With
-the face-based projection the faces between solid and fluid carry no flux. Solids are opaque to
-radiation at the temperature of their wall nodes, and the turbulence damping uses the distance to
-the nearest building as well as the height above the ground.
+the average of their fluid neighbors for $T$ and the species: adiabatic, impermeable walls. The faces
+between solid and fluid carry no flux. Solids are opaque to radiation at the temperature of their
+wall nodes, and the turbulence damping uses the distance to the nearest building as well as the
+height above the ground.
 
 Verification: a building in a 5~m\,s$^{-1}$ wind with all physics on and no fire keeps $T$ and
 $\YO$ exactly at their ambient values with no flow inside the solid. Flow around a 10~m cube on a
-1~m grid (10 cells per height, smooth power-law inflow) with the face-based projection: stable for
-60~s, divergence error $1.6\times10^{-10}$~s$^{-1}$, mean upstream separation 0.8--1.5 heights ahead of
-the front face and reattachment 3.5--3.7 heights behind the rear face. Wind-tunnel data for cubes
-give about 1 and 1.6 heights (e.g.\ Martinuzzi \& Tropea 1993, channel flow); the longer wake is
-attributed to the coarse resolution, the absence of inflow turbulence and the short averaging time.
+1~m grid (10 cells per height, smooth inflow): stable for 60~s, divergence error
+$1.6\times10^{-10}$~s$^{-1}$, mean upstream separation 0.8--1.5 heights ahead of the front face and
+reattachment 3.5--3.7 heights behind the rear face. Wind-tunnel data for cubes give about 1 and 1.6
+heights (e.g.\ Martinuzzi \& Tropea 1993, channel flow); the longer wake is attributed to the coarse
+resolution, the absence of inflow turbulence and the short averaging time.
 
 \subsection{Terrain (immersed boundary)}
 Nodes with height between the terrain height minus $\Delta z$ and the terrain height are \emph{cut
-nodes}: velocity from the ground profile, zero vertical gradient of $T$ and species (from the two
-nodes above). Nodes further below are \emph{dead nodes}: zero velocity and fuel, ambient species,
+nodes}: velocity from the ground profile, zero vertical gradient of $T$ and species (copied from the
+node above). Nodes further below are \emph{dead nodes}: zero velocity and fuel, ambient species,
 and the temperature of the surface node above them (adiabatic ground). The pressure equation is
-solved over the whole domain.
+solved over the whole domain. The half-cell treatment of the ground row and the burner are not yet
+available with terrain.
 
 %======================================================================
 \section{Plan-view model}\label{sec:planview}
@@ -409,13 +390,13 @@ heat capacity of air plus fuel $C=\rho c_p+\rho_bc_sY$,
     + \chi\,\rho_b H_C\Big(-\frac{\partial Y}{\partial t}\Big) - \frac{h_{top}}{Y_h}(T-T_\infty),\\
   \frac{\partial Y}{\partial t} &= -Y_f\,R(T)\,Y,
 \end{align}
-with $R$ of \eqref{eq:arrhenius} (integrated exactly over each step) and:
+with the Arrhenius rate $R$ of the published model (Appendix~\ref{app:published}, integrated
+exactly over each step) and:
 \begin{itemize}
   \item $\mathbf{U}$: mid-flame wind, speed $u_r(Y_h/z_r)^{\alpha_u}$ by default (the power law at
         the bed height; \code{[wind] factor} overrides the factor), direction \code{[wind] direction};
   \item $k(T)=\kappa+4\sigma\delta_{bed}T^3$: radiation as diffusion, justified here because the fuel
-        bed is optically thick; $\delta_{bed}=4/(\alpha_s\sigma_s)$ (0.5~m for $\alpha_s=0.002$,
-        $\sigma_s=4000$~m$^{-1}$) by default;
+        bed is optically thick; $\delta_{bed}=4/(\alpha_s\sigma_s)$ by default;
   \item $\chi$ (\code{[planview] heat\_retained}): fraction of the heat of combustion that stays in the bed;
   \item $h_{top}$ (\code{[planview] h\_top}): heat loss coefficient to the air above the bed.
 \end{itemize}
@@ -424,10 +405,10 @@ Ignition and fuel extent use the 3D keys (\code{[temperature] shape}, \code{x\_s
 \code{[fuel] x\_start}\dots\code{y\_end}).
 
 Status: $\chi$, $h_{top}$ and the wind factor carry the missing vertical physics and are not
-calibrated. In a first test (F19 plot, line ignition, $\Delta x=0.5$~m) the behavior was
-all-or-nothing: with $\chi=0.1$ the fire died, with $\chi=0.15$--$0.25$ it spread at about 3~m\,s$^{-1}$
-but the bed temperature reached the 2500~K bound. Calibration of $\chi$, $h_{top}$, $T_{pc}$ and the
-Arrhenius rate together, for example against the coupled model, is needed.
+calibrated. In a first test (F19 plot, line ignition, $\Delta x=0.5$~m, the earlier fuel values
+$\alpha_s=0.002$, $\sigma_s=4000$~m$^{-1}$) the behavior was all-or-nothing: with $\chi=0.1$ the fire
+died, with $\chi=0.15$--$0.25$ it spread at about 3~m\,s$^{-1}$ but the bed temperature reached the
+2500~K bound.
 
 %======================================================================
 \section{Numerical methods}\label{sec:numerics}
@@ -439,17 +420,16 @@ Uniform, collocated grid with $N_x$ ($N_y$) nodes in the periodic directions, of
 $\Delta x=(x_{\max}-x_{\min})/(N_x-1)$, etc. All variables live at the nodes. Computations run in
 PyTorch on CPU or GPU, by default in double precision.
 
-\subsection{Spatial derivatives}
+\subsection{Spatial derivatives}\label{sec:derivatives}
 Periodic directions use central differences
 $\partial_x\phi\approx(\phi_{i+1}-\phi_{i-1})/(2\Delta x)$ and
 $\partial_{xx}\phi\approx(\phi_{i+1}-2\phi_i+\phi_{i-1})/\Delta x^2$.
-In $z$ the same stencils are used in the interior, with second-order one-sided stencils at the
-walls:
-$\partial_z\phi_0\approx(-3\phi_0+4\phi_1-\phi_2)/(2\Delta z)$,
-$\partial_{zz}\phi_0\approx(2\phi_0-5\phi_1+4\phi_2-\phi_3)/\Delta z^2$ (mirrored at the top).
-The divergence in the projection uses the averaged half-node form
-$\big(\tfrac12(\phi_{i+1}+\phi_i)-\tfrac12(\phi_i+\phi_{i-1})\big)/\Delta x$, which equals the
-central difference.
+In $z$ the same stencils are used in the interior. For the velocity, second-order one-sided stencils
+are used at the walls, $\partial_z\phi_0\approx(-3\phi_0+4\phi_1-\phi_2)/(2\Delta z)$,
+$\partial_{zz}\phi_0\approx(2\phi_0-5\phi_1+4\phi_2-\phi_3)/\Delta z^2$ (mirrored at the top). For
+the scalars ($T$, $\Yf$, $\YO$) the ground row is a half cell next to an adiabatic, impermeable wall:
+$\partial_z\phi_0=0$ and $\partial_{zz}\phi_0\approx2(\phi_1-\phi_0)/\Delta z^2$, the flux balance of
+the half cell.
 
 \subsection{Advection}
 \paragraph{Momentum: second-order upwind.}
@@ -460,19 +440,19 @@ central difference.
 $a^\pm=\max/\min(a,0)$; in the two rows next to a wall the stencil that stays inside the domain is
 used.
 
-\paragraph{Temperature and species: Koren-limited third order (default).}
-Face values are reconstructed from the upwind side,
+\paragraph{Temperature and species: Koren-limited, conservative.}
+With the projected face fluxes $F$ (Section~\ref{sec:projection}),
+\begin{equation}
+  \vu\cdot\nabla\phi\approx\sum_j\frac{F_{j,i+1/2}\phi_{i+1/2}-F_{j,i-1/2}\phi_{i-1/2}}{h_j}-\phi_iD_i,
+\end{equation}
+exact for a uniform $\phi$, with face values reconstructed from the upwind side,
 \begin{equation}
   \phi_{i+1/2} = \phi_i + \tfrac12\,\psi(r_i)\,(\phi_{i+1}-\phi_i),\qquad
   r_i=\frac{\phi_i-\phi_{i-1}}{\phi_{i+1}-\phi_i},\qquad
   \psi(r)=\max\!\big(0,\min(2r,\tfrac{1+2r}{3},2)\big)
 \end{equation}
-for a non-negative face velocity $\tfrac12(a_i+a_{i+1})$ (mirrored otherwise), and
-$(a\,\partial_x\phi)_i\approx a_i(\phi_{i+1/2}-\phi_{i-1/2})/\Delta x$. The scheme is third order
-where $\phi$ is smooth and falls back to first-order upwind at extrema, so it creates no new
-extrema for a uniform velocity. At the walls two ghost rows copy the boundary value. Alternatives:
-\code{T\_advection = upwind} (second-order upwind) or \code{central} (the original scheme, which
-oscillates at the fire front and with forward Euler is only stable because of the temperature bound).
+for $F_{i+1/2}\ge0$ (mirrored otherwise). The scheme is third order where $\phi$ is smooth and falls
+back to first-order upwind at extrema, so it creates no new extrema.
 
 \subsection{Time integration}
 Explicit. The time step is adaptive by default (\code{[numerics] cfl}, target 0.4): each step takes
@@ -482,16 +462,14 @@ Explicit. The time step is adaptive by default (\code{[numerics] cfl}, target 0.
 \end{equation}
 with $\nu_{\mathrm{eff}}$ the largest molecular plus subgrid kinematic viscosity, and steps are
 shortened to land exactly on the output times, which stay every $N_T\Delta t_{\max}$. In calm periods
-$\Delta t=\Delta t_{\max}$ and the results equal those of a fixed step. With \code{cfl = 0} (and with
-\code{--legacy}) the step is fixed. A fixed 1~ms step failed in an F19 calibration run when gusts
-in the plume raised the CFL number from 0.43 to 0.73 within four seconds. The right-hand side $F(y)$ of all
-equations except the pressure term is integrated with forward Euler (default), Heun's RK2 or
-classical RK4; the projection is applied once per step, after the last stage, so the scheme is
-first order in time overall. The radiation field $G$ is recomputed every \code{update\_every}
-steps from the state at the start of the step and held fixed in between.
+$\Delta t=\Delta t_{\max}$ and the results equal those of a fixed step; \code{cfl = 0} fixes it. (A fixed
+1~ms step failed in an F19 run when gusts in the plume raised the CFL number from 0.43 to 0.73 within
+four seconds.) The right-hand side $F(y)$ of all equations except the pressure term is integrated with
+forward Euler (default), Heun's RK2 or classical RK4; the projection is applied once per step, after
+the last stage, so the scheme is first order in time overall. The radiation field $G$ is recomputed
+every \code{update\_every} steps from the state at the start of the step and held fixed in between.
 
-\subsection{Projection and pressure}
-\paragraph{Face-based projection (default, \code{[pressure] projection = face}).}
+\subsection{Projection and pressure}\label{sec:projection}
 Velocities are stored at the nodes, but mass conservation is imposed on face fluxes. Face velocities
 are averages of the provisional node velocities, $F_{j,i+1/2}=\tfrac12(u_{j,i}+u_{j,i+1})$ (zero on
 faces next to solids). The divergence of a node's control volume is the net flux through its faces,
@@ -502,50 +480,17 @@ ground. The projection
   \sum_j\frac{1}{h_j^2}\Big[\frac{p_{i+1}-p_i}{\rho_{i+1/2}}-\frac{p_i-p_{i-1}}{\rho_{i-1/2}}\Big]
   = \frac{D_i(F^*)-D^*_i}{\Delta t},
 \end{equation}
-with arithmetic face densities, makes the face fluxes satisfy the discrete constraint to the solver
-tolerance (verified to about $10^{-11}$ for density ratios of 8 and with buildings). Faces next to
-solid nodes are closed: zero flux through walls and a zero-gradient pressure condition, exactly.
-The equation is solved by preconditioned conjugate gradients (symmetric with respect to the cell
-volumes), preconditioned by the direct inverse of the constant-coefficient operator:
-finite-difference eigenvalues $-(2\sin(\pi r/N)/h)^2$ in the periodic directions (FFT) and an
-eigendecomposition of the vertical operator. With constant density and no solids one iteration
-suffices; with buildings or strong density variations 10--30. The node velocities receive the
-average of the corrections of their two faces (Rhie--Chow type), and the projected face fluxes
-transport momentum, temperature and species in conservative form,
-$\vu\cdot\nabla\phi\approx\sum_j\big(F_{j,i+1/2}\phi_{i+1/2}-F_{j,i-1/2}\phi_{i-1/2}\big)/h_j-\phi_iD_i$,
-with Koren-limited face values $\phi_{i\pm1/2}$ upwinded with $F$.
-
-\paragraph{Nodal projection (\code{projection = nodal}, original).}
-Given the provisional state $y^*$ (velocity $\vu^*$), the pressure solves the variable-density
-Poisson equation by fixed-point iteration:
-\begin{equation}
-  \nabla^2p^{(m+1)} = \frac{\rho^n}{\Delta t}\big(\nabla\cdot\vu^* - D^*\big)
-  + \frac{\nabla\rho^n\cdot\nabla p^{(m)}}{\rho^n},
-\end{equation}
-with $D^*$ the divergence \eqref{eq:div} evaluated at $y^*$, until
-$\max|p^{(m+1)}-p^{(m)}|<$\,\code{tol} or \code{max\_iter} iterations. Then
-\begin{equation}
-  \vu^{n+1} = \vu^* - \frac{\Delta t}{\rho^n}\nabla p.
-\end{equation}
-
-The nodal projection is not discretely consistent: the Laplacian of the Poisson solver is compact
-(spectral in $x$, three points in $z$) while the divergence and gradient are central differences over
-two cells, so the projected node velocities are not divergence-free for the central operators.
-Errors of about 0.5~s$^{-1}$ were measured even away from obstacles in a flow around a cube, and the
-flow around buildings went unstable; the face-based projection removes both problems.
-
-\paragraph{Poisson solver (nodal projection).} FFT in the periodic directions (real FFT in $x$, complex in $y$). For
-each horizontal wavenumber $k$ the vertical problem is tridiagonal: second-order differences in
-$z$ with $\gamma_k=-2-(k\Delta z)^2$ on the diagonal, $p=0$ at the top row and a second-order
-Neumann condition at the ground. Two direct methods solve all wavenumbers at once:
-\begin{itemize}
-  \item \code{thomas}: LU factors computed once; one forward and one backward sweep in $z$, each
-        acting on a whole horizontal plane;
-  \item \code{eig}: after eliminating the ground row the matrix is $M+\gamma_kI$ with the same $M$ for
-        all $k$; one eigendecomposition of $M$ turns each solve into two dense products along $z$.
-\end{itemize}
-\code{auto} selects \code{eig} on GPUs (fewer, larger operations) and for small or medium grids on
-CPU. Both agree to round-off.
+with arithmetic face densities and $D^*$ the divergence \eqref{eq:div} at the provisional state,
+makes the face fluxes satisfy the discrete constraint to the solver tolerance (about
+$10^{-11}$~s$^{-1}$, also for density ratios of 8 and with buildings). The subgrid heat flux in $D^*$
+uses the eddy viscosity of the step. Faces next to solid nodes are closed: zero flux through walls
+and a zero-gradient pressure condition, exactly. The equation is solved by preconditioned conjugate
+gradients (symmetric with respect to the cell volumes), preconditioned by the direct inverse of the
+constant-coefficient operator: finite-difference eigenvalues $-(2\sin(\pi r/N)/h)^2$ in the periodic
+directions (FFT) and an eigendecomposition of the vertical operator. With constant density and no
+solids one iteration suffices; with buildings or strong density variations 10--30. The node
+velocities receive the average of the corrections of their two faces (Rhie--Chow type), and the
+projected face fluxes transport momentum, temperature and species.
 
 \subsection{Radiation solver}
 Gray discrete ordinates. Quadrature: \code{n\_polar} equal-solid-angle bands in
@@ -564,58 +509,14 @@ Verification: exact equilibrium at uniform temperature; for an isothermal layer 
 thickness $\tau$ the result matches $G=2\sigma T^4(1-E_2(\tau))$ within 0.3\% for $\tau=1$ with 16
 polar bands (10\% low for $\tau=0.1$ with 6 bands).
 
-\subsection{Stiff source terms}
-\begin{itemize}
-  \item Published reaction, \code{reaction = exact}:
-        $\tilde R = (1-e^{-Y_fR\Delta t})/(Y_f\Delta t)$, so the explicit update gives the exact decay
-        $Y e^{-Y_fR\Delta t}$ and $Y$ stays in $[0,1]$ (the explicit rate overshoots, and with RK2/RK4
-        drives $Y$ negative within the stages).
-  \item Pyrolysis is limited to the fuel present, $\dot m'''\le\rho_bY/\Delta t$.
-  \item $\tau_{mix}\gg\Delta t$, so combustion is not stiff.
-\end{itemize}
-
-\subsection{Bounds and energy budget}
-With \code{bound = True}: $T_\infty\le T\le T_{\max}$, $0\le Y\le1$, $T_\infty\le T_s\le T_{\max}$,
-$0\le\Yf,\YO\le1$, $W\ge0$ after every step. The energy the temperature bounds add
-($\rho c_p\Delta T$ summed over the clipped nodes) or remove is accumulated and reported against
-the heat of combustion (\code{E\_clip\_low}, \code{E\_clip\_high}, \code{E\_combustion}). With the
-original central scheme the lower bound added several times the combustion heat near the flame;
-with the Koren scheme it is normally negligible.
-
-\subsection{CUDA graphs}
-On 2D grids each GPU operation takes microseconds and a step has thousands of them, so the run is
-limited by the Python thread issuing them (about 44\% GPU use on an RTX 4090 with one CPU core at
-100\%). By default (\code{[numerics] cuda\_graph = auto}; \code{on}/\code{off}, or \code{--cuda-graph} and
-\code{--no-cuda-graph}) each step on a CUDA device is replayed from
-CUDA graphs: the radiation solve, the prediction (right-hand side, provisional state, PCG setup), a
-chunk of \code{pcg\_chunk} PCG iterations replayed until the residual is below the tolerance (one host
-check per chunk), and the finalization (projection correction, boundary conditions, bounds, energy
-budget). The state, pressure, face fluxes, radiation field and time step live in persistent device
-buffers. Each step agrees with direct execution to roundoff: on an RTX 4090 the relative difference is
-$6\times10^{-15}$ after the first graph step and stays below $3\times10^{-13}$ over 200 steps
-(\code{scripts/graph\_check.py}), the remainder coming from the coarser convergence check of the
-pressure solver. Over a whole run these roundoff differences can flip threshold decisions at the fire
-front (ignition temperature, top fuel node, limiter), which leaves relative differences of order
-$10^{-4}$ in the fields; direct execution itself is bitwise reproducible. It requires the face
-projection and is not available with \code{t\_source} or \code{--legacy}; if the capture fails the
-run continues without graphs.
-
-\subsection{Fuel parameters from FDS Case F19}\label{sec:fds-fuel}
-The fuel defaults are those of the FDS validation case \code{Case\_F19.fds} (with
-\code{vegetation\_model.txt}): surface-to-volume ratio $\sigma_s=12240$~m$^{-1}$ (cylindrical blades
-of diameter $4/\sigma_s=0.33$~mm), bulk density 0.6144~kg\,m$^{-3}$ and particle density
-500~kg\,m$^{-3}$, so the packing ratio is $\alpha_s=0.6144/500=0.00123$, bed height 0.49~m, moisture
-0.058 and heat of pyrolysis 418~kJ\,kg$^{-1}$. For a cylindrical particle FDS takes the drag area as
-$2\pi rL$ times a shape factor 1/4 (random orientation), so the drag on the gas per unit volume is
-$\tfrac12 C_{d,\mathrm{FDS}}(\beta\sigma/4)|\vu|\vu$; with $\mathbf F_d=\tfrac12C_d\alpha_s\sigma_s|\vu|\vu$
-here, its \code{DRAG\_COEFFICIENT} of 2.8 corresponds to $C_d=0.7$. The absorption coefficient of the
-fuel, $\alpha_s\sigma_sY/4$, is the same as in FDS. FDS converts 75\% of the dry fuel into a gas with
-a heat of combustion of 17.4~MJ\,kg$^{-1}$ and the rest into char that oxidizes at the surface; this
-model gasifies all of it, so $H_C=13.1$~MJ per kg of dry fuel matches the FDS gas-phase heat release.
-Not reproduced: the char oxidation, the temperature-dependent fuel heat capacity of FDS (1.1 to
-2.0~kJ\,kg$^{-1}$K$^{-1}$ from 0 to 200~$^\circ$C; here constant $c_s$) and its Arrhenius pyrolysis
-(here linear). \code{--legacy} keeps the original values ($C_d=0.15$, $\alpha_s=0.002$,
-$\sigma_s=4000$~m$^{-1}$, $Y_h=0.51$~m).
+\subsection{Stiff source terms and bounds}
+Pyrolysis is limited to the fuel present, $\dot m'''\le\rho_bY/\Delta t$; the fuel time scale
+$\rho_bc_s/(ha)\approx0.2$~s and $\tau_{mix}$ are much longer than $\Delta t$, so neither the solid
+nor the combustion terms are stiff. With \code{bound = True}: $T_\infty\le T\le T_{\max}$,
+$0\le Y\le1$, $T_\infty\le T_s\le T_{\max}$, $0\le\Yf,\YO\le1$, $W\ge0$ after every step. The energy the
+temperature bounds add ($\rho c_p\Delta T$ summed over the clipped nodes) or remove is accumulated and
+reported against the heat of combustion (\code{E\_clip\_low}, \code{E\_clip\_high},
+\code{E\_combustion}); it is normally negligible.
 
 \subsection{Fuel slab}
 The solid fuel variables $Y$, $T_s$ and $W$ are stored on the whole grid, but the fuel bed fills only
@@ -623,46 +524,68 @@ a few rows of it (0.49\,m of a 20\,m domain in the F19 setup). Neither $Y$ nor $
 both can only decrease, so no fuel ever appears above the highest row that holds fuel or moisture at
 $t=0$. The solid source terms (convection and radiation to the fuel, pyrolysis, evaporation, the rates
 of $Y$, $T_s$ and $W$, their mass source in the species and the divergence) and the drag are computed
-on the rows up to that one plus a spare row; above it they are zero. The gas-phase combustion of $Y_F$
+on the rows up to that one plus a spare row; above it they are zero. The gas-phase combustion of $\Yf$
 is computed everywhere, since it burns in the plume. The results are bitwise identical to computing on
-the whole grid, and the solid source terms cost about 1/8 as much. The slab is used by default
-(\code{[fuel] slab = False} turns it off) and never with \code{--legacy}.
+the whole grid, and the solid source terms cost about 1/8 as much (\code{[fuel] slab = False} turns
+it off).
 
-\subsection{Mass budget}\label{sec:mass-budget}
-The density is not transported: it follows from the temperature, $\rho=\rho_\infty T_\infty/T$, and
-mass enters through the divergence constraint. Continuity therefore holds only as far as the
-constraint is consistent with the energy equation, and only to truncation error. With the face
-projection the log reports the budget of the control volume formed by the fluid nodes of rows $0$ to
-$N_z-2$ (row 0 a half cell), whose only open boundary is the vertical face below the top row (the
-ground and the building faces are closed and the horizontal directions are periodic):
+\subsection{CUDA graphs}
+On 2D grids each GPU operation takes microseconds and a step has thousands of them, so the run is
+limited by the Python thread issuing them (about 44\% GPU use on an RTX 4090 with one CPU core at
+100\%). By default (\code{[numerics] cuda\_graph = auto}; \code{on}/\code{off}, or \code{--cuda-graph}
+and \code{--no-cuda-graph}) each step on a CUDA device is replayed from CUDA graphs: the radiation
+solve, the prediction (right-hand side, provisional state, PCG setup), a chunk of \code{pcg\_chunk}
+PCG iterations replayed until the residual is below the tolerance (one host check per chunk), and the
+finalization (projection correction, boundary conditions, bounds, energy and mass budgets). The
+state, pressure, face fluxes, radiation field, time step and simulation time live in persistent
+device buffers. On an RTX 4090 a step takes 33~ms instead of 81~ms. Each step agrees with direct
+execution to roundoff: the relative difference is $6\times10^{-15}$ after the first graph step and stays
+below $3\times10^{-13}$ over 200 steps (\code{scripts/graph\_check.py}), the remainder coming from the
+coarser convergence check of the pressure solver. Over a whole run these roundoff differences can
+flip threshold decisions at the fire front (top fuel node, limiter), which leaves relative
+differences of order $10^{-4}$ in the fields; direct execution itself is bitwise reproducible. Graphs
+are not available with \code{t\_source}; if the capture fails the run continues without graphs.
+
+\subsection{Energy and mass budgets}\label{sec:mass-budget}
+The log reports, at every output, the energy since the start (combustion heat, energy added or
+removed by the bounds, extra heat from fuel overshoot) and the mass budget. The density is not
+transported: it follows from the temperature, and mass enters through the constraint \eqref{eq:div}.
+Continuity therefore holds only as far as the constraint is consistent with the energy equation, and
+only to truncation error. The budget is that of the control volume formed by the fluid nodes of rows
+$0$ to $N_z-2$ (row 0 a half cell), whose only open boundary is the vertical face below the top row:
 \[
-  M(t)-M(0) = \int_0^t \dot m_{pyr}\,dt - \int_0^t \sum_{\text{top faces}} \rho_f F_z\,A\,dt + R,
+  M(t)-M(0) = \int_0^t \dot m\,dt - \int_0^t \sum_{\text{top faces}} \rho_f F_z\,A\,dt + R,
   \qquad M=\sum \rho\, w\, \Delta V,
 \]
-with $\rho_f$ upwinded with the face flux, the fluxes of the start of each step (exact for Euler), and
-$R$ the residual, reported as a fraction of the outflow since the start and since the last output.
-The cumulative values are saved as \code{M\_total}, \code{M\_outflow}, \code{M\_pyrolysis} and
-\code{M\_residual} in \code{data.npz}. Terrain dead nodes are left out of $M$, so with terrain the
-budget is approximate.
+with $\dot m$ the pyrolysis and burner gas, $\rho_f$ upwinded with the face flux, the fluxes of the
+start of each step (exact for Euler), and $R$ the residual, reported as a fraction of the outflow
+since the start and since the last output. The cumulative values are saved as \code{M\_total},
+\code{M\_outflow}, \code{M\_pyrolysis} and \code{M\_residual} in \code{data.npz}. Terrain dead nodes are
+left out of $M$, so with terrain the budget is approximate.
 
-\subsection{Log diagnostics}
-Besides the extreme values, the log reports the total heat release rate and the gas temperature
-weighted by the local heat release rate, $T_{flame}=\sum\dot q_c T/\sum\dot q_c$, which is comparable
-with measured flame temperatures, unlike the single-cell maximum.
+Results: in a 2D fire ignited by hot gas the residual stays within 2--7\% of the outflow; it does not
+change when $\Delta t$ is halved and halves when the grid is refined (first-order truncation error at
+the flame front). Gas injected without combustion closes to 0.3\%. With the burner, whose flame burns
+at the ground, the residual reaches about 30\% of the outflow and barely changes with grid
+refinement (Section~\ref{sec:limitations}).
 
-\subsection{Output}
-2D runs save the full fields every $N_T$ steps; 3D runs save three planes (\code{xz\_*}, \code{xy\_*},
-\code{yz\_*} through the head fire), the fuel left per column and the final full fields. Full
-snapshots are written every \code{full\_interval} seconds (2D or 3D). Derived fields: heat release
-rate (\code{HRR}), pyrolysis rate, convective heating of the fuel, $G$, net radiative heating of gas
-and fuel, turbulent viscosity. Each run also stores its input file, all resolved parameters, git
+\subsection{Log diagnostics and output}
+Besides the extreme values and the budgets, the log reports the total heat release rate and the gas
+temperature weighted by the local heat release rate, $T_{flame}=\sum\dot q_c T/\sum\dot q_c$, which is
+comparable with measured flame temperatures, unlike the single-cell maximum. 2D runs save the full
+fields every $N_T$ steps; 3D runs save three planes (\code{xz\_*}, \code{xy\_*}, \code{yz\_*} through the
+head fire), the fuel left per column and the final full fields. Full snapshots are written every
+\code{full\_interval} seconds (2D or 3D). Derived fields: heat release rate (\code{HRR}), pyrolysis
+rate (including the burner gas), convective heating of the fuel, $G$, net radiative heating of gas and
+fuel, turbulent viscosity. Each run also stores its input file, all resolved parameters, git
 information and a copy of the code.
 
 %======================================================================
 \section{Input parameters}\label{sec:params}
 %======================================================================
 Keys are given as \code{[section] key}. Values in a 2D file use \code{y} for the vertical
-direction; a file is 3D when it defines \code{z\_min}, \code{z\_max} and \code{Nz}.
+direction; a file is 3D when it defines \code{z\_min}, \code{z\_max} and \code{Nz}. Options that only
+serve the published model are listed in Appendix~\ref{app:params}.
 
 \begin{longtable}{p{4.6cm}p{2.6cm}p{7.6cm}}
 \toprule
@@ -672,61 +595,59 @@ Key & Default & Meaning \\
 \multicolumn{3}{l}{\emph{Domain and numerics}}\\
 \code{[domain]} \code{x\_min}\dots\code{t\_max} & -- & domain and time interval \\
 \code{[numerics] Nx, Ny, Nz} & -- & nodes per direction \\
-\code{[numerics] Nt, NT} & -- & time steps; output every \code{NT} steps \\
+\code{[numerics] Nt, NT} & -- & $\Delta t_{\max}=(t_{\max}-t_{\min})/N_t$; output every \code{NT}\,$\Delta t_{\max}$ \\
 \code{[numerics] time\_method} & \code{euler} & \code{euler}, \code{RK2}, \code{RK4} \\
-\code{[numerics] cfl} & 0.4 & adaptive step target; 0: fixed $\Delta t=(t_{\max}-t_{\min})/N_t$ \\
-\code{[numerics] T\_advection} & \code{koren} & \code{koren}, \code{upwind}, \code{central} \\
+\code{[numerics] cfl} & 0.4 & adaptive step target; 0: fixed step \\
+\code{[numerics] cuda\_graph, pcg\_chunk} & \code{auto}, 4 & CUDA graphs (\code{auto}, \code{on}, \code{off}); PCG iterations per replay \\
+\code{[numerics] T\_advection} & \code{koren} & \code{koren} or \code{upwind} (without face fluxes) \\
 \code{[numerics] bound} & \code{True} & apply the bounds of the solution \\
-\code{[pressure] tol, max\_iter} & $10^{-10}$, 50 & fixed point of the pressure \\
-\code{[pressure] poisson} & \code{auto} & \code{auto}, \code{thomas}, \code{eig} (nodal projection) \\
-\code{[pressure] projection} & \code{face} & \code{face} or \code{nodal} \\
-\code{[pressure] dilatation} & \code{consistent} & \code{consistent} or \code{published} (Sec.~\ref{sec:mass-budget}) \\
-\code{[buildings]} \code{name} & -- & building box (see Section~\ref{sec:ibc}) \\
+\code{[pressure] tol, max\_iter} & $10^{-10}$, 50 & pressure solver tolerance and iterations \\
+\code{[buildings]} \code{name} & -- & building box (Section~\ref{sec:ibc}) \\
 \code{[density] constant} & \code{False} & constant density (incompressible) \\
 \multicolumn{3}{l}{\emph{Gas and turbulence}}\\
-$c_p$, $\rho_\infty$, $\mu$, $\kappa$ & 1007, 1.225, $1.802\times10^{-5}$, 0.02476 & SI units (not in the input file) \\
-\code{[gas] cp\_model} & \code{mixture} & \code{constant}, \code{variable} ($c_p(T)$ of air), \code{mixture} \\
-\code{[gas] transport} & \code{sutherland} & \code{constant} or \code{sutherland} \\
-\code{[temperature] T\_inf} & 288.15 K & ambient temperature (F19: 307.15 K, FDS \code{TMPA}); $\rho_\infty$ follows it, the Sutherland reference stays at 288.15 K \\
+$\mu_0$, $\kappa_0$, $c_p$ & $1.802\times10^{-5}$, 0.02476, 1007 & SI units at 288.15~K (not in the input file) \\
+\code{[gas] cp\_model} & \code{mixture} & \code{mixture}, \code{variable} ($c_p(T)$ of air), \code{constant} \\
+\code{[gas] transport} & \code{sutherland} & \code{sutherland} or \code{constant} \\
+\code{[temperature] T\_inf} & 288.15 K & ambient temperature (F19: 307.15 K, FDS \code{TMPA}); $\rho_\infty$ follows it \\
 \code{[turbulence] enabled} & \code{True} & Smagorinsky model \\
 \code{[turbulence] C\_s} & 0.2 & Smagorinsky constant \\
 \code{[turbulence] filter\_width} & grid & fixed filter width (m) \\
 $Pr$ & 0.7323 & Prandtl number (also turbulent) \\
 \multicolumn{3}{l}{\emph{Fuel}}\\
-\code{[fuel] Y\_h} & 0.49 m & fuel bed height (FDS Case\_F19) \\
-\code{[fuel] C\_d, alpha\_s, sigma\_s} & 0.7, 0.00123, 12240 m$^{-1}$ & drag coefficient, packing ratio, surface-to-volume (FDS Case\_F19, see Sec.~\ref{sec:fds-fuel}) \\
+\code{[fuel] Y\_h} & 0.49 m & fuel bed height \\
+\code{[fuel] C\_d, alpha\_s, sigma\_s} & 0.7, 0.00123, 12240 m$^{-1}$ & drag coefficient, packing ratio, surface-to-volume (Section~\ref{sec:fds-fuel}) \\
+\code{[fuel] rho\_bulk} & 0.6144 kg\,m$^{-3}$ & dry bulk density \\
 \code{[fuel] x\_start}\dots\code{y\_end} & whole domain & horizontal extent of the bed \\
-\code{[fuel] H\_C} & $21\times10^6$ J\,kg$^{-1}$ & heat of combustion \\
-\code{[fuel] A, T\_act, Y\_f} & $10^9$ s$^{-1}$, 18040.85 K, 70 & Arrhenius rate (published model, \code{arrhenius} pyrolysis) \\
-\code{[temperature] T\_pc} & 523 K & phase-change temperature \\
-\code{[fuel] reaction} & \code{exact} & \code{exact} or \code{explicit} \\
-\code{[temperature] sink, h\_c} & \code{surface}, 1.42 & convective exchange (published model), coefficient \\
-\code{[fuel] solid\_temperature} & \code{True} & extended model \\
-\code{[fuel] rho\_bulk} & 0.6144 kg\,m$^{-3}$ & dry bulk density (FDS Case F19) \\
+\code{[fuel] H\_C} & $21\times10^6$ J\,kg$^{-1}$ & heat of combustion per kg of dry fuel (F19 calibration: 13.1--17.4~MJ\,kg$^{-1}$) \\
 \code{[fuel] c\_s} & 1500 J\,kg$^{-1}$K$^{-1}$ & specific heat of dry fuel \\
 \code{[fuel] H\_pyr} & $4.16\times10^5$ J\,kg$^{-1}$ & heat of pyrolysis \\
-\code{[fuel] moisture} & 0.058 & moisture content (F19, FDS Case\_F19) \\
+\code{[fuel] moisture} & 0.058 & moisture content \\
 \code{[fuel] pyrolysis} & \code{linear} & \code{linear} or \code{arrhenius} \\
-\code{[fuel] T\_pyr, T\_pyr\_end} & 400 K, 500 K & pyrolysis range \\
+\code{[fuel] T\_pyr, T\_pyr\_end} & 400 K, 500 K & range of linear pyrolysis \\
+\code{[fuel] A, T\_act, Y\_f}, \code{[temperature] T\_pc} & $10^9$ s$^{-1}$, 18040.85 K, 70, 523 K & Arrhenius pyrolysis \\
 \code{[fuel] slab} & \code{True} & solid terms and drag on the fuel rows only (bitwise identical) \\
-$c_w$, $L_v$, $T_{boil}$ & 4184, $2.259\times10^6$, 373.15 & water properties (SI) \\
+$c_w$, $L_v$, $T_{boil}$, $h_c$ & 4184, $2.259\times10^6$, 373.15, 1.42 & water properties, natural convection coefficient (SI) \\
 \multicolumn{3}{l}{\emph{Combustion and radiation}}\\
 \code{[combustion] s\_O2} & 1.185 & oxygen per kg of fuel gas \\
 \code{[combustion] tau\_mix} & $\sqrt{2\Delta/|g|}$ & mixing time (s) \\
 \code{[combustion] Y\_O2\_amb} & 0.232 & ambient oxygen \\
-\code{[radiation] model} & \code{transport} & \code{transport} or \code{diffusion} \\
 \code{[radiation] kappa\_gas} & 0.1 m$^{-1}$ & gray gas absorption coefficient \\
 \code{[radiation] n\_polar, n\_azimuth} & 12, 16 & angular quadrature (even) \\
 \code{[radiation] update\_every} & 5 & steps between radiation solves \\
-\code{[temperature] delta} & 0.1 m & optical path length (diffusion radiation) \\
-\multicolumn{3}{l}{\emph{Initial conditions}}\\
+\multicolumn{3}{l}{\emph{Wind}}\\
 \code{[wind] u\_r, z\_r, shape} & 4.8 m\,s$^{-1}$, 2 m, \code{monin-obukhov} & reference wind and profile \\
-\code{[wind] z\_0, L} & 0.03 m, neutral & roughness and Obukhov length (\code{monin-obukhov}) \\
-\code{[wind] forcing, forcing\_time} & \code{profile}, 1 s & wind forcing (\code{profile}) and its relaxation time \\
-\code{[wall] model, z\_0} & \code{log}, wind $z_0$ & ground wall model (\code{log}) and its roughness \\
-\code{[temperature] T\_hot, shape} & 788.15 K, \code{gaussian} & ignition temperature and shape \\
-\code{[temperature] x\_start}\dots\code{z\_end} & 0, 6, -, -, 0, 1 m & ignition extent \\
-\code{[temperature] t\_source} & $-1$ (off) & sustained source until this time \\
+\code{[wind] z\_0, L} & 0.03 m, neutral & roughness and Obukhov length \\
+\code{[wind] forcing, forcing\_time} & \code{profile}, 1 s & wind forcing and its relaxation time \\
+\code{[wall] model, z\_0} & \code{log}, wind $z_0$ & ground wall model and its roughness \\
+\multicolumn{3}{l}{\emph{Ignition}}\\
+\code{[ignition] model} & \code{temperature} & \code{temperature} (hot gas) or \code{burner} \\
+\code{[ignition] hrrpua} & 1460 kW\,m$^{-2}$ & burner heat release per unit area \\
+\code{[ignition] x\_start, x\_end, y\_start, y\_end} & 0, 3.3, $-87$, 87 m & burner strip \\
+\code{[ignition] ramp} & \code{0 0, 1 1, 11 1, 12 0} & time since lit (s) and fraction of \code{hrrpua} \\
+\code{[ignition] spread\_rate, x\_origin, y\_origin} & 1.56 m\,s$^{-1}$, 0, 0 & lighting of the strip from the origin \\
+\code{[temperature] T\_hot, shape} & $T_\infty+500$~K, \code{gaussian} & hot-gas ignition \\
+\code{[temperature] x\_start}\dots\code{z\_end} & 0, 6, -, -, 0, 1 m & hot-gas extent \\
+\code{[temperature] t\_source} & $-1$ (off) & hold the hot gas until this time \\
 \code{[temperature] T\_min, T\_max} & $T_\infty$, 2500 K & temperature bounds \\
 \code{[topography] shape} & \code{flat} & \code{flat}, \code{hill}, \code{slope} (2D) \\
 \multicolumn{3}{l}{\emph{Output}}\\
@@ -737,25 +658,151 @@ $c_w$, $L_v$, $T_{boil}$ & 4184, $2.259\times10^6$, 373.15 & water properties (S
 \end{longtable}
 
 %======================================================================
-\section{Known limitations and open issues}
+\section{Known limitations and open issues}\label{sec:limitations}
 %======================================================================
 \begin{itemize}
-  \item Not calibrated: $\kappa_g$, $H_C$, $\tau_{mix}$ and $\rho_b$ control the heat release; peak
-        gas temperatures of about 2200--2400~K suggest too high a heat release (constant $c_p$,
-        $H_C$ of the solid rather than of the pyrolysis gas, weak flame radiation).
-  \item Constant $c_p$; no dissociation; one gray absorption coefficient for the gas, independent of
-        soot or products.
+  \item Not yet calibrated: $\kappa_g$, $H_C$ and $\tau_{mix}$ control the heat release. With the
+        earlier fuel values ($\sigma_s=4000$~m$^{-1}$, $C_d=0.15$, hot-gas ignition) the 2D F19 runs
+        spread at about 5~m\,s$^{-1}$ almost from the start, whereas the observed head fire advanced
+        only 71~m in the first 86~s and at least 3.6~m\,s$^{-1}$ afterwards. Most of the slow start is the
+        progressive lighting of the 174~m line (56~s) and the growth of the head-fire width, which only
+        3D runs with the burner can represent.
+  \item Mass budget with the burner: the residual reaches about 30\% of the outflow when the flame
+        burns at the ground, against 2--7\% for a lifted flame, and is distributed through the plume
+        rather than at the ground; grid refinement barely reduces it. One candidate is the numerical
+        mixing of $T$ by the advection scheme: it conserves the volume average of $T$, while the
+        density follows $1/T$, so mixing hot and cold gas loses mass that no flux accounts for
+        (physical diffusion is in the constraint, numerical diffusion is not). Under investigation.
+  \item No dissociation; one gray absorption coefficient for the gas, independent of soot or
+        products. No char oxidation; constant fuel heat capacity.
   \item Water vapor from drying and combustion products are not transported.
-  \item The ignition is a hot-gas pulse at $t=0$, not the timed burner of the FDS F19 setup.
-  \item Periodic horizontal boundaries instead of open ones; without \code{[wind] forcing} the
-        near-ground wind decays during a run, and without the wall model the no-slip ground
-        overestimates the friction on coarse grids (Section~\ref{sec:ibc}). Building walls have no
-        wall model.
-  \item The intermittent activity of the lower temperature bound seen on the 1.17~m F19 grid was
-        traced to the second-order zero-gradient condition at the ground (Section~\ref{sec:ibc}) and
-        fixed: over the first 5~s of that case the energy added by the bound fell from 16\% to 1.6\% of
-        the heat of combustion, and the worst undershoot from about 250~K to under 2~K.
+  \item Periodic horizontal boundaries instead of open ones, compensated by the wind forcing.
+        Building walls have no wall model.
+  \item With terrain the ground row of the scalars is still copied from the row above, and the burner
+        is not available.
 \end{itemize}
+
+\appendix
+
+%======================================================================
+\section{The published model and the legacy mode}\label{app:legacy}
+%======================================================================
+The code started as a PyTorch port of the 2D model of San Mart\'in \& Torres (2025), kept in
+\code{src\_legacy/}. That model is still available, and \code{--legacy} reproduces \code{src\_legacy/}
+to round-off.
+
+\subsection{Equations of the published model}\label{app:published}
+A single temperature for gas and fuel (\code{[fuel] solid\_temperature = False}) and radiation as
+diffusion (\code{[radiation] model = diffusion}):
+\begin{equation}
+  \dot q = \nabla\cdot\big(k(T)\nabla T\big) + \rho c_p\,q(T,Y),\qquad k(T)=\kappa+4\sigma\delta T^3,
+\end{equation}
+where $4\sigma\delta T^3$ represents radiation as diffusion (optical path length $\delta$) and
+\begin{equation}
+  q = \frac{H_C\,Y\,R(T)}{c_p} + q_{sink},\qquad
+  \frac{\dd Y}{\dd t} = -Y_f\,R(T)\,Y,\qquad R(T)=A\,e^{-T_{act}/T}\,H(T-T_{pc}),
+\end{equation}
+with the Heaviside step $H$. $Y_f$ sets how fast the fuel is consumed and the total heat per unit
+of fuel, $H_C/(c_pY_f)$ in temperature units, but not the instantaneous heat release. The heat
+released per unit of fuel fraction burned, $\rho H_C/Y_f$ with the gas density, is about 86 times less
+than the physical fuel load $\rho_bH_C$; the extended model releases the physical amount through the
+gas phase. With radiation transport and a single temperature the fuel absorbs and emits at $T$.
+
+\paragraph{Convective exchange.} With \code{sink = surface} the top fuel node of each column (highest
+node with $Y>10^{-3}$) exchanges the flux per unit ground area
+\begin{equation}
+  Q = h\,(T_g-T_f),\qquad h=h_c\Big(\frac{|T_g-T_f|}{Y_h}\Big)^{1/4},
+\end{equation}
+with the gas node above it; $Q/(\rho c_p\Delta z)$ is added to the fuel node and subtracted from
+the gas node (energy conserving, grid independent). \code{sink = legacy} keeps the original term.
+
+\paragraph{Reaction.} With \code{reaction = exact} the rate is averaged over the step for frozen $T$,
+$\tilde R = (1-e^{-Y_fR\Delta t})/(Y_f\Delta t)$, so the explicit update gives the exact decay
+$Y e^{-Y_fR\Delta t}$ and $Y$ stays in $[0,1]$; the original explicit rate (\code{explicit})
+overshoots, and with RK2/RK4 drives $Y$ negative within the stages.
+
+\subsection{What \code{--legacy} restores}
+Single temperature, radiation as diffusion, central temperature advection, explicit reaction, the
+original sink term, the nodal projection with the published divergence, constant $c_p$ and transport
+properties, fixed time step, second-order extrapolation of all variables at both walls (including $Y$
+and the ground row of the scalars), no wind forcing, no-slip ground, no CUDA graphs, and the original
+values of the options that now have other defaults (unless the input file sets them): power-law wind
+$u=u_r(d_w/z_r)^{1/7}$ with $z_0=0.05$~m, $C_d=0.15$, $\alpha_s=0.002$, $\sigma_s=4000$~m$^{-1}$,
+$Y_h=0.51$~m. Near the ground the power law is much stronger than the Monin--Obukhov profile of F19:
+3.1, 3.6 and 4.0~m\,s$^{-1}$ at 0.1, 0.25 and 0.51~m, against 1.4, 2.5 and 3.3.
+
+\subsection{Corrections to the published code}\label{app:corrections}
+\begin{itemize}
+  \item \textbf{Thermal expansion.} The original code divides the heating rate in K\,s$^{-1}$,
+        $\dot q/(\rho c_p)$, once more by $\rho c_p T$, which makes the thermal expansion $\rho c_p$
+        times too small (about 1000 in ambient air, 300 in the flame): the density of the heated gas
+        falls as $1/T$, but its volume barely grows, so its mass is not conserved. The mass budget
+        showed it: in a 2D fire the domain lost 50--70\% more mass than left through the top. With the
+        consistent divergence the outflow is 2.5 times larger and the budget closes to a few percent.
+        (\code{[pressure] dilatation = published} restores the original term.)
+  \item \textbf{Zero-gradient condition of the scalars.} The second-order extrapolation
+        $\phi_0=(4\phi_1-\phi_2)/3$ leaves the range of the interior values where the profile is
+        curved: at the fire front, with a hot layer just above cold ground ($T_1=348$~K, $T_2=584$~K),
+        it gave 270~K, below ambient, and the temperature bound then added energy at every step (up to
+        about 18\% of the heat of combustion over the first 6~s of the F19 case at $\Delta x=1.17$~m;
+        with the first-order copy $\phi_0=\phi_1$ the energy added fell to 1.6\% and the worst
+        undershoot from about 250~K to under 2~K). The copy itself still discarded the sources of the
+        ground row and changed its density without any flux; the ground row is now a half cell with
+        a zero-flux wall (Section~\ref{sec:ibc}).
+  \item \textbf{Fuel boundary condition.} The original extrapolated $Y$ like $T$, which overwrote the
+        ground row with $(4Y_1-Y_2)/3$ every step: fuel vanished without releasing heat, or went
+        negative, wherever the bed burned unevenly in $z$. $Y$ now has no boundary condition.
+  \item \textbf{Nodal projection.} Not discretely consistent (Appendix~\ref{app:nodal}); replaced by
+        the face-based projection.
+  \item \textbf{Central temperature advection.} Oscillates at the fire front and with forward Euler
+        is only stable because of the temperature bound, which then added several times the
+        combustion heat near the flame; replaced by the Koren scheme.
+  \item \textbf{Fixed time step.} Replaced by the adaptive step.
+\end{itemize}
+
+\subsection{Nodal projection}\label{app:nodal}
+With \code{[pressure] projection = nodal} (the original method) the pressure solves the
+variable-density Poisson equation by fixed-point iteration,
+\begin{equation}
+  \nabla^2p^{(m+1)} = \frac{\rho^n}{\Delta t}\big(\nabla\cdot\vu^* - D^*\big)
+  + \frac{\nabla\rho^n\cdot\nabla p^{(m)}}{\rho^n},
+\end{equation}
+until $\max|p^{(m+1)}-p^{(m)}|<$\,\code{tol} or \code{max\_iter} iterations, and
+$\vu^{n+1} = \vu^* - (\Delta t/\rho^n)\nabla p$. The divergence uses the averaged half-node form
+$\big(\tfrac12(\phi_{i+1}+\phi_i)-\tfrac12(\phi_i+\phi_{i-1})\big)/\Delta x$. The method is not
+discretely consistent: the Laplacian of the Poisson solver is compact (spectral in $x$, three points in
+$z$) while the divergence and gradient are central differences over two cells, so the projected node
+velocities are not divergence-free for the central operators. Errors of about 0.5~s$^{-1}$ were
+measured even away from obstacles in a flow around a cube, and the flow around buildings went
+unstable.
+
+The Poisson solver uses FFT in the periodic directions (real FFT in $x$, complex in $y$). For each
+horizontal wavenumber $k$ the vertical problem is tridiagonal: second-order differences in $z$ with
+$\gamma_k=-2-(k\Delta z)^2$ on the diagonal, $p=0$ at the top row and a second-order Neumann condition
+at the ground. \code{thomas} computes the LU factors once and solves with one forward and one
+backward sweep in $z$, each acting on a whole horizontal plane; \code{eig} eliminates the ground row,
+after which the matrix is $M+\gamma_kI$ with the same $M$ for all $k$, so one eigendecomposition of $M$
+turns each solve into two dense products along $z$. \code{auto} selects \code{eig} on GPUs and for
+small or medium grids on CPU. Both agree to round-off.
+
+\subsection{Parameters of the published model}\label{app:params}
+\begin{longtable}{p{4.6cm}p{2.6cm}p{7.6cm}}
+\toprule
+Key & Default & Meaning \\
+\midrule
+\endhead
+\code{[fuel] solid\_temperature} & \code{True} & \code{False}: single temperature (published model) \\
+\code{[radiation] model} & \code{transport} & \code{diffusion}: $4\sigma\delta T^3$ conductivity \\
+\code{[temperature] delta} & 0.1 m & optical path length (diffusion radiation) \\
+\code{[fuel] reaction} & \code{exact} & \code{exact} or \code{explicit} (single temperature) \\
+\code{[temperature] sink, h\_c} & \code{surface}, 1.42 & convective exchange (single temperature) \\
+\code{[numerics] T\_advection} & \code{koren} & \code{central}: original scheme \\
+\code{[pressure] projection} & \code{face} & \code{nodal}: original projection \\
+\code{[pressure] poisson} & \code{auto} & \code{auto}, \code{thomas}, \code{eig} (nodal projection) \\
+\code{[pressure] dilatation} & \code{consistent} & \code{published}: original thermal expansion \\
+\code{[wind] shape} & \code{monin-obukhov} & \code{power law}: $u_r(d_w/z_r)^{\alpha_u}$, $\alpha_u=1/7$ \\
+\bottomrule
+\end{longtable}
 
 \section*{References}
 \begin{itemize}
@@ -765,6 +812,10 @@ $c_w$, $L_v$, $T_{boil}$ & 4184, $2.259\times10^6$, 373.15 & water properties (S
   \item Mell, W., Jenkins, M.~A., Gould, J., \& Cheney, P. (2007). A physics-based approach to
         modeling grassland fires. \emph{International Journal of Wildland Fire}, 16, 1--22.
   \item McGrattan, K., et al. \emph{Fire Dynamics Simulator, Technical Reference Guide}. NIST.
+  \item FDS validation case \code{CSIRO\_Grassland\_Fires/FDS\_Input\_Files/Case\_F19.fds} and
+        \code{vegetation\_model.txt}, \url{https://github.com/firemodels/fds}.
+  \item Asensio, M.~I., \& Ferragut, L. (2002). On a wildland fire model with radiation.
+        \emph{International Journal for Numerical Methods in Engineering}, 54, 137--157.
   \item Wrede, H., et al. (2025). Fire-X: Extinguishing fire with stoichiometric heat release.
         \emph{ACM Transactions on Graphics}, 44(6), 269.
   \item Martinuzzi, R., \& Tropea, C. (1993). The flow around surface-mounted, prismatic obstacles

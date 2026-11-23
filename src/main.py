@@ -182,6 +182,7 @@ def run(cfg, verbose=True):
             dt = model.stable_dt(y, dt_max) if cfg.cfl > 0 else dt_max
             dt = min(dt, next_out - t_now, t_end - t_now)
             model.set_dt(dt)
+            model.set_time(t_now)
             dt_min_seen, dt_max_seen = min(dt_min_seen, dt), max(dt_max_seen, dt)
             if runner is None and use_graph and n == 3:          # capture after a few direct steps
                 runner = make_runner(model, y, p, say)
@@ -234,7 +235,8 @@ def run(cfg, verbose=True):
                     dM = {key: M[key] - mass[key][-1] for key in M}
                     share = lambda r, out: f"{100 * r / out:.2f}%" if abs(out) > 1e-9 * mass['total'][0] else "n/a"
                     say(f"Mass since start [{munit}]: change {M['total'] - mass['total'][0]:.4g}, outflow {M['outflow']:.4g}, "
-                        f"pyrolysis {M['pyrolysis']:.4g}, residual {M['residual']:.3g} "
+                        f"{'pyrolysis + burner' if model.burner is not None else 'pyrolysis'} {M['pyrolysis']:.4g}, "
+                        f"residual {M['residual']:.3g} "
                         f"({share(M['residual'], M['outflow'])} of the outflow, "
                         f"{100 * abs(M['residual']) / mass['total'][0]:.1e}% of the initial mass)",
                         f"Mass since last output: residual {share(dM['residual'], dM['outflow'])} of the outflow")

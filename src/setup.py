@@ -116,6 +116,8 @@ def build(cfg):
             shape = gaussian(Xm, Zm, x_c, 0, length, height) * in_y
         else:
             raise ValueError(f"unknown 3D initial temperature shape '{cfg.T0_shape}'")
+    if cfg.ignition == 'burner':                 # no hot patch: the burner ignites the fuel
+        shape = np.zeros_like(shape)
     T = cfg.T_inf + shape * (cfg.T_hot - cfg.T_inf)
 
     # Immersed boundary: cut nodes are the terrain surface, dead nodes lie below it

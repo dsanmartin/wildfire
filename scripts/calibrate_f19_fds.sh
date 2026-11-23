@@ -10,7 +10,9 @@
 # The model defaults are the FDS-like setup (consistent divergence, mixture c_p, Sutherland transport,
 # Monin-Obukhov wind with forcing and log-law wall model, moisture 0.058, F19 fuel of FDS Case_F19:
 # sigma_s = 12240 1/m, alpha_s = 0.00123, C_d = 0.7, Y_h = 0.49 m; CUDA graphs on a CUDA device).
-# Specific to F19 here: wind 4.9 m/s at 2 m with L = -500 m, ambient 34 C (FDS TMPA).
+# Specific to F19 here: wind 4.9 m/s at 2 m with L = -500 m, ambient 34 C (FDS TMPA), grass plot
+# x = 0-200 m, and the FDS ignition burner ([ignition] model = burner, whose defaults are the FDS
+# Case_F19 burner: 1460 kW/m2 on x = 0-3.3 m with its 12 s ramp, lit at 1.56 m/s from the center).
 # Common to all runs: turbulence filter width 0.30 m, adaptive time step (CFL 0.4).
 # H_C: FDS burns 75% of the dry fuel as gas with 17.4 MJ/kg (the rest is char), i.e. 13.1 MJ per kg of
 # dry fuel in the gas phase; this model gasifies all of it, so 13.1 matches the FDS gas-phase heat and
@@ -49,13 +51,16 @@ NT = 1000
 cfl = 0.4
 [temperature]
 T_inf = 307.15
-T_hot = 900
+[ignition]
+model = burner
 [wind]
 u_r = 4.9
 z_r = 2
 L = -500
 [fuel]
 H_C = $2
+x_start = 0
+x_end = 200
 [radiation]
 kappa_gas = $3
 [turbulence]

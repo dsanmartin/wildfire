@@ -92,6 +92,9 @@ class Model:
             dead_flat = np.flatnonzero(dead)
             self.dead_surface = idx(surface.reshape(-1)[dead_flat % row] * row + dead_flat % row)
         self._init_solids(grid, to)
+        # Simulation time on the device (time-dependent sources inside CUDA graphs)
+        self.t_t = torch.zeros((), dtype=dtype, device=device)
+        self.burner = self._init_burner(grid, to) if cfg.ignition == 'burner' else None
         # Fuel slab: rows 0..k_fuel-1 hold every node with fuel or moisture. Neither is transported and
         # both only decrease, so no fuel ever appears above; the solid fuel terms and the drag are
         # computed on this slab only (the fuel bed is a few percent of the domain height)
@@ -380,7 +383,7 @@ class Model:
         last right-hand side evaluation (the one of this step), so the strain rate is not recomputed."""
         c, op, nd = self.cfg, self.op, self.nd
         T1 = y1[nd]
-        grad_T1, lap_T1 = op.grad(T1), op.lap(T1)
+        grad_T1, lap_T1 = op.grad_s(T1), op.lap_s(T1)
         heating = self.heat(y1, rho1, grad_T1, lap_T1, solid1)
         if c.dilatation == 'consistent' and c.turbulence and getattr(self, '_mu_sgs', None) is not None:
             acc = self._mu_sgs * lap_T1
@@ -458,7 +461,10 @@ class Model:
         dW = torch.where(evap, -Q_net.clamp(min=0) / (c.rho_bulk * c.L_v), torch.zeros_like(W))
         heat_capacity = (c.rho_bulk * (Y * c.c_s + W * c.c_w)).clamp(min=1e-30)
         dT_s = torch.where(evap, Q_net.clamp(max=0), Q_net) / heat_capacity * has
-        return {'k': k,'Q_conv': Q_conv, 'Q_comb': omega * c.H_C, 'dY': -mdot / c.rho_bulk, 'dT_s': dT_s,
+        dY = -mdot / c.rho_bulk
+        if self.burner is not None:                               # ignition burner: fuel gas in row 0
+            mdot[0] += self.burner_rate()
+        return {'k': k, 'Q_conv': Q_conv, 'Q_comb': omega * c.H_C, 'dY': dY, 'dT_s': dT_s,
                 'dW': dW, 'mdot': mdot, 'omega': omega}
 
     def update_radiation(self, y):
@@ -593,7 +599,7 @@ class Model:
         vel, T, Y = y[:nd], y[nd], y[nd + 1]
         rho = self.rho(T)
         nu = self.viscosity(T) / rho                                  # d(mu)/dx terms neglected
-        grad_T, lap_T = op.grad(T), op.lap(T)
+        grad_T, lap_T = op.grad_s(T), op.lap_s(T)
         solid = self.solid_rates(y, rho) if c.solid_temperature else None
         if solid is not None and self._first_stage:
             self._last_omega, self._first_stage = solid['omega'], False
@@ -668,10 +674,10 @@ class Model:
                     adv = scheme(vel[0], Yk, 0)
                     for j in range(1, nd):
                         adv = adv + scheme(vel[j], Yk, j)
-                lap = op.lap(Yk)
+                lap = op.lap_s(Yk)
                 rate = D * lap - adv + src
                 if c.turbulence:
-                    grad_Yk = op.grad(Yk)
+                    grad_Yk = op.grad_s(Yk)
                     acc = self._mu_sgs * lap
                     for j in range(nd):
                         acc = acc + self._grad_mu[j] * grad_Yk[j]
@@ -702,8 +708,13 @@ class Model:
         # every step. Scalars therefore use the bounded first-order form phi_0 = phi_1 (legacy: original).
         extrap = lambda a, b: (4 * a - b) / 3
         y[:nd, 0] = 0.0 if homogeneous else self.vel_bottom
-        for k in self.neumann:
-            y[k, 0] = extrap(y[k, 1], y[k, 2]) if legacy else y[k, 1]
+        # The ground row of the scalars is a half control volume next to an adiabatic, impermeable wall
+        # (face fluxes closed there, half-cell diffusion in Operators.grad_s / lap_s), so it evolves by
+        # its own equation. Overwriting it with row 1 discarded the sources in it (pyrolysis gas,
+        # combustion heat) and changed its density without any flux. Legacy and terrain: overwritten.
+        if legacy or self.has_terrain:
+            for k in self.neumann:
+                y[k, 0] = extrap(y[k, 1], y[k, 2]) if legacy else y[k, 1]
         for k in self.top_rows:
             y[k, -1] = extrap(y[k, -2], y[k, -3]) if (legacy or k < nd) else y[k, -2]
         if self.has_terrain:
@@ -794,6 +805,44 @@ class Model:
             div = div + op.half(y1[j], j)
         self.wall_divergence = float(((div - target) * self.near_wall).abs().max())
         return p
+
+    def _init_burner(self, grid, to):
+        """FDS-like ignition burner at the ground: fuel gas at hrrpua / H_C per unit area entering through
+        the ground face, i.e. a volume source hrrpua / (H_C dz/2) in the half cell of row 0, times the
+        ramp evaluated at the time since the point was lit, distance from the origin / spread_rate."""
+        c, nd = self.cfg, self.nd
+        if self.has_terrain:
+            raise NotImplementedError("ignition = burner supports flat ground only")
+        X = grid['Xm'][0]
+        inside = (X >= c.burner_x_start) & (X <= c.burner_x_end)
+        dist2 = (X - c.burner_x_origin) ** 2
+        if nd == 3:
+            Y = grid['Ym'][0]
+            inside &= (Y >= c.burner_y_start) & (Y <= c.burner_y_end)
+            dist2 = dist2 + (Y - c.burner_y_origin) ** 2
+        if not inside.any():
+            raise ValueError("the ignition burner covers no grid node")
+        delay = np.sqrt(dist2) / c.burner_spread_rate if c.burner_spread_rate > 0 else np.zeros_like(X)
+        points = sorted(tuple(float(v) for v in pair.split()) for pair in c.burner_ramp.split(','))
+        if any(len(pt) != 2 for pt in points) or len(points) < 2:
+            raise ValueError(f"[ignition] ramp: expected 'time fraction' pairs separated by commas, got '{c.burner_ramp}'")
+        coef = c.burner_hrrpua / c.H_C / (0.5 * self.h[-1]) * inside
+        return {'coef': to(coef), 'delay': to(delay), 'ramp': points}
+
+    def burner_rate(self):
+        """Fuel gas released by the burner in row 0, kg/(m^3 s). The piecewise-linear ramp is a sum of
+        clamped segments, so it needs no host synchronization (CUDA graphs)."""
+        b = self.burner
+        tau = self.t_t - b['delay']
+        frac = torch.full_like(tau, b['ramp'][0][1])
+        for (ta, fa), (tb, fb) in zip(b['ramp'], b['ramp'][1:]):
+            if tb > ta:
+                frac = frac + (fb - fa) * ((tau - ta) / (tb - ta)).clamp(0, 1)
+        return b['coef'] * frac
+
+    def set_time(self, t):
+        """Set the simulation time of the coming step (device tensor)."""
+        self.t_t.fill_(float(t))
 
     def set_dt(self, dt):
         """Set the time step (host float and device tensor)."""
@@ -972,7 +1021,7 @@ class Model:
                 has = (Y > c.fuel_threshold) | (y[nd + 3] > 0)
                 out['q_rad_fuel'] = c.alpha_s * c.sigma_s * Y / 4 * (self.G - 4 * c.sigma * y[nd + 2] ** 4) * has
         if c.turbulence:
-            self.sgs(y[:nd], T, rho, self.op.grad(T), self.op.lap(T))
+            self.sgs(y[:nd], T, rho, self.op.grad_s(T), self.op.lap_s(T))
             out['nu_t'] = self._mu_sgs / rho
         return out
 
