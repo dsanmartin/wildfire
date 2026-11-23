@@ -319,7 +319,11 @@ class Model:
             kappa_g = c.kappa_gas
             if not c.solid_temperature:   # one temperature: the fuel absorbs and emits at T as well
                 kappa_g = kappa_g + c.alpha_s * c.sigma_s * Y.clamp(min=0) / 4
-            out = (kap * lap_T + dkap * grad2) / rho_cp + kappa_g * (self.G - 4 * c.sigma * T ** 4) / rho_cp
+            if self.density_mode:     # conservative: the heating integrates to the boundary heat flux
+                cond = self.flux_diffusion(T, kap)
+            else:
+                cond = kap * lap_T + dkap * grad2
+            out = cond / rho_cp + kappa_g * (self.G - 4 * c.sigma * T ** 4) / rho_cp
         if c.solid_temperature:
             s = solid if solid is not None else self.solid_rates(y, rho)
             net = s['Q_comb'].clone()
@@ -359,6 +363,20 @@ class Model:
             out.append((self.force_target[i] - mean) / c.forcing_time * self.force_mask)
         return out
 
+    def flux_diffusion(self, phi, k):
+        """div(k grad phi) in conservative form: face fluxes k_f (phi_{i+1} - phi_i) / h with the arithmetic
+        face value of k, zero through closed faces (ground, buildings), and the face divergence of the
+        projection (half cell at the ground). The domain total changes only through the top faces."""
+        P, nd = self.face_proj, self.nd
+        if not torch.is_tensor(k):
+            k = torch.full_like(phi, k)
+        fluxes = []
+        for j in range(nd):
+            a = nd - 1 - j
+            kf = 0.5 * (k + P._shift(k, a, 1))
+            fluxes.append(kf * (P._shift(phi, a, 1) - phi) / self.h[j] * P.open[j])
+        return P.divergence(fluxes)
+
     def flux_advection(self, phi, F, divF):
         """u . grad(phi) in conservative form with the face fluxes F: div(F phi_face) - phi div(F),
         phi_face Koren-limited and upwinded with F. Exact for a uniform phi and conservative."""
@@ -389,7 +407,9 @@ class Model:
         T1 = y1[nd]
         grad_T1, lap_T1 = op.grad_s(T1), op.lap_s(T1)
         heating = self.heat(y1, rho1, grad_T1, lap_T1, solid1)
-        if c.dilatation == 'consistent' and c.turbulence and getattr(self, '_mu_sgs', None) is not None:
+        if c.dilatation == 'consistent' and c.turbulence and self.density_mode and getattr(self, '_mu_sgs', None) is not None:
+            heating = heating + self.flux_diffusion(T1, self._mu_sgs / c.Pr) / rho1
+        elif c.dilatation == 'consistent' and c.turbulence and getattr(self, '_mu_sgs', None) is not None:
             acc = self._mu_sgs * lap_T1
             for j in range(nd):
                 acc = acc + self._grad_mu[j] * grad_T1[j]
@@ -618,7 +638,12 @@ class Model:
         sgs_u, sgs_T = self.sgs(vel, T, rho, grad_T, lap_T) if c.turbulence else ([0.0] * nd, 0.0)
         # Viscous term of the dilatation: nu / 3 * grad(div u), with div u from the energy equation
         # (consistent: the whole heating rate of T, including the subgrid heat flux)
-        heating = heat - sgs_T if c.dilatation == 'consistent' else heat
+        if c.dilatation != 'consistent':
+            heating = heat
+        elif self.density_mode and c.turbulence:                  # subgrid heat flux, conservative form
+            heating = heat + self.flux_diffusion(T, self._mu_sgs / c.Pr) / rho
+        else:
+            heating = heat - sgs_T
         grad_div = None if c.density_constant else op.grad(self.dilatation(heating, rho, T, solid, y))
         out = torch.empty_like(y)
         face_mode = c.projection == 'face'
@@ -690,14 +715,10 @@ class Model:
                 for i_sp, src in ((nd + 4, src_F), (nd + 5, src_O)):
                     Yk = y[i_sp]
                     flux = [mflux[j] * face_values(F[j], Yk, nd - 1 - j, nd - 1 - j == 0) for j in range(nd)]
-                    lap = op.lap_s(Yk)
-                    drhoY = -self.face_proj.divergence(flux) + rho * D * lap + src
-                    if c.turbulence:
-                        grad_Yk = op.grad_s(Yk)
-                        acc = self._mu_sgs * lap
-                        for j in range(nd):
-                            acc = acc + self._grad_mu[j] * grad_Yk[j]
-                        drhoY = drhoY + acc / c.Pr
+                    # Molecular (rho D = kappa / c_p) plus subgrid (mu_t / Pr) diffusion in flux form, so
+                    # that it moves the species between cells without creating or destroying them
+                    k_Y = rho * D + self._mu_sgs / c.Pr if c.turbulence else rho * D
+                    drhoY = -self.face_proj.divergence(flux) + self.flux_diffusion(Yk, k_Y) + src
                     out[i_sp] = (drhoY - Yk * drho) / rho          # d(rho Y / rho)/dt
                     self._drhoY[i_sp] = drhoY
                 sources = {}
@@ -959,7 +980,8 @@ class Model:
             for i_sp, drhoY in self._drhoY.items():
                 y1[i_sp] = (rho0 * y[i_sp] + dt * drhoY) / rho1
         if c.solid_temperature:   # heat of combustion released this step (exact for Euler)
-            self.energy['combustion'] += self._last_omega.sum() * (c.H_C * dt * self.dV)
+            w = self._mass_w if self.mass is not None else 1.0    # cell volumes (half cell at the ground)
+            self.energy['combustion'] += (self._last_omega * w).sum() * (c.H_C * dt * self.dV)
         if self.mass is not None:  # mass budget: fluxes of the start of the step (exact for Euler)
             if self.density_mode:                                 # the mass flux of the transport
                 self.mass['outflow'] += self._mflux_top.sum() * (self.dA * dt)
@@ -1104,6 +1126,8 @@ class Model:
             hrr = rho * torch.minimum(y[nd + 4].clamp(min=0), y[nd + 5].clamp(min=0) / c.s_O2) * c.H_C / self.tau_mix
         else:
             hrr = rho * c.H_C * Y * self.reaction(T)
+        if self.mass is not None:                                 # cell volumes (half cell at the ground)
+            hrr = hrr * self._mass_w
         total = float(hrr.sum())
         T_flame = float((hrr * T).sum()) / total if total > 0 else float('nan')
         return total * self.dV, T_flame
