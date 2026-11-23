@@ -761,6 +761,36 @@ any name & -- & building box \code{x0, x1, height} (3D: \code{x0, x1, y0, y1, he
 \code{full\_dtype} & \code{float32} & precision of the snapshots \\
 \end{longtable}
 
+\subsection{Defaults and calibration policy}\label{sec:defaults}
+The defaults are of two kinds, and only the second is expected to change with test results.
+\begin{itemize}
+  \item \textbf{Fixed by physics, numerics or measurement.} The numerical choices (density transport,
+        consistent divergence, face projection, adaptive time step) are corrections verified by the mass
+        and energy budgets and the 2D/3D twin tests. The fuel description (\code{sigma\_s},
+        \code{alpha\_s}, \code{C\_d}, \code{rho\_bulk}, \code{moisture}, \code{Y\_h}) comes from FDS
+        Case F19 (Section~\ref{sec:fds-fuel}). The atmosphere setup (Monin--Obukhov profile, wind forcing,
+        log-law wall model) is standard practice and verified to hold the profile
+        (Section~\ref{sec:wall}). These are not calibration parameters.
+  \item \textbf{Placeholders to be calibrated.} The heat of combustion \code{H\_C} (the default
+        21~MJ\,kg$^{-1}$ predates the FDS fuel values; the FDS gas-phase equivalent is 13.1), the gas
+        absorption coefficient \code{kappa\_gas}, the mixing time \code{tau\_mix}, the filter width
+        \code{filter\_width}, and possibly the fuel heat capacity \code{c\_s} and the pyrolysis model
+        and range.
+\end{itemize}
+Policy for changing a default:
+\begin{enumerate}
+  \item Values found by calibration stay in the input files until they are validated; the F19
+        calibration writes them from \code{scripts/calibrate\_f19\_fds.sh}.
+  \item A calibrated value becomes a default only after it reproduces F19 and at least one other
+        experiment (for example the CSIRO grassland fire C064), so that the defaults are not fitted to a
+        single case.
+  \item Every change of a default is recorded in this document: the old and new values, the reason, and
+        the data it was tested against.
+  \item Earlier runs stay reproducible: each run stores its input file, all resolved parameters
+        (\code{config.json}) and a copy of the code, so a later change of a default does not change
+        what produced a result.
+\end{enumerate}
+
 %======================================================================
 \section{Known limitations and open issues}\label{sec:limitations}
 %======================================================================

@@ -184,7 +184,9 @@ Ignition: `[ignition] model = temperature` (default, the hot-gas patch of `[temp
 defaults from FDS Case_F19). The ground row of `T` and the species is a half cell next to an
 adiabatic wall (no longer copied from the row above).
 Values specific to a case (`[wind] L`, `u_r`, ambient temperature, ignition) and the calibration
-parameters (`H_C`, `kappa_gas`) stay in the input files. `--legacy` still reproduces `src_legacy/`
+parameters (`H_C`, `kappa_gas`) stay in the input files. Policy (see the docs, "Defaults and calibration policy"):
+calibrated values stay in the input files until they reproduce F19 and at least one other
+experiment; only then do they become defaults, and every change of a default is recorded in the docs. `--legacy` still reproduces `src_legacy/`
 exactly: it switches all of these back (power-law wind with `z_0 = 0.05` unless the file sets them).
 
 ## Turbulence filter width
