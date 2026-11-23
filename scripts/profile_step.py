@@ -37,6 +37,8 @@ def setup(cfg, slab, device, dtype, warm):
 def sync(device):
     if device.type == 'cuda':
         torch.cuda.synchronize()
+    elif device.type == 'mps':
+        torch.mps.synchronize()
 
 
 def main():
@@ -47,9 +49,10 @@ def main():
     ap.add_argument('--warm', type=int, default=5)
     ap.add_argument('--repeat', type=int, default=3)
     ap.add_argument('--no-graph', action='store_true')
+    ap.add_argument('--dtype', default=None, choices=['float64', 'float32'])
     args = ap.parse_args()
     cfg = load_config(args.parameters_file, sim_name='profile', save_path='./data/output/profile/',
-                      device=args.device)
+                      device=args.device, dtype=args.dtype)
     device, dtype = pick_device(cfg.device), getattr(torch, cfg.dtype)
     graphs = device.type == 'cuda' and not args.no_graph and cfg.projection == 'face'
     modes = [('direct', False)] + ([('graphs', True)] if graphs else [])
