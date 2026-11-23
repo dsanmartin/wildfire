@@ -535,6 +535,21 @@ for $F_{i+1/2}\ge0$ (mirrored otherwise). The scheme is third order where $\phi$
 back to first-order upwind at extrema. Momentum uses the same face fluxes in the advective form
 $\sum_j(F_{j,i+1/2}u_{i+1/2}-F_{j,i-1/2}u_{i-1/2})/h_j-u_iD_i$, exact for a uniform velocity.
 
+\paragraph{Diffusion of heat and species: conservative.}
+The molecular and subgrid diffusion of the species and the conduction that enters the heating rate
+$\dot q$ are written as differences of face fluxes,
+\begin{equation}
+  \nabla\cdot(k\nabla\phi)_i\approx\sum_j\frac{1}{h_j}\Big[k_{j,i+1/2}\,\frac{\phi_{i+1}-\phi_i}{h_j}-k_{j,i-1/2}\,\frac{\phi_i-\phi_{i-1}}{h_j}\Big],
+  \qquad k_{j,i+1/2}=\tfrac12(k_i+k_{i+1}),
+\end{equation}
+with zero flux through closed faces and the half cell at the ground, so that diffusion only moves heat
+and species between cells: $k=\kappa+c_p\mu_t/Pr$ for the heat and $\rho\mathcal D+\mu_t/Pr$ for the
+species. Since $\rho c_pT$ is constant, the integral of the expansion due to conduction then equals the
+heat flux through the top faces. The non-conservative form
+$\mu_t\nabla^2\phi+\nabla\mu_t\cdot\nabla\phi$ with central differences does not sum to zero over the
+domain: in a 2D fire it created about 20\% of the fuel gas, which kept burning after the grass was gone
+and doubled the heat released over 140~s, and a hot blob with no heat source expanded.
+
 \subsection{Time integration}
 Explicit. The time step is adaptive by default (\code{[numerics] cfl}, target 0.4): each step takes
 \begin{equation}
@@ -867,6 +882,11 @@ $Y_h=0.51$~m. Near the ground the power law is much stronger than the Monin--Obu
         hot blob in the wind with no combustion lost 6--10~kg\,m$^{-1}$ in 3~s, almost independently of
         the grid, and the mass residual of a fire with the burner reached 30\% of the outflow. The
         density is now transported instead (Section~\ref{sec:gas}).
+  \item \textbf{Non-conservative diffusion.} The subgrid diffusion
+        $\mu_t\nabla^2\phi+\nabla\mu_t\cdot\nabla\phi$ evaluated with central differences does not sum to
+        zero over the domain. In the F19 setup it created fuel gas (the heat released over 140~s was
+        twice the heat content of the fuel) and spurious expansion. Heat conduction and species
+        diffusion now use face fluxes (Section~\ref{sec:advection}).
   \item \textbf{Thermal expansion.} The original code divides the heating rate in K\,s$^{-1}$,
         $\dot q/(\rho c_p)$, once more by $\rho c_p T$, which makes the thermal expansion $\rho c_p$
         times too small (about 1000 in ambient air, 300 in the flame): the density of the heated gas
