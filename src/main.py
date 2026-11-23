@@ -142,6 +142,9 @@ def run(cfg, verbose=True):
     say(f"Simulation: {cfg.sim_name} ({nd}D), device: {device}, dtype: {cfg.dtype}, Poisson: {model.poisson.method}",
         f"Grid: {'x'.join(str(s) for s in model.shape)} (z, {'y, ' if nd == 3 else ''}x), "
         f"spacings (dx, {'dy, ' if nd == 3 else ''}dz): {model.h}, dt: {model.dt:.3e}, steps: {Nt}")
+    if model.k_fuel < model.shape[0]:
+        say(f"Fuel slab: rows 0-{model.k_fuel - 1} of {model.shape[0]} "
+            f"(z <= {float(model.Zm[model.k_fuel - 1].max()):.2f} m)")
     y = torch.as_tensor(grid['state'], dtype=dtype, device=device)
     if model.has_terrain and not cfg.legacy:
         model.apply_bc(y)

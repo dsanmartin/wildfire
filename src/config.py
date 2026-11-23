@@ -94,6 +94,7 @@ class Config:
     rad_every: int = 5              # time steps between radiation solves
     sink: str = 'surface'           # surface: top fuel node <-> gas node above; legacy: original term
     fuel_threshold: float = 1e-3    # Y above which a node counts as fuel for the surface exchange
+    fuel_slab: bool = True          # solid fuel terms and drag only on the rows that hold fuel
     T_advection: str = 'koren'      # koren (limited third order), upwind (second order), central (original)
     fuel_x_start: float = None      # optional horizontal extent of the fuel bed
     fuel_x_end: float = None
@@ -195,6 +196,7 @@ _KEYS = {
     ('planview', 'h_top'): ('h_top', float), ('planview', 'delta_bed'): ('delta_bed', float),
     ('output', 'full_interval'): ('full_interval', float), ('output', 'full_dtype'): ('full_dtype', str),
     ('fuel', 'pyrolysis'): ('pyrolysis', str), ('fuel', 'T_pyr'): ('T_pyr', float),
+    ('fuel', 'slab'): ('fuel_slab', bool),
     ('fuel', 'T_pyr_end'): ('T_pyr_end', float), ('combustion', 's_O2'): ('s_O2', float),
     ('combustion', 'tau_mix'): ('tau_mix', float), ('combustion', 'Y_O2_amb'): ('Y_O2_amb', float),
     ('temperature', 'T_inf'): ('T_inf', float), ('numerics', 'bound'): ('bound', bool),

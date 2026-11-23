@@ -576,10 +576,25 @@ CUDA graphs: the radiation solve, the prediction (right-hand side, provisional s
 chunk of \code{pcg\_chunk} PCG iterations replayed until the residual is below the tolerance (one host
 check per chunk), and the finalization (projection correction, boundary conditions, bounds, energy
 budget). The state, pressure, face fluxes, radiation field and time step live in persistent device
-buffers. Results differ from direct execution only by the coarser convergence check of the
-pressure solver (relative differences of about $10^{-12}$ in a CPU emulation). It requires the face
+buffers. Each step agrees with direct execution to roundoff: on an RTX 4090 the relative difference is
+$6\times10^{-15}$ after the first graph step and stays below $3\times10^{-13}$ over 200 steps
+(\code{scripts/graph\_check.py}), the remainder coming from the coarser convergence check of the
+pressure solver. Over a whole run these roundoff differences can flip threshold decisions at the fire
+front (ignition temperature, top fuel node, limiter), which leaves relative differences of order
+$10^{-4}$ in the fields; direct execution itself is bitwise reproducible. It requires the face
 projection and is not available with \code{t\_source} or \code{--legacy}; if the capture fails the
 run continues without graphs.
+
+\subsection{Fuel slab}
+The solid fuel variables $Y$, $T_s$ and $W$ are stored on the whole grid, but the fuel bed fills only
+a few rows of it (0.51\,m of a 20\,m domain in the F19 setup). Neither $Y$ nor $W$ is transported and
+both can only decrease, so no fuel ever appears above the highest row that holds fuel or moisture at
+$t=0$. The solid source terms (convection and radiation to the fuel, pyrolysis, evaporation, the rates
+of $Y$, $T_s$ and $W$, their mass source in the species and the divergence) and the drag are computed
+on the rows up to that one plus a spare row; above it they are zero. The gas-phase combustion of $Y_F$
+is computed everywhere, since it burns in the plume. The results are bitwise identical to computing on
+the whole grid, and the solid source terms cost about 1/8 as much. The slab is used by default
+(\code{[fuel] slab = False} turns it off) and never with \code{--legacy}.
 
 \subsection{Log diagnostics}
 Besides the extreme values, the log reports the total heat release rate and the gas temperature
@@ -643,6 +658,7 @@ $Pr$ & 0.7323 & Prandtl number (also turbulent) \\
 \code{[fuel] moisture} & 0 & moisture content (F19: 0.058) \\
 \code{[fuel] pyrolysis} & \code{linear} & \code{linear} or \code{arrhenius} \\
 \code{[fuel] T\_pyr, T\_pyr\_end} & 400 K, 500 K & pyrolysis range \\
+\code{[fuel] slab} & \code{True} & solid terms and drag on the fuel rows only (bitwise identical) \\
 $c_w$, $L_v$, $T_{boil}$ & 4184, $2.259\times10^6$, 373.15 & water properties (SI) \\
 \multicolumn{3}{l}{\emph{Combustion and radiation}}\\
 \code{[combustion] s\_O2} & 1.185 & oxygen per kg of fuel gas \\

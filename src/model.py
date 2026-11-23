@@ -92,6 +92,17 @@ class Model:
             dead_flat = np.flatnonzero(dead)
             self.dead_surface = idx(surface.reshape(-1)[dead_flat % row] * row + dead_flat % row)
         self._init_solids(grid, to)
+        # Fuel slab: rows 0..k_fuel-1 hold every node with fuel or moisture. Neither is transported and
+        # both only decrease, so no fuel ever appears above; the solid fuel terms and the drag are
+        # computed on this slab only (the fuel bed is a few percent of the domain height)
+        nz = self.shape[0]
+        self.k_fuel = nz
+        if cfg.fuel_slab and not cfg.legacy:
+            fuel0 = state0[nd + 1] > 0
+            if cfg.solid_temperature:
+                fuel0 = fuel0 | (state0[nd + 3] > 0)
+            rows = np.flatnonzero(fuel0.reshape(nz, -1).any(axis=1))
+            self.k_fuel = min(nz, int(rows.max()) + 2) if rows.size else 1    # one spare row
         # Face-based projection (default): discretely conservative face fluxes, also used for transport
         self.faces = None
         if cfg.projection == 'face':
@@ -293,7 +304,9 @@ class Model:
             out = (kap * lap_T + dkap * grad2) / rho_cp + kappa_g * (self.G - 4 * c.sigma * T ** 4) / rho_cp
         if c.solid_temperature:
             s = solid if solid is not None else self.solid_rates(y, rho)
-            return out + (s['Q_comb'] - s['Q_conv']) / rho_cp
+            net = s['Q_comb'].clone()
+            net[:s['k']] -= s['Q_conv']                           # fuel slab
+            return out + net / rho_cp
         return out + self.q(T, Y)
 
     def wall_stress(self, y):
@@ -339,8 +352,15 @@ class Model:
         """div(u) imposed by the low Mach number approximation: thermal expansion heat / (rho c_p T),
         plus the volume of gas produced by pyrolysis, mdot / rho."""
         out = heat / (self.cp(T, y) * rho * T)
-        if solid is not None:
-            out = out + solid['mdot'] / rho
+        if solid is not None:                                     # mdot: fuel slab only
+            k = solid['k']
+            out[:k] += solid['mdot'] / rho[:k]
+        return out
+
+    def slab_to_full(self, a):
+        """A field computed on the fuel slab, extended by zeros to the whole grid."""
+        out = torch.zeros(self.shape, dtype=a.dtype, device=a.device)
+        out[:a.shape[0]] = a
         return out
 
     def solid_rates(self, y, rho):
@@ -357,11 +377,15 @@ class Model:
           arrhenius: dY/dt = -Y_f A exp(-T_act / T_s) Y above T_pc, absorbing H_pyr J/kg.
         The pyrolysis gas Y_F burns with the oxygen Y_O2 at the mixing-limited rate
           omega = rho min(Y_F, Y_O2 / s_O2) / tau_mix  [kg fuel/(m^3 s)],  releasing H_C per kg."""
-        c, nd = self.cfg, self.nd
-        T, Y, T_s, W = y[nd], y[nd + 1].clamp(min=0), y[nd + 2], y[nd + 3].clamp(min=0)
+        c, nd, k = self.cfg, self.nd, self.k_fuel
+        # Gas-phase combustion: the whole domain (the fuel gas burns in the plume)
         Y_F, Y_O = y[nd + 4].clamp(min=0), y[nd + 5].clamp(min=0)
-        speed2 = y[0] ** 2
-        for u in y[1:nd]:
+        omega = rho * torch.minimum(Y_F, Y_O / c.s_O2) / self.tau_mix
+        # Solid fuel: the fuel slab only (rows 0..k-1); Q_conv, mdot, dY, dT_s and dW have k rows
+        ys, rho = y[:, :k], rho[:k]
+        T, Y, T_s, W = ys[nd], ys[nd + 1].clamp(min=0), ys[nd + 2], ys[nd + 3].clamp(min=0)
+        speed2 = ys[0] ** 2
+        for u in ys[1:nd]:
             speed2 = speed2 + u ** 2
         a = c.alpha_s * c.sigma_s * Y
         diameter = 4 / c.sigma_s
@@ -377,7 +401,7 @@ class Model:
                           c.h_c * torch.abs(dT) ** (1 / 3))
         has = (Y > c.fuel_threshold) | (W > 0)
         Q_conv = h * a * dT * has
-        Q_rad = (a / 4 * (self.G - 4 * c.sigma * T_s ** 4) * has) if c.radiation == 'transport' else 0.0
+        Q_rad = (a / 4 * (self.G[:k] - 4 * c.sigma * T_s ** 4) * has) if c.radiation == 'transport' else 0.0
         Q_in = Q_conv + Q_rad
         dry = (W <= 0) & (Y > c.fuel_threshold)
         if c.pyrolysis == 'linear':
@@ -391,8 +415,7 @@ class Model:
         dW = torch.where(evap, -Q_net.clamp(min=0) / (c.rho_bulk * c.L_v), torch.zeros_like(W))
         heat_capacity = (c.rho_bulk * (Y * c.c_s + W * c.c_w)).clamp(min=1e-30)
         dT_s = torch.where(evap, Q_net.clamp(max=0), Q_net) / heat_capacity * has
-        omega = rho * torch.minimum(Y_F, Y_O / c.s_O2) / self.tau_mix
-        return {'Q_conv': Q_conv, 'Q_comb': omega * c.H_C, 'dY': -mdot / c.rho_bulk, 'dT_s': dT_s,
+        return {'k': k,'Q_conv': Q_conv, 'Q_comb': omega * c.H_C, 'dY': -mdot / c.rho_bulk, 'dT_s': dT_s,
                 'dW': dW, 'mdot': mdot, 'omega': omega}
 
     def update_radiation(self, y):
@@ -535,7 +558,8 @@ class Model:
         speed2 = vel[0] ** 2
         for u in vel[1:]:
             speed2 = speed2 + u ** 2
-        drag = 0.5 * c.C_d * c.alpha_s * c.sigma_s * Y * torch.sqrt(speed2)
+        k = self.k_fuel                                               # drag: fuel slab only
+        drag = 0.5 * c.C_d * c.alpha_s * c.sigma_s * Y[:k] * torch.sqrt(speed2[:k])
         buoyancy = (rho - c.rho_inf) / rho
         # Viscous term of the dilatation: nu / 3 * grad(div u), with div u from the energy equation
         grad_div = None if c.density_constant else op.grad(self.dilatation(heat, rho, T, solid, y))
@@ -555,7 +579,8 @@ class Model:
                 conv = op.upwind(vel[0], vel[i], 0)
                 for j in range(1, nd):
                     conv = conv + op.upwind(vel[j], vel[i], j)
-            force = self.gravity[i] * buoyancy - drag * vel[i]
+            force = self.gravity[i] * buoyancy                       # a new tensor
+            force[:k] -= drag * vel[i][:k]
             if grad_div is not None:
                 force = force + nu * grad_div[i] / 3
             if forcing is not None:
@@ -577,17 +602,20 @@ class Model:
                 adv = adv + scheme(vel[j], T, j)
         out[nd] = heat - adv - sgs_T
         if solid is not None:
-            out[nd + 1], out[nd + 2], out[nd + 3] = solid['dY'], solid['dT_s'], solid['dW']
+            out[nd + 1:nd + 4, k:] = 0.0                              # above the fuel slab
+            out[nd + 1, :k], out[nd + 2, :k], out[nd + 3, :k] = solid['dY'], solid['dT_s'], solid['dW']
             # Fuel gas and oxygen: transported like T (same scheme, unit Lewis number, turbulent
             # Schmidt number = Pr), produced by pyrolysis and consumed by combustion
             scheme = op.limited if c.T_advection == 'koren' else op.upwind
             D = self.conductivity(T)[0] / (rho * self.cp(T, y))
             # The pyrolysis gas is added mass: it brings fuel gas and dilutes what is already there
-            mdot, omega = solid['mdot'], solid['omega']
-            sources = {nd + 4: (mdot * (1 - y[nd + 4]) - omega) / rho,
-                       nd + 5: -(c.s_O2 * omega + mdot * y[nd + 5]) / rho}
-            for k, src in sources.items():
-                Yk = y[k]
+            mdot, omega = solid['mdot'], solid['omega']               # mdot: fuel slab only
+            num_F, num_O = -omega, c.s_O2 * omega
+            num_F[:k] += mdot * (1 - y[nd + 4, :k])
+            num_O[:k] += mdot * y[nd + 5, :k]
+            sources = {nd + 4: num_F / rho, nd + 5: -num_O / rho}
+            for i_sp, src in sources.items():
+                Yk = y[i_sp]
                 if face_mode:
                     adv = self.flux_advection(Yk, F, divF)
                 else:
@@ -602,7 +630,7 @@ class Model:
                     for j in range(nd):
                         acc = acc + self._grad_mu[j] * grad_Yk[j]
                     rate = rate + acc / (c.Pr * rho)
-                out[k] = rate
+                out[i_sp] = rate
         else:
             out[nd + 1] = -c.Y_f * self.reaction(T) * Y
         self.apply_bc(out, homogeneous=True)
@@ -808,8 +836,10 @@ class Model:
             y1[nd + 3].clamp_(min=0)
             y1[nd + 4:nd + 6].clamp_(0, 1)
             # Where the fuel is gone the solid temperature has no meaning: it follows the gas
-            has = (y1[nd + 1] > c.fuel_threshold) | (y1[nd + 3] > 0)
-            y1[nd + 2] = torch.where(has, y1[nd + 2], y1[nd])
+            k = self.k_fuel
+            has = (y1[nd + 1, :k] > c.fuel_threshold) | (y1[nd + 3, :k] > 0)
+            y1[nd + 2, :k] = torch.where(has, y1[nd + 2, :k], y1[nd, :k])
+            y1[nd + 2, k:] = y1[nd, k:]                           # no fuel above the slab
             if c.bound:
                 y1[nd + 2].clamp_(c.T_min, c.T_max)
         # Heat released per unit decrease of Y: rho_bulk H_C [J/m^3] with the solid model; in the
@@ -879,7 +909,8 @@ class Model:
             self.update_radiation(y)
         if c.solid_temperature:
             s = self.solid_rates(y, rho)
-            out['HRR'], out['pyrolysis'], out['Q_conv'] = s['Q_comb'], s['mdot'], s['Q_conv']
+            out['HRR'] = s['Q_comb']
+            out['pyrolysis'], out['Q_conv'] = self.slab_to_full(s['mdot']), self.slab_to_full(s['Q_conv'])
         else:
             out['HRR'] = rho * c.H_C * Y * self.reaction(T)
         if c.radiation == 'transport':
