@@ -193,7 +193,7 @@ def run(cfg, verbose=True):
                     f"({ratio('fuel_overshoot', E)}), clip low {E['clip_low']:.4g} ({ratio('clip_low', E)}), "
                     f"clip high {E['clip_high']:.4g} ({ratio('clip_high', E)})",
                     f"Energy since last output: clip low {ratio('clip_low', dE)}, fuel overshoot {ratio('fuel_overshoot', dE)} "
-                    f"of combustion")
+                    f"of combustion", "")
                 for key in E:
                     energy[key].append(E[key])
                 if not np.isfinite(T_max):

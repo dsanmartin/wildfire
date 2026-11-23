@@ -180,7 +180,7 @@ def run_planview(cfg, device, dtype, verbose=True):
                     f"{float(((Y < 0.5) & had_fuel).sum()) * model.h[0] * model.h[1]:.0f} m^2",
                     f"Energy since start [kJ]: combustion {E['combustion']:.4g}, clip low {E['clip_low']:.4g}, "
                     f"clip high {E['clip_high']:.4g}",
-                    f"mean step time: {(now - last) / ((n % NT) + 1):.6f} s")
+                    f"mean step time: {(now - last) / ((n % NT) + 1):.6f} s", "")
                 last = now
                 if not np.isfinite(float(T.max())):
                     say("Non-finite temperature: stopping")
