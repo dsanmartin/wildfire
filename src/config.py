@@ -143,6 +143,7 @@ class Config:
     log_solver: bool = False
     poisson: str = 'auto'               # auto, thomas, eig (nodal projection)
     projection: str = 'face'            # face: discretely conservative face fluxes; nodal: original projection
+    dilatation: str = 'consistent'      # consistent: div u = (1/T) DT/Dt; published: divided again by rho c_p
     # Reproduce the original src_legacy/ code, defects included (see README of this folder)
     legacy: bool = False
     # Buildings (immersed solids): boxes standing on the ground, (x0, x1, height) in 2D and
@@ -217,6 +218,7 @@ _KEYS = {
     ('pressure', 'tol'): ('tol', float), ('pressure', 'max_iter'): ('max_iter', int),
     ('pressure', 'log_solver'): ('log_solver', bool), ('pressure', 'poisson'): ('poisson', str),
     ('pressure', 'wall_iterations'): ('wall_iterations', int), ('pressure', 'projection'): ('projection', str),
+    ('pressure', 'dilatation'): ('dilatation', str),
     ('density', 'constant'): ('density_constant', bool),
     ('turbulence', 'enabled'): ('turbulence', bool), ('turbulence', 'C_s'): ('C_s', float),
     ('turbulence', 'filter_width'): ('filter_width', float),
@@ -279,13 +281,15 @@ def load_config(path: str, **overrides) -> Config:
         cfg.reaction, cfg.sink, cfg.T_advection = 'explicit', 'legacy', 'central'
         cfg.solid_temperature, cfg.radiation, cfg.projection, cfg.cp_model = False, 'diffusion', 'nodal', 'constant'
         cfg.transport, cfg.cfl, cfg.forcing, cfg.wall_model = 'constant', 0.0, 'none', 'none'
+        cfg.dilatation = 'published'
     for key, allowed in (('reaction', ('exact', 'explicit')), ('sink', ('surface', 'legacy')),
                          ('T_advection', ('upwind', 'koren', 'central')),
                          ('radiation', ('transport', 'diffusion')), ('pyrolysis', ('linear', 'arrhenius')),
                          ('model', ('vertical', 'planview')), ('projection', ('face', 'nodal')),
                          ('cp_model', ('constant', 'variable', 'mixture')), ('transport', ('constant', 'sutherland')),
                          ('initial_u_type', ('power law', 'log', 'constant', 'monin-obukhov')),
-                         ('forcing', ('none', 'profile')), ('wall_model', ('none', 'log'))):
+                         ('forcing', ('none', 'profile')), ('wall_model', ('none', 'log')),
+                         ('dilatation', ('consistent', 'published'))):
         if getattr(cfg, key) not in allowed:
             raise ValueError(f"{key} must be one of {allowed}, got '{getattr(cfg, key)}'")
     return cfg

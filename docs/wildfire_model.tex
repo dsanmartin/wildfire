@@ -88,7 +88,19 @@ on the velocity divergence:
   \nabla\cdot\vu = D \equiv \frac{\dot q}{\rho c_p T} + \frac{\dot m'''}{\rho},
 \end{equation}
 where $\dot q$ (W\,m$^{-3}$) is the net heating of the gas (all terms of the energy equation except
-advection) and $\dot m'''$ (kg\,m$^{-3}$\,s$^{-1}$) the gas produced by pyrolysis (extended model).
+advection, including the subgrid heat flux) and $\dot m'''$ (kg\,m$^{-3}$\,s$^{-1}$) the gas produced
+by pyrolysis (extended model). Since the temperature equation is solved in K\,s$^{-1}$, the code
+evaluates the first term as $(1/T)\,\dot q/(\rho c_p)$, the relative heating rate.
+
+\paragraph{Correction to the published model.} The original code (and \code{--legacy}) divides the
+heating rate in K\,s$^{-1}$, $\dot q/(\rho c_p)$, once more by $\rho c_p T$. This makes the thermal
+expansion $\rho c_p$ times too small (about 1000 in ambient air, 300 in the flame): the density of the
+heated gas falls as $1/T$, but its volume barely grows, so its mass is not conserved. The mass budget
+(Section~\ref{sec:mass-budget}) showed it: in a 2D fire the domain lost 50--70\% more mass than left
+through the top. With the consistent divergence, the default (\code{[pressure] dilatation =
+consistent}), the outflow is 2.5 times larger and the budget closes to a few percent, a first-order
+truncation error at the flame front that halves when the grid is refined. \code{dilatation =
+published} restores the original term.
 
 \subsection{Momentum}
 \begin{equation}\label{eq:momentum}
@@ -596,7 +608,7 @@ is computed everywhere, since it burns in the plume. The results are bitwise ide
 the whole grid, and the solid source terms cost about 1/8 as much. The slab is used by default
 (\code{[fuel] slab = False} turns it off) and never with \code{--legacy}.
 
-\subsection{Mass budget}
+\subsection{Mass budget}\label{sec:mass-budget}
 The density is not transported: it follows from the temperature, $\rho=\rho_\infty T_\infty/T$, and
 mass enters through the divergence constraint. Continuity therefore holds only as far as the
 constraint is consistent with the energy equation, and only to truncation error. With the face
@@ -648,6 +660,7 @@ Key & Default & Meaning \\
 \code{[pressure] tol, max\_iter} & $10^{-10}$, 50 & fixed point of the pressure \\
 \code{[pressure] poisson} & \code{auto} & \code{auto}, \code{thomas}, \code{eig} (nodal projection) \\
 \code{[pressure] projection} & \code{face} & \code{face} or \code{nodal} \\
+\code{[pressure] dilatation} & \code{consistent} & \code{consistent} or \code{published} (Sec.~\ref{sec:mass-budget}) \\
 \code{[buildings]} \code{name} & -- & building box (see Section~\ref{sec:ibc}) \\
 \code{[density] constant} & \code{False} & constant density (incompressible) \\
 \multicolumn{3}{l}{\emph{Gas and turbulence}}\\

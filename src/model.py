@@ -359,13 +359,34 @@ class Model:
         return self.face_proj.divergence(fluxes) - phi * divF
 
     def dilatation(self, heat, rho, T, solid, y=None):
-        """div(u) imposed by the low Mach number approximation: thermal expansion heat / (rho c_p T),
-        plus the volume of gas produced by pyrolysis, mdot / rho."""
-        out = heat / (self.cp(T, y) * rho * T)
+        """div(u) imposed by the low Mach number approximation, plus the volume of gas produced by
+        pyrolysis, mdot / rho. heat is the gas heating rate in K/s (molecular and subgrid conduction,
+        radiation, combustion, exchange with the fuel). With rho T constant, continuity gives the
+        thermal expansion (1/T) DT/Dt = heat / T (consistent). The published model divides this
+        again by rho c_p (published, kept for --legacy), which makes the expansion 300-1000 times
+        too small, so the mass of the heated gas is not conserved."""
+        if self.cfg.dilatation == 'published':
+            out = heat / (self.cp(T, y) * rho * T)
+        else:
+            out = heat / T
         if solid is not None:                                     # mdot: fuel slab only
             k = solid['k']
             out[:k] += solid['mdot'] / rho[:k]
         return out
+
+    def target_divergence(self, y1, rho1, solid1):
+        """div(u^{n+1}) from the provisional state. The subgrid heat flux uses the eddy viscosity of the
+        last right-hand side evaluation (the one of this step), so the strain rate is not recomputed."""
+        c, op, nd = self.cfg, self.op, self.nd
+        T1 = y1[nd]
+        grad_T1, lap_T1 = op.grad(T1), op.lap(T1)
+        heating = self.heat(y1, rho1, grad_T1, lap_T1, solid1)
+        if c.dilatation == 'consistent' and c.turbulence and getattr(self, '_mu_sgs', None) is not None:
+            acc = self._mu_sgs * lap_T1
+            for j in range(nd):
+                acc = acc + self._grad_mu[j] * grad_T1[j]
+            heating = heating + acc / (c.Pr * rho1)
+        return self.dilatation(heating, rho1, T1, solid1, y1)
 
     def mass_total(self, y):
         """Gas mass in the control volume of the mass budget, kg (kg/m in 2D)."""
@@ -583,9 +604,11 @@ class Model:
         k = self.k_fuel                                               # drag: fuel slab only
         drag = 0.5 * c.C_d * c.alpha_s * c.sigma_s * Y[:k] * torch.sqrt(speed2[:k])
         buoyancy = (rho - c.rho_inf) / rho
-        # Viscous term of the dilatation: nu / 3 * grad(div u), with div u from the energy equation
-        grad_div = None if c.density_constant else op.grad(self.dilatation(heat, rho, T, solid, y))
         sgs_u, sgs_T = self.sgs(vel, T, rho, grad_T, lap_T) if c.turbulence else ([0.0] * nd, 0.0)
+        # Viscous term of the dilatation: nu / 3 * grad(div u), with div u from the energy equation
+        # (consistent: the whole heating rate of T, including the subgrid heat flux)
+        heating = heat - sgs_T if c.dilatation == 'consistent' else heat
+        grad_div = None if c.density_constant else op.grad(self.dilatation(heating, rho, T, solid, y))
         out = torch.empty_like(y)
         face_mode = c.projection == 'face'
         if face_mode:
@@ -723,7 +746,7 @@ class Model:
             # Low Mach number: div(u^{n+1}) is prescribed by the energy equation
             rho1 = self.rho(T1)
             solid1 = self.solid_rates(y1, rho1) if c.solid_temperature else None
-            target = self.dilatation(self.heat(y1, rho1, op.grad(T1), op.lap(T1), solid1), rho1, T1, solid1, y1)
+            target = self.target_divergence(y1, rho1, solid1)
             f0 = rho_n / dt * (div - target)
             grad_rho = [g / rho_n for g in op.grad_half(rho_n)]
             # Fixed point on the variable-coefficient term grad(rho) . grad(p) / rho
@@ -786,7 +809,7 @@ class Model:
         else:
             rho1 = self.rho(T1)
             solid1 = self.solid_rates(y1, rho1) if c.solid_temperature else None
-            target = self.dilatation(self.heat(y1, rho1, op.grad(T1), op.lap(T1), solid1), rho1, T1, solid1, y1)
+            target = self.target_divergence(y1, rho1, solid1)
         if self._target is None:
             self._target = target.clone()
         else:
