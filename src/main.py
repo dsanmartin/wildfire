@@ -215,7 +215,9 @@ def run(cfg, verbose=True):
                     *([f"Max divergence error next to buildings: {model.wall_divergence:.3e} 1/s"]
                       if getattr(model, 'has_solids', False) else []),
                     f"Pressure iterations: {model.pressure_iterations}, "
-                    f"mean step time: {(now - last) / steps_since:.6f} s")
+                    f"mean step time: {(now - last) / steps_since:.6f} s"
+                    + (f", GPU memory peak {torch.cuda.max_memory_allocated(device) / 2**30:.1f} GiB"
+                       if device.type == 'cuda' else ""))
                 last, steps_since = now, 0
                 dt_min_seen, dt_max_seen = np.inf, 0.0
                 E = {key: float(v) / 1e3 for key, v in model.energy.items()}
