@@ -331,10 +331,29 @@ velocity at each height toward the initial profile,
 where the overbar is the average over the fluid nodes of a horizontal plane and $\tau_f$ is
 \code{forcing\_time} (default 1~s). The force is uniform in the horizontal, so it does not distort
 the local flow around the fire; with a large domain the fire changes the plane averages only
-slightly. In the test above, $\tau_f=0.5$~s held the wind at 2~m and above within 1\%, but the
-lowest cells still lost 18--25\%: on coarse grids the no-slip ground overestimates the wall friction.
-A log-law wall model (wall stress from the first-cell velocity and $z_0$, as in FDS) would remove
-this remaining deficit and is not yet implemented.
+slightly. In the test above, $\tau_f=0.5$~s held the wind at 2~m and above within 1\%, but with a
+no-slip ground the lowest cells still lost 18--25\%: on coarse grids the no-slip condition
+overestimates the wall friction. The wall model below removes this deficit.
+
+\subsection{Wall model}
+With \code{[wall] model = log} the no-slip condition at the ground (and on terrain surfaces) is
+replaced by a wall-stress model. The friction velocity follows from the log law at the first node
+above the ground, at height $z_1$, with the horizontal velocity $\mathbf{u}_1$:
+\begin{equation}
+  u_\tau = \frac{\kappa\,|\mathbf{u}_1|}{\ln(z_1/z_0) - \psi_m(z_1/L) + \psi_m(z_0/L)},
+\end{equation}
+with the stability function of the wind profile when an Obukhov length is given, and the roughness
+length $z_0$ (\code{[wall] z\_0}, default the wind's \code{z\_0}). The tangential velocity at the wall
+is set equal to that of the first node, so the resolved stress at the wall vanishes, the vertical
+velocity at the wall is zero, and the wall stress enters as a momentum sink in the first cell,
+$-u_\tau^2\,u_i/|\mathbf{u}_1|/\Delta z$. The Van Driest damping of the turbulence model uses the modeled
+$u_\tau$. Building walls keep the no-slip condition.
+
+Verification (no fire, Monin--Obukhov profile of the F19 case, 4.7~m~$\times$~0.31~m grid, 60~s):
+with the wall model and forcing ($\tau_f=1$~s) the horizontal-mean wind at 0.3, 0.6, 2 and 10~m
+was 2.68, 3.51, 4.79 and 6.72~m\,s$^{-1}$, against the initial 2.74, 3.55, 4.83 and 6.72 (within 2\%),
+and the modeled friction velocity was about 0.47~m\,s$^{-1}$, against 0.48 for the profile. With
+no-slip and the same forcing the lowest values were 1.85 and 2.60; with neither, 0.56 and 0.76.
 
 \subsection{Buildings}
 Buildings are boxes standing on the ground, defined in the \code{[buildings]} section, one per key:
@@ -625,6 +644,7 @@ $c_w$, $L_v$, $T_{boil}$ & 4184, $2.259\times10^6$, 373.15 & water properties (S
 \code{[wind] u\_r, z\_r, shape} & 4.8 m\,s$^{-1}$, 2 m, power law & reference wind and profile \\
 \code{[wind] z\_0, L} & 0.05 m, neutral & roughness and Obukhov length (\code{monin-obukhov}) \\
 \code{[wind] forcing, forcing\_time} & \code{none}, 1 s & wind forcing (\code{profile}) and its relaxation time \\
+\code{[wall] model, z\_0} & \code{none}, wind $z_0$ & ground wall model (\code{log}) and its roughness \\
 \code{[temperature] T\_hot, shape} & 788.15 K, \code{gaussian} & ignition temperature and shape \\
 \code{[temperature] x\_start}\dots\code{z\_end} & 0, 6, -, -, 0, 1 m & ignition extent \\
 \code{[temperature] t\_source} & $-1$ (off) & sustained source until this time \\
@@ -649,8 +669,9 @@ $c_w$, $L_v$, $T_{boil}$ & 4184, $2.259\times10^6$, 373.15 & water properties (S
   \item Water vapor from drying and combustion products are not transported.
   \item The ignition is a hot-gas pulse at $t=0$, not the timed burner of the FDS F19 setup.
   \item Periodic horizontal boundaries instead of open ones; without \code{[wind] forcing} the
-        near-ground wind decays during a run (Section~\ref{sec:ibc}). No wall model: the no-slip ground
-        overestimates the friction on coarse grids.
+        near-ground wind decays during a run, and without the wall model the no-slip ground
+        overestimates the friction on coarse grids (Section~\ref{sec:ibc}). Building walls have no
+        wall model.
   \item The intermittent activity of the lower temperature bound seen on the 1.17~m F19 grid was
         traced to the second-order zero-gradient condition at the ground (Section~\ref{sec:ibc}) and
         fixed: over the first 5~s of that case the energy added by the bound fell from 16\% to 1.6\% of

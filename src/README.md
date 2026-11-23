@@ -167,7 +167,9 @@ python src/firefront.py data/output/RUN1 data/output/RUN2 --obs f19_front.csv --
 similarity profile used by FDS (Case F19: `u_r = 4.9`, `z_r = 2`, `z_0 = 0.03`, `L = -500`).
 In a periodic domain the near-ground wind decays without forcing: `[wind] forcing = profile`
 (relaxation time `forcing_time`, default 1 s) nudges the horizontal-mean wind at each height back
-to the initial profile. Details in `docs/wildfire_model.tex`.
+to the initial profile. `[wall] model = log` replaces the no-slip ground by a log-law wall model
+(roughness `[wall] z_0`, default the wind's `z_0`); with both, the profile holds within about 2%.
+Details in `docs/wildfire_model.tex`.
 
 ## Turbulence filter width
 

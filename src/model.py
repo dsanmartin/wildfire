@@ -95,6 +95,25 @@ class Model:
             self.face_proj = FaceProjection(self.shape, self.h, device, dtype,
                                             grid['solid'] if self.has_solids else None)
         self.max_divergence = 0.0
+        # Log-law wall model at the ground (flat ground: row 0; terrain: the cut node of each column)
+        if cfg.wall_model == 'log':
+            from setup import psi_m
+            H = int(np.prod(self.shape[1:]))
+            if self.has_terrain:
+                W, U = np.flatnonzero(grid['cut']), np.flatnonzero(grid['cut']) + H
+                cols = W % H
+            else:
+                W, U, cols = np.arange(H), np.arange(H) + H, np.arange(H)
+            z1 = grid['Zm'].reshape(-1)[U] - grid['ground'].reshape(-1)[cols]   # height of the first node
+            z0 = cfg.wall_z0 if cfg.wall_z0 else cfg.u_z_0
+            denom = np.log(np.maximum(z1 / z0, np.e))
+            if cfg.L_obukhov:
+                denom = denom - psi_m(z1 / cfg.L_obukhov) + psi_m(z0 / cfg.L_obukhov)
+            lidx = lambda a: torch.as_tensor(a, dtype=torch.long, device=device)
+            self.wall_W, self.wall_U, self.wall_cols = lidx(W), lidx(U), lidx(cols)
+            self.wall_coef = to(cfg.von_karman / denom)               # u_tau = coef |u_1|
+            self.wall_dz = self.h[-1]
+            self._u_tau_wall = None
         # Wind forcing (periodic domains): target = horizontal mean of the initial velocity at each height
         if cfg.forcing == 'profile':
             hdims = tuple(range(1, nd))
@@ -270,6 +289,22 @@ class Model:
             s = solid if solid is not None else self.solid_rates(y, rho)
             return out + (s['Q_comb'] - s['Q_conv']) / rho_cp
         return out + self.q(T, Y)
+
+    def wall_stress(self, y):
+        """Log-law wall model. u_tau = kappa |u_1| / [ln(z_1/z_0) - psi_m(z_1/L) + psi_m(z_0/L)] from the
+        horizontal velocity u_1 of the first node above the ground (height z_1). Returns, for each
+        horizontal component, the momentum sink -u_tau^2 u_i / |u_1| / dz to add at those nodes, and
+        stores u_tau per column for the Van Driest damping."""
+        nd = self.nd
+        flat = y.view(y.shape[0], -1)
+        uh = torch.sqrt(sum(flat[i, self.wall_U] ** 2 for i in range(nd - 1)))
+        u_tau = self.wall_coef * uh
+        H = int(np.prod(self.shape[1:]))
+        cols = torch.zeros(H, dtype=y.dtype, device=y.device)
+        cols[self.wall_cols] = u_tau
+        self._u_tau_wall = cols.view(self.shape[1:])
+        scale = -(u_tau ** 2) / uh.clamp(min=1e-12) / self.wall_dz
+        return [scale * flat[i, self.wall_U] for i in range(nd - 1)]
 
     def wind_forcing(self, vel):
         """Body force that relaxes the horizontal-mean velocity at each height toward the initial
@@ -450,6 +485,8 @@ class Model:
         mu_wall = at_wall(mu) if torch.is_tensor(mu) else mu
         tau_w = mu_wall * torch.sqrt(tau2) + 1e-16
         u_tau = torch.sqrt(tau_w / rho)
+        if c.wall_model == 'log' and self._u_tau_wall is not None:   # modeled friction velocity
+            u_tau = self._u_tau_wall
         z_plus = self.wall_distance * rho * u_tau / mu
         fw = 1 - torch.exp(-z_plus / 26)
         mu_sgs = rho * (c.C_s * self.Delta * fw) ** 2 * mod_S
@@ -492,6 +529,7 @@ class Model:
             divF = self.face_proj.divergence(F)
             self._F, self._divF = F, divF
         forcing = self.wind_forcing(vel) if c.forcing == 'profile' else None
+        wall_drag = self.wall_stress(y) if c.wall_model == 'log' else None
         for i in range(nd):
             if face_mode:
                 conv = self.flux_advection(vel[i], F, divF)
@@ -505,6 +543,9 @@ class Model:
             if forcing is not None:
                 force = force + forcing[i]
             out[i] = nu * op.lap(vel[i]) - conv + force - sgs_u[i]
+        if wall_drag is not None:   # wall stress as a momentum sink in the first cell above the ground
+            for i in range(nd - 1):
+                out[i].view(-1).index_add_(0, self.wall_U, wall_drag[i])
         if face_mode:
             adv = self.flux_advection(T, F, divF)
         elif c.T_advection == 'central':   # original: oscillates at the fire front (cell Peclet number >> 1)
@@ -582,6 +623,13 @@ class Model:
             flat[:, self.dead] = 0.0 if homogeneous else self.dead_values
             if not self.cfg.legacy:
                 flat[nd, self.dead] = flat[nd, self.dead_surface]
+        if self.cfg.wall_model == 'log':
+            # Wall model: tangential velocity at the wall copied from the first node (the resolved stress
+            # vanishes there; the wall stress is applied as a sink instead), no flow through the wall
+            flat = y.view(y.shape[0], -1)
+            for i in range(nd - 1):
+                flat[i, self.wall_W] = flat[i, self.wall_U]
+            flat[nd - 1, self.wall_W] = 0.0
         if self.has_solids:
             self.apply_solids(y, homogeneous)
         return y
