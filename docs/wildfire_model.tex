@@ -676,6 +676,21 @@ temperature bounds add ($\rho c_\text{p}\Delta T$ summed over the clipped nodes)
 reported against the heat of combustion (\code{E\_clip\_low}, \code{E\_clip\_high},
 \code{E\_combustion}); it is normally negligible.
 
+\subsection{Precision}
+Computations run in double precision by default (\code{--dtype float64}). Single precision
+(\code{--dtype float32}) halves the memory and, on consumer GPUs whose double-precision throughput is a
+small fraction of the single-precision one, runs much faster: on an RTX 4090 the 3D F19 step went from
+872 to 374~ms (the pressure solve from 106 to 22~ms) and the memory from 16.9 to 8.8~GiB. The pressure
+solver tolerance must then be relaxed (\code{[pressure] tol = 1e-6}; $10^{-10}$ is below single precision).
+Two consequences are handled explicitly. (i) $T=\rho_\infty T_\infty/\rho$ of ambient air scatters by about
+$10^{-7}$ relative around $T_\infty$; clipping every undershoot at the lower bound, in every ambient node at
+every step, added a spurious 3--7\% of the combustion heat, so in single precision temperatures are
+clipped only when they are more than $10^{-4}T_\text{min}$ below the bound (zero tolerance in double
+precision). (ii) The energy and mass budgets are accumulated and summed in double precision in every
+run. What remains is the rounding of the state: single precision conserves mass to about $10^{-5}$ of the
+domain mass, against round-off in double precision. In a 100~s 2D F19 run the head-fire positions agreed
+with double precision within 1~m and the heat released within 0.4\%.
+
 \subsection{Fuel slab}
 The solid fuel variables $Y$, $T_\text{s}$ and $W$ are stored on the whole grid, but the fuel bed fills only
 a few rows of it (0.49\,m of a 20\,m domain in the F19 setup). Neither $Y$ nor $W$ is transported and
@@ -772,7 +787,7 @@ Key & Default & Meaning \\
 \code{T\_advection} & \code{koren} & \code{koren} or \code{upwind} (without face fluxes) \\
 \code{bound} & \code{True} & apply the bounds of the solution \\
 \psec{pressure}
-\code{tol}, \code{max\_iter} & $10^{-10}$, 50 & pressure solver tolerance and iterations \\
+\code{tol}, \code{max\_iter} & $10^{-10}$, 50 & pressure solver tolerance (single precision: $10^{-6}$) and iterations \\
 \psec{density}
 \code{constant} & \code{False} & constant density (incompressible) \\
 \psec{buildings}

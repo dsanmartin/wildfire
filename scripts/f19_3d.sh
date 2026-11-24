@@ -13,6 +13,10 @@
 # Fuel: FDS Arrhenius pyrolysis (A = 1040 1/s, E = 61 kJ/mol: T_act = 7342 K, no threshold) and the FDS
 # fuel heat capacity ramp (1100 -> 2000 J/(kg K) from 0 to 200 C); in 2D these halved the spread rate
 # (4.8 -> 2.3 m/s, scripts/calibrate_f19_pyro.sh).
+# Speed: float32 (--dtype float32, pressure solver tolerance 1e-6) and radiation angle increment 4 (each
+# update solves a quarter of the directions): about 3 times faster than float64 with the full radiation
+# (profile: 870 -> ~290 ms per step, memory 17 -> 9 GiB). In 2D both left the front position (within 1 m)
+# and the heat released (0.4%) unchanged; float32 conserves mass to ~1e-5 of the domain mass.
 # Adaptive time step (CFL 0.4, at most 5 ms). Case: H_C = 13.1 MJ/kg (FDS
 # gas-phase equivalent), kappa_gas = 0.1 1/m, ambient 34 C, F19 wind (4.9 m/s at 2 m, L = -500 m), grid-based
 # filter width ((dx dy dz)^(1/3) = 0.58 m; a fixed 0.30 m would be far below the horizontal spacing).
@@ -44,6 +48,8 @@ Nz = 161
 Nt = $3
 NT = $4
 cfl = 0.4
+[pressure]
+tol = 1e-6
 [temperature]
 T_inf = 307.15
 T_pc = 300
@@ -69,6 +75,7 @@ y_start = -100
 y_end = 100
 [radiation]
 kappa_gas = 0.1
+angle_increment = 4
 [output]
 y_slice = 0
 z_slice = 1
@@ -83,11 +90,11 @@ echo "parameter files in $dir: f19_3d_sponge_smoke.ini, f19_3d_sponge.ini"
 case "$mode" in
     write) ;;
     smoke)
-        python -u src/main.py "$dir/f19_3d_sponge_smoke.ini" -n f19_3d_sponge_smoke --device cuda 2>&1 | tee logs/f19_3d_sponge_smoke.out
+        python -u src/main.py "$dir/f19_3d_sponge_smoke.ini" -n f19_3d_sponge_smoke --device cuda --dtype float32 2>&1 | tee logs/f19_3d_sponge_smoke.out
         echo
         echo "check: 'CUDA graphs: captured ...', mean step time, GPU memory peak, mass residual near 0%" ;;
     full)
-        nohup python -u src/main.py "$dir/f19_3d_sponge.ini" -n f19_3d_sponge --device cuda > logs/f19_3d_sponge.out 2>&1 &
+        nohup python -u src/main.py "$dir/f19_3d_sponge.ini" -n f19_3d_sponge --device cuda --dtype float32 > logs/f19_3d_sponge.out 2>&1 &
         echo "started; follow with: tail -f logs/f19_3d_sponge.out" ;;
     *) echo "usage: bash scripts/f19_3d.sh [write|smoke|full]"; exit 1 ;;
 esac
