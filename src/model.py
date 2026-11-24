@@ -483,7 +483,11 @@ class Model:
         Q_net = Q_in - mdot * c.H_pyr
         evap = (W > 0) & (T_s >= c.T_boil)
         dW = torch.where(evap, -Q_net.clamp(min=0) / (c.rho_bulk * c.L_v), torch.zeros_like(W))
-        heat_capacity = (c.rho_bulk * (Y * c.c_s + W * c.c_w)).clamp(min=1e-30)
+        if c.c_s_model == 'fds':      # FDS ramp: 1100 J/(kg K) at 273.15 K to 2000 at 473.15 K, constant outside
+            c_s = 1100.0 + 900.0 * ((T_s - 273.15) / 200.0).clamp(0, 1)
+        else:
+            c_s = c.c_s
+        heat_capacity = (c.rho_bulk * (Y * c_s + W * c.c_w)).clamp(min=1e-30)
         dT_s = torch.where(evap, Q_net.clamp(max=0), Q_net) / heat_capacity * has
         dY = -mdot / c.rho_bulk
         if self.burner is not None:                               # ignition burner: fuel gas in row 0

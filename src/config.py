@@ -75,6 +75,8 @@ class Config:
     solid_temperature: bool = True  # False: one temperature for gas and fuel (published model)
     rho_bulk: float = 0.6144        # dry fuel mass per bed volume, kg/m^3 (FDS Case_F19)
     c_s: float = 1500.0             # specific heat of the dry fuel, J/(kg K)
+    c_s_model: str = 'constant'     # constant (c_s) or fds: 1100 J/(kg K) at 0 C rising linearly to 2000 at
+                                    # 200 C, constant outside (FDS vegetation_model.txt, ramp c_v)
     H_pyr: float = 4.16e5           # heat absorbed by pyrolysis, J/kg (Mell et al. 2007)
     moisture: float = 0.058         # initial moisture, kg water per kg dry fuel (CSIRO F19, FDS Case_F19)
     c_w: float = 4184.0             # specific heat of liquid water, J/(kg K)
@@ -214,7 +216,7 @@ _KEYS = {
     ('planview', 'h_top'): ('h_top', float), ('planview', 'delta_bed'): ('delta_bed', float),
     ('output', 'full_interval'): ('full_interval', float), ('output', 'full_dtype'): ('full_dtype', str),
     ('fuel', 'pyrolysis'): ('pyrolysis', str), ('fuel', 'T_pyr'): ('T_pyr', float),
-    ('fuel', 'slab'): ('fuel_slab', bool),
+    ('fuel', 'slab'): ('fuel_slab', bool), ('fuel', 'c_s_model'): ('c_s_model', str),
     ('fuel', 'T_pyr_end'): ('T_pyr_end', float), ('combustion', 's_O2'): ('s_O2', float),
     ('combustion', 'tau_mix'): ('tau_mix', float), ('combustion', 'Y_O2_amb'): ('Y_O2_amb', float),
     ('temperature', 'T_inf'): ('T_inf', float), ('numerics', 'bound'): ('bound', bool),
@@ -332,7 +334,8 @@ def load_config(path: str, **overrides) -> Config:
                          ('initial_u_type', ('power law', 'log', 'constant', 'monin-obukhov')),
                          ('forcing', ('none', 'profile')), ('wall_model', ('none', 'log')),
                          ('dilatation', ('consistent', 'published')), ('ignition', ('temperature', 'burner')),
-                         ('scalar_transport', ('density', 'temperature'))):
+                         ('scalar_transport', ('density', 'temperature')),
+                         ('c_s_model', ('constant', 'fds'))):
         if getattr(cfg, key) not in allowed:
             raise ValueError(f"{key} must be one of {allowed}, got '{getattr(cfg, key)}'")
     return cfg

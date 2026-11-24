@@ -221,7 +221,9 @@ coefficient $a/4$). Wet fuel ($W>0$) at $T_\text{boil}$ keeps its temperature an
 \begin{equation}
   \rho_\text{b}\frac{\dd W}{\dd t} = -\frac{\max(Q_\text{conv}+Q_\text{rad},0)}{L_\text{v}}.
 \end{equation}
-Water vapor is not tracked. Only dry fuel pyrolyses. Where the fuel is used up
+The dry-fuel heat capacity $c_\text{s}$ is constant by default; with \code{[fuel] c\_s\_model = fds} it
+follows the FDS ramp, 1100~J\,kg$^{-1}$K$^{-1}$ at 273.15~K rising linearly to 2000 at 473.15~K and constant
+outside. Water vapor is not tracked. Only dry fuel pyrolyses. Where the fuel is used up
 ($Y\le10^{-3}$, $W=0$), $T_\text{s}$ is set equal to $T$.
 
 \subsection{Pyrolysis}
@@ -237,6 +239,10 @@ Above $T_\text{pyr,end}$ all net heat goes to pyrolysis, so $T_\text{s}$ stays n
 
 \paragraph{Arrhenius.} $\dot m''' = \rho_\text{b}\,Y_\text{f}\,A\,e^{-T_\text{act}/T_\text{s}}\,H(T_\text{s}-T_\text{pc})\,Y$ ($H$ the
 Heaviside step), the rate of the published model (Appendix~\ref{app:published}) at the fuel temperature.
+The FDS kinetics of Case F19 are $A=1040$~s$^{-1}$, $E=61$~kJ\,mol$^{-1}$, i.e.\ $T_\text{act}=E/R=7342$~K,
+with $Y_\text{f}=1$ and no threshold ($T_\text{pc}$ below ambient). Their rate is 0.0004, 0.005, 0.03, 0.1 and
+0.3~s$^{-1}$ at 500, 600, 700, 800 and 900~K, so the fuel must reach 700--900~K to produce gas at a
+significant rate, whereas the linear model starts at 400~K.
 
 \noindent In both cases $\dot m'''\le\rho_\text{b}Y/\Delta t$ (no more fuel than is present).
 
@@ -257,9 +263,10 @@ vegetation model in \code{vegetation\_model.txt}:
         17.4~MJ\,kg$^{-1}$ and the rest into char that oxidizes at the surface; this model gasifies all
         of it, so $H_\text{C}=13.1$~MJ per kg of dry fuel matches the FDS gas-phase heat release.
 \end{itemize}
-Not reproduced: the char oxidation, the temperature-dependent fuel heat capacity of FDS (1.1 to
-2.0~kJ\,kg$^{-1}$K$^{-1}$ from 0 to 200~$^\circ$C; here constant $c_\text{s}$) and its Arrhenius pyrolysis
-(here linear by default).
+Not reproduced: the char oxidation. Available as options but not the default: the temperature-dependent
+fuel heat capacity of FDS (\code{c\_s\_model = fds}) and its Arrhenius pyrolysis (\code{pyrolysis =
+arrhenius} with the FDS kinetics, Section~\ref{sec:solid}); the 2D comparison of both is in
+\code{scripts/calibrate\_f19\_pyro.sh}.
 
 %======================================================================
 \section{Gas-phase combustion}\label{sec:combustion}
@@ -732,6 +739,7 @@ any name & -- & building box \code{x0, x1, height} (3D: \code{x0, x1, y0, y1, he
 \code{x\_start}\dots\code{y\_end} & whole domain & horizontal extent of the bed \\
 \code{H\_C} & 21~MJ\,kg$^{-1}$ & heat of combustion per kg of dry fuel (F19 calibration: 13.1--17.4) \\
 \code{c\_s} & 1500~J\,kg$^{-1}$K$^{-1}$ & specific heat of dry fuel \\
+\code{c\_s\_model} & \code{constant} & \code{constant} or \code{fds} (ramp 1100--2000~J\,kg$^{-1}$K$^{-1}$) \\
 \code{H\_pyr} & 416~kJ\,kg$^{-1}$ & heat of pyrolysis \\
 \code{moisture} & 0.058 & kg water per kg dry fuel \\
 \code{pyrolysis} & \code{linear} & \code{linear} or \code{arrhenius} \\
