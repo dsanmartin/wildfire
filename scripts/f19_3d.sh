@@ -10,6 +10,9 @@
 # and y. The wind is driven by a sponge zone at x = -60..-20 m (velocity relaxed to the initial profile, T and
 # the species to ambient), so air leaving downstream re-enters as ambient air and the fire itself is not
 # forced; the plot covers 56% of the width (the periodic images of the fire are 160 m apart).
+# Fuel: FDS Arrhenius pyrolysis (A = 1040 1/s, E = 61 kJ/mol: T_act = 7342 K, no threshold) and the FDS
+# fuel heat capacity ramp (1100 -> 2000 J/(kg K) from 0 to 200 C); in 2D these halved the spread rate
+# (4.8 -> 2.3 m/s, scripts/calibrate_f19_pyro.sh).
 # Adaptive time step (CFL 0.4, at most 5 ms). Case: H_C = 13.1 MJ/kg (FDS
 # gas-phase equivalent), kappa_gas = 0.1 1/m, ambient 34 C, F19 wind (4.9 m/s at 2 m, L = -500 m), grid-based
 # filter width ((dx dy dz)^(1/3) = 0.58 m; a fixed 0.30 m would be far below the horizontal spacing).
@@ -43,6 +46,7 @@ NT = $4
 cfl = 0.4
 [temperature]
 T_inf = 307.15
+T_pc = 300
 [ignition]
 model = burner
 [wind]
@@ -54,6 +58,11 @@ sponge_start = -60
 sponge_end = -20
 [fuel]
 H_C = 13.1e6
+pyrolysis = arrhenius
+A = 1040
+T_act = 7342
+Y_f = 1
+c_s_model = fds
 x_start = 0
 x_end = 200
 y_start = -100
