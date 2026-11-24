@@ -244,15 +244,34 @@ def run(cfg, verbose=True):
                         f"Mass since last output: residual {share(dM['residual'], dM['outflow'])} of the outflow")
                     for key in M:
                         mass[key].append(M[key])
+                if cfg.solid_temperature or 'Y' in names:
+                    x_head, burnt = model.head_fire(y)
+                    say(f"Head fire: x = {x_head:.1f} m, burnt {'area' if nd == 3 else 'length'} of the ground row "
+                        f"{burnt:.4g} {'m^2' if nd == 3 else 'm'}")
                 say("")
                 if not np.isfinite(T_max):
                     say("Non-finite temperature: stopping")
                     break
                 rec.add(y, p, t_now, model.output_fields(y))
+                if cfg.save_every > 0 and len(rec.times) % cfg.save_every == 0:   # partial data.npz
+                    write_data(cfg, grid, rec, energy, mass)
     elapsed = time.perf_counter() - start
     say(f"\nSolver time: {timedelta(seconds=round(elapsed))} ({elapsed / max(n, 1) * 1e3:.2f} ms per step, {n} steps)\n")
     log.close()
 
+    data = write_data(cfg, grid, rec, energy, mass)
+    parameters = cfg.to_dict()
+    parameters.update(x=grid['x'], y=data['y'], t=grid['t'], dt=model.dt,
+                      cut_nodes=np.where(grid['cut']), dead_nodes=np.where(grid['dead']))
+    with open(os.path.join(cfg.save_path, 'parameters.pkl'), 'wb') as f:
+        pickle.dump(parameters, f)
+    return data, elapsed
+
+
+def write_data(cfg, grid, rec, energy, mass):
+    """Write data.npz with everything recorded so far (called at the end of the run and, with
+    [output] save_every, during it). Written to a temporary file and renamed, so an interrupted
+    write never leaves a broken data.npz. Returns the dict of arrays."""
     data = rec.arrays()
     data['x'], data['t'] = grid['x'], np.array(rec.times)
     if grid['solid'].any():
@@ -262,17 +281,16 @@ def run(cfg, verbose=True):
         data['E_' + key] = np.array(values[:n_saved]) * 1e3
     for key, values in mass.items():        # kg (per metre in 2D): mass in the domain, cumulative fluxes
         data['M_' + key] = np.array(values[:n_saved])
-    if nd == 2:
+    if cfg.ndim == 2:
         data['y'] = grid['z']                                        # the vertical axis is called y in 2D
     else:
         data['y'], data['z'] = grid['y'], grid['z']
-    np.savez(os.path.join(cfg.save_path, 'data.npz'), **data)
-    parameters = cfg.to_dict()
-    parameters.update(x=grid['x'], y=data['y'], t=grid['t'], dt=model.dt,
-                      cut_nodes=np.where(grid['cut']), dead_nodes=np.where(grid['dead']))
-    with open(os.path.join(cfg.save_path, 'parameters.pkl'), 'wb') as f:
-        pickle.dump(parameters, f)
-    return data, elapsed
+    path = os.path.join(cfg.save_path, 'data.npz')
+    tmp = path + '.partial'
+    with open(tmp, 'wb') as f:
+        np.savez(f, **data)
+    os.replace(tmp, path)
+    return data
 
 
 def save_provenance(cfg, parameters_file, device):

@@ -70,6 +70,9 @@ class Model:
         self.vel_bottom = to(state0[:nd, 0])                      # Dirichlet values at z = z_min
         self.T0 = to(state0[nd])
         self.source_mask = torch.as_tensor(grid['source_mask'], device=device)
+        # Ground row: where there was fuel, and the node coordinates (head-fire position in the log)
+        self._fuel0_ground = torch.as_tensor(state0[nd + 1][0] > 0.5, device=device)
+        self._x_ground = torch.as_tensor(np.ascontiguousarray(grid['Xm'][0]), dtype=dtype, device=device)
         cut, dead = grid['cut'], grid['dead']
         # Flat terrain: the cut nodes are exactly the bottom row, already handled by the z = z_min condition
         self.has_terrain = bool(dead.any() or cut[1:].any() or not cut[0].all())
@@ -1158,6 +1161,16 @@ class Model:
         total = float(hrr.sum())
         T_flame = float((hrr * T).sum()) / total if total > 0 else float('nan')
         return total * self.dV, T_flame
+
+    def head_fire(self, y):
+        """Most downwind position where half of the ground-row fuel is gone (head fire, m), and the burnt
+        length (2D, m) or area (3D, m^2) of the ground row. Host synchronization: call at outputs."""
+        burnt = (y[self.nd + 1, 0] < 0.5) & self._fuel0_ground
+        if not bool(burnt.any()):
+            return float('nan'), 0.0
+        x_head = float(self._x_ground[burnt].max())
+        cell = self.h[0] * (self.h[1] if self.nd == 3 else 1.0)
+        return x_head, float(burnt.sum()) * cell
 
     def solid_diagnostics(self, y):
         """Fuel temperature range over the nodes that still hold fuel, and the total heat release rate
