@@ -50,6 +50,10 @@ class Model:
         self.device, self.dtype = device, dtype
         self.dt = float(grid['dt'])
         self.dt_t = torch.tensor(self.dt, dtype=dtype, device=device)   # dt on the device (CUDA graphs)
+        # Lower temperature bound: in float32, T = rho_inf T_inf / rho of ambient air scatters by ~1e-7 relative
+        # around T_inf, and clipping every such undershoot, in every ambient node at every step, adds up to a
+        # large spurious energy and mass change. Only undershoots beyond this tolerance are clipped (float64: 0).
+        self._clip_tol = 1e-4 * cfg.T_min if dtype == torch.float32 else 0.0
         self._p = None                                            # pressure of the last step (warm start)
         self._target = None                                       # divergence target of the last projection
         self.h = tuple(float(s) for s in grid['spacings'])
@@ -127,7 +131,7 @@ class Model:
             keep = ~(grid['solid'] | grid['dead'])
             self._mass_w = P.unknown * P.weight * to(keep.astype(np.float64))
             self.dA = float(np.prod(self.h[:-1]))                 # area of a vertical face
-            self.mass = {k: torch.zeros((), dtype=dtype, device=device) for k in ('outflow', 'pyrolysis')}
+            self.mass = {k: torch.zeros((), dtype=torch.float64, device=device) for k in ('outflow', 'pyrolysis')}
         self._last_mdot = None
         # Log-law wall model at the ground (flat ground: row 0; terrain: the cut node of each column)
         if cfg.wall_model == 'log':
@@ -199,7 +203,8 @@ class Model:
                 self.dead_mask.view(-1)[self.dead] = True
         # Energy budget, accumulated on the device (J per metre of depth in 2D, J in 3D)
         self.dV = float(np.prod(self.h))
-        self.energy = {key: torch.zeros((), dtype=dtype, device=device) for key in ENERGY_TERMS}
+        # Budgets accumulated in float64 even in a float32 run (sums of millions of terms over many steps)
+        self.energy = {key: torch.zeros((), dtype=torch.float64, device=device) for key in ENERGY_TERMS}
 
     def _init_solids(self, grid, to):
         """Buildings: direct-forcing immersed boundary on the grid nodes.
@@ -445,7 +450,7 @@ class Model:
 
     def mass_total(self, y):
         """Gas mass in the control volume of the mass budget, kg (kg/m in 2D)."""
-        return (self.rho(y[self.nd]) * self._mass_w).sum() * self.dV
+        return (self.rho(y[self.nd]) * self._mass_w).to(torch.float64).sum() * self.dV   # float64 sum
 
     def top_outflow(self, T, F_top):
         """Mass flux out through the vertical faces below the top row, kg/s (kg/(m s) in 2D), with
@@ -1043,6 +1048,15 @@ class Model:
             self.project_begin(y1, y[nd], self._p)
         return y1
 
+    def _clamp_T(self, T):
+        """Temperature bounds in place; below T_min only beyond the round-off tolerance (float32)."""
+        c = self.cfg
+        if self._clip_tol > 0:
+            T.copy_(torch.where(T < c.T_min - self._clip_tol, torch.full_like(T, c.T_min), T))
+            T.clamp_(max=c.T_max)
+        else:
+            T.clamp_(c.T_min, c.T_max)
+
     def finalize(self, y, y1):
         """End of a step after the projection: boundary conditions, solid fuel fixes, bounds and the
         energy budget. Updates y1 in place and returns it."""
@@ -1057,7 +1071,7 @@ class Model:
             y1[nd + 2, :k] = torch.where(has, y1[nd + 2, :k], y1[nd, :k])
             y1[nd + 2, k:] = y1[nd, k:]                           # no fuel above the slab
             if c.bound:
-                y1[nd + 2].clamp_(c.T_min, c.T_max)
+                self._clamp_T(y1[nd + 2])
         # Heat released per unit decrease of Y: rho_bulk H_C [J/m^3] with the solid model; in the
         # published model rho H_C / Y_f, with rho the gas density
         heat_per_fuel = c.H_C / c.Y_f if c.Y_f > 0 else 0.0
@@ -1065,7 +1079,7 @@ class Model:
             else (lambda T: self.rho(T) * heat_per_fuel)
         if c.bound:
             T_raw, Y_raw = y1[nd].clone(), y1[nd + 1].clone()
-            y1[nd].clamp_(c.T_min, c.T_max)
+            self._clamp_T(y1[nd])
             y1[nd + 1].clamp_(c.Y_min, c.Y_max)
             # Energy the bounds add or remove: rho c_p dT for the gas left in the node, and for
             # Y < 0 the heat that the reaction term released from fuel that did not exist
