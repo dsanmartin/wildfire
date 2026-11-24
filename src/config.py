@@ -96,6 +96,7 @@ class Config:
     n_polar: int = 12               # polar bands of the angular quadrature (even)
     n_azimuth: int = 16             # azimuths over the full circle (even; 2D uses half of them)
     rad_every: int = 5              # time steps between radiation solves
+    angle_increment: int = 1        # direction groups solved in turn, one per radiation update (FDS: 5)
     sink: str = 'surface'           # surface: top fuel node <-> gas node above; legacy: original term
     fuel_threshold: float = 1e-3    # Y above which a node counts as fuel for the surface exchange
     fuel_slab: bool = True          # solid fuel terms and drag only on the rows that hold fuel
@@ -209,7 +210,7 @@ _KEYS = {
     ('fuel', 'c_s'): ('c_s', float), ('fuel', 'H_pyr'): ('H_pyr', float), ('fuel', 'moisture'): ('moisture', float),
     ('radiation', 'model'): ('radiation', str), ('radiation', 'kappa_gas'): ('kappa_gas', float),
     ('radiation', 'n_polar'): ('n_polar', int), ('radiation', 'n_azimuth'): ('n_azimuth', int),
-    ('radiation', 'update_every'): ('rad_every', int),
+    ('radiation', 'update_every'): ('rad_every', int), ('radiation', 'angle_increment'): ('angle_increment', int),
     ('output', 'z_slice'): ('z_slice', float), ('output', 'y_slice'): ('y_slice', float),
     ('model', 'type'): ('model', str), ('wind', 'direction'): ('wind_direction', float),
     ('wind', 'factor'): ('wind_factor', float), ('planview', 'heat_retained'): ('heat_retained', float),

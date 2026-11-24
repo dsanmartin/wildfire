@@ -172,7 +172,7 @@ class Model:
         self.step_count = 0
         self._first_stage, self._last_omega = True, None
         if cfg.radiation == 'transport':
-            self.rad = Radiation(self.shape, self.h, cfg.n_polar, cfg.n_azimuth, device, dtype)
+            self.rad = Radiation(self.shape, self.h, cfg.n_polar, cfg.n_azimuth, device, dtype, cfg.angle_increment)
             if self.has_terrain:
                 self.dead_mask = torch.zeros(self.shape, dtype=torch.bool, device=device)
                 self.dead_mask.view(-1)[self.dead] = True
@@ -495,8 +495,10 @@ class Model:
         return {'k': k, 'Q_conv': Q_conv, 'Q_comb': omega * c.H_C, 'dY': dY, 'dT_s': dT_s,
                 'dW': dW, 'mdot': mdot, 'omega': omega}
 
-    def update_radiation(self, y):
-        """Solve the radiative transfer equation for the current state and store G."""
+    def update_radiation(self, y, group=None):
+        """Solve the radiative transfer equation for the current state and store G. With an angle
+        increment (several direction groups) ``group`` solves only that group and keeps the stored
+        contributions of the others; None (and the first solve) solves all of them."""
         c, nd = self.cfg, self.nd
         T, Y = y[nd], y[nd + 1].clamp(min=0)
         k_s = c.alpha_s * c.sigma_s * Y / 4                       # absorption by the fuel elements
@@ -510,7 +512,19 @@ class Model:
             kappa = torch.where(self.solid_mask, torch.full_like(kappa, 1e3), kappa)
             Ib = torch.where(self.solid_mask, c.sigma * T ** 4 / np.pi, Ib)
         I_ground = c.sigma * T[0] ** 4 / np.pi
-        G = self.rad.solve(kappa, Ib, I_ground, c.sigma * c.T_inf ** 4 / np.pi)
+        I_top = c.sigma * c.T_inf ** 4 / np.pi
+        if self.rad.n_groups > 1:
+            if self.G is None or group is None:
+                parts = [self.rad.solve_group(kappa, Ib, I_ground, I_top, g) for g in range(self.rad.n_groups)]
+                if getattr(self, '_G_parts', None) is None:
+                    self._G_parts = torch.stack(parts)
+                else:
+                    self._G_parts.copy_(torch.stack(parts))
+            else:
+                self._G_parts[group].copy_(self.rad.solve_group(kappa, Ib, I_ground, I_top, group))
+            G = self._G_parts.sum(0)
+        else:
+            G = self.rad.solve(kappa, Ib, I_ground, I_top)
         if self.G is None:
             self.G = G
         else:                                                     # in place: a persistent buffer
@@ -1039,11 +1053,20 @@ class Model:
         c = self.cfg
         return c.radiation == 'transport' and (self.G is None or self.step_count % c.rad_every == 0)
 
+    def next_radiation_group(self):
+        """Direction group of the coming radiation update (angle increment), and advance the counter."""
+        g = getattr(self, '_rad_next', 0)
+        self._rad_next = (g + 1) % self.rad.n_groups
+        return g
+
     def step(self, t_n, y, p):
         """One time step, executed directly (see cudagraph.GraphRunner for the captured version)."""
         c, nd = self.cfg, self.nd
         if self.radiation_due():
-            self.update_radiation(y)
+            if self.G is not None and self.rad.n_groups > 1:      # angle increment: one group per update
+                self.update_radiation(y, self.next_radiation_group())
+            else:
+                self.update_radiation(y)
         self.step_count += 1
         if c.projection == 'face':
             if self._p is None:

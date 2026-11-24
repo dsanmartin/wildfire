@@ -610,6 +610,15 @@ upstream intensity is interpolated linearly (bilinearly in 3D) in the periodic d
   I_k = I_{\text{upstream}}\,e^{-\kappa\Delta s} + \big(1-e^{-\kappa\Delta s}\big)\,I_\text{b},
 \end{equation}
 exact for a uniform cell. All directions advance together, about 15 tensor operations per row.
+The cost is set by three parameters, as in FDS: the number of directions (\code{n\_polar} $\times$
+\code{n\_azimuth}, 12 $\times$ 16 by default; 2D keeps half of the azimuths), the number of steps between
+radiation updates (\code{update\_every}, default 5; FDS \code{TIME\_STEP\_INCREMENT}, default 3), and the
+angle increment (\code{angle\_increment}, default 1; FDS \code{ANGLE\_INCREMENT}, default 5): the
+directions are split into that many groups by azimuth (group $k$ holds the azimuths with index $\equiv k$
+modulo the increment, with every polar band), each update solves one group in turn, and $G$ is the sum of
+the latest contribution of every group, so the whole field is refreshed every
+\code{update\_every} $\times$ \code{angle\_increment} steps. The sum of the groups equals the full solve to
+round-off, and a uniform temperature still gives $G=4\sigma T^4$ exactly.
 Verification: exact equilibrium at uniform temperature; for an isothermal layer of optical
 thickness $\tau$ the result matches $G=2\sigma T^4(1-E_2(\tau))$ within 0.3\% for $\tau=1$ with 16
 polar bands (10\% low for $\tau=0.1$ with 6 bands).
@@ -754,7 +763,8 @@ any name & -- & building box \code{x0, x1, height} (3D: \code{x0, x1, y0, y1, he
 \psec{radiation}
 \code{kappa\_gas} & 0.1~m$^{-1}$ & gray gas absorption coefficient \\
 \code{n\_polar}, \code{n\_azimuth} & 12, 16 & angular quadrature (even) \\
-\code{update\_every} & 5 & steps between radiation solves \\
+\code{update\_every} & 5 & steps between radiation updates \\
+\code{angle\_increment} & 1 & direction groups solved in turn, one per update (FDS: 5) \\
 \psec{wind}
 \code{u\_r}, \code{z\_r} & 4.8~m\,s$^{-1}$, 2~m & reference wind speed and height \\
 \code{shape} & \code{monin-obukhov} & \code{monin-obukhov}, \code{log}, \code{constant}, \code{power law} \\

@@ -51,8 +51,14 @@ class GraphRunner:
         else:
             model._p.copy_(p)
         P = model.face_proj
+        # Radiation: one graph per direction group when there is an angle increment (each group reads
+        # its own index arrays); a single one otherwise
+        n_groups = model.rad.n_groups if c.radiation == 'transport' else 1
+        self.radiation_names = ['radiation'] if n_groups == 1 else [f'radiation{g}' for g in range(n_groups)]
+        rad = {'radiation': lambda: model.update_radiation(self.y)} if n_groups == 1 else \
+            {f'radiation{g}': (lambda g=g: model.update_radiation(self.y, g)) for g in range(n_groups)}
         self.functions = {                                        # in replay order
-            'radiation': lambda: model.update_radiation(self.y),
+            **rad,
             'predict': self._predict,
             'pcg': lambda: P.pcg_iterate(self.chunk),
             'finalize': self._finalize,
@@ -61,7 +67,9 @@ class GraphRunner:
         # it shares with another graph lives in persistent buffers updated in place
         self.capture_order = [n for n in self.functions]
         if c.radiation != 'transport':
-            del self.functions['radiation']
+            for name in self.radiation_names:
+                del self.functions[name]
+            self.radiation_names = []
         self.graphs = {}
         self.failed = None
         self._capture()                                           # emulated: same warm-up and restore
@@ -187,8 +195,10 @@ class GraphRunner:
     def step(self):
         """One time step with the dt already set (model.set_dt). Returns the persistent (y, p)."""
         m = self.model
-        if 'radiation' in self.functions and m.radiation_due():
-            self._run('radiation')
+        if self.radiation_names and m.radiation_due():
+            name = self.radiation_names[0] if len(self.radiation_names) == 1 else \
+                self.radiation_names[m.next_radiation_group()]
+            self._run(name)
         m.step_count += 1
         self._run('predict')
         P = m.face_proj
