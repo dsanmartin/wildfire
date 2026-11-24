@@ -216,10 +216,14 @@ def render(d, name, args, out_dir, ffmpeg):
             if args.arrows:
                 arrows(ax, x, z, d['u'][n], d['v'][n], xlim, zlim, arrow_scale)
             ax.set_xlim(xlim); ax.set_ylim(zlim); ax.set_ylabel('z [m]')
-            ax.set_title(f't = {t[n]:.1f} s' + (f',  head fire at x = {front[n]:.1f} m' if np.isfinite(front[n]) else ''),
+            ax.set_aspect(args.zscale)                        # true proportions unless --zscale > 1
+            ax.set_title(f't = {t[n]:.1f} s' + (f',  head fire at x = {front[n]:.1f} m' if np.isfinite(front[n]) else '')
+                         + (f'  (vertical x{args.zscale:g})' if args.zscale != 1 else ''),
                          fontsize=10, loc='left')
             return m
-        fig, axes = plt.subplots(len(idx), 1, figsize=(11, 2.2 * len(idx) + 0.6), sharex=True, constrained_layout=True)
+        W = 10.0                                              # inches for the x range
+        row = W * (zlim[1] - zlim[0]) * args.zscale / (xlim[1] - xlim[0]) + 0.55
+        fig, axes = plt.subplots(len(idx), 1, figsize=(W + 1.6, row * len(idx) + 0.6), sharex=True, constrained_layout=True)
         axes = np.atleast_1d(axes)
         for ax, n in zip(axes, idx):
             m = draw(ax, n)
@@ -229,7 +233,7 @@ def render(d, name, args, out_dir, ffmpeg):
         fig.savefig(path, dpi=150); plt.close(fig)
         print('wrote', path)
         if not args.no_anim:
-            fig, ax = plt.subplots(figsize=(11, 3), constrained_layout=True)
+            fig, ax = plt.subplots(figsize=(W + 1.6, row + 0.9), constrained_layout=True)
             m = draw(ax, 0); ax.set_xlabel('x [m]')
             fig.colorbar(m, ax=ax, label=label)
             anim = animation.FuncAnimation(fig, lambda n: draw(ax, n), frames=len(t), interval=1000 / args.fps)
@@ -260,31 +264,43 @@ def render(d, name, args, out_dir, ffmpeg):
             arrows(axs[2], y, z, d['yz_v'][n], d['yz_w'][n], ylim, zlim, arrow_scale)
         axs[0].axhline(ys, color='w', lw=0.5, ls=':')
         axs[0].axvline(d['yz_x'][n], color='w', lw=0.5, ls=':')
-        axs[0].set(xlim=xlim, ylim=ylim, xlabel='x [m]', ylabel='y [m]', title=f'x-y plane, z = {zs:.2f} m')
+        vert = f' (vertical x{args.zscale:g})' if args.zscale != 1 else ''
+        axs[0].set(xlim=xlim, ylim=ylim, ylabel='y [m]', title=f'x-y plane, z = {zs:.2f} m')
         axs[1].pcolormesh(x, z, planes['xz'][n], cmap=cmap, vmin=vmin, vmax=vmax, shading='auto')
-        axs[1].set(xlim=xlim, ylim=zlim, xlabel='x [m]', ylabel='z [m]', title=f'x-z plane, y = {ys:.1f} m')
+        axs[1].set(xlim=xlim, ylim=zlim, xlabel='x [m]', ylabel='z [m]', title=f'x-z plane, y = {ys:.1f} m' + vert)
         axs[2].pcolormesh(y, z, planes['yz'][n], cmap=cmap, vmin=vmin, vmax=vmax, shading='auto')
         axs[2].set(xlim=ylim, ylim=zlim, xlabel='y [m]', ylabel='z [m]',
-                   title=f'y-z plane, x = {d["yz_x"][n]:.1f} m (head fire)')
+                   title=f'y-z plane, x = {d["yz_x"][n]:.1f} m (head fire)' + vert)
+        axs[0].set_aspect(1.0)                                # same scale in meters on every axis
+        axs[1].set_aspect(args.zscale)
+        axs[2].set_aspect(args.zscale)
         for ax in axs:
             ax.title.set_fontsize(9)
         axs[0].figure.suptitle(f't = {t[n]:.1f} s', x=0.01, ha='left', fontsize=10)
         return m
 
+    # Planes stacked vertically at one scale: x-y on top, the x-z plane below it (same x axis), then y-z
+    xspan, yspan, zspan = xlim[1] - xlim[0], ylim[1] - ylim[0], (zlim[1] - zlim[0]) * args.zscale
+    W = 10.0                                                  # inches for the x range
+
     def new_figure():
-        return plt.subplots(1, 3, figsize=(15, 4), constrained_layout=True, gridspec_kw={'width_ratios': [1.3, 1.3, 1]})
+        heights = [yspan, zspan, zspan]
+        H = W / xspan * sum(heights) + 2.2                    # plus titles and labels
+        fig, axs = plt.subplots(3, 1, figsize=(W + 1.8, H), constrained_layout=True,
+                                gridspec_kw={'height_ratios': heights})
+        return fig, axs
 
     for n in idx:
         fig, axs = new_figure()
         m = draw(axs, n)
-        fig.colorbar(m, ax=axs, label=label, shrink=0.9)
+        fig.colorbar(m, ax=axs, label=label, shrink=0.6)
         path = os.path.join(out_dir, f'{name}_planes_t{t[n]:06.1f}.png')
         fig.savefig(path, dpi=150); plt.close(fig)
         print('wrote', path)
     if not args.no_anim:
         fig, axs = new_figure()
         m = draw(axs, 0)
-        fig.colorbar(m, ax=axs, label=label, shrink=0.9)
+        fig.colorbar(m, ax=axs, label=label, shrink=0.6)
         anim = animation.FuncAnimation(fig, lambda n: draw(axs, n), frames=len(t), interval=1000 / args.fps)
         save_anim(anim, out_dir, name, args, ffmpeg)
         plt.close(fig)
@@ -304,6 +320,8 @@ def main():
     ap.add_argument('--arrows', action='store_true', help='overlay velocity arrows (in-plane components)')
     ap.add_argument('--gif', action='store_true', help='GIF animations even if ffmpeg is available')
     ap.add_argument('--fps', type=int, default=8)
+    ap.add_argument('--zscale', type=float, default=1.0,
+                    help='vertical exaggeration of the x-z and y-z planes (default 1: true proportions)')
     args = ap.parse_args()
 
     d = dict(np.load(os.path.join(args.sim_dir, 'data.npz')))
