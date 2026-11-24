@@ -591,30 +591,55 @@ forward Euler (default), Heun's RK2 or classical RK4; the projection is applied 
 the last stage, so the scheme is first order in time overall. The radiation field $G$ is recomputed
 every \code{update\_every} steps from the state at the start of the step and held fixed in between.
 
-\subsection{Projection and pressure}\label{sec:projection}
-Velocities are stored at the nodes, but mass conservation is imposed on face fluxes. Face velocities
-are averages of the provisional node velocities, $F_{j,i+1/2}=\tfrac12(u_{j,i}+u_{j,i+1})$ (zero on
-faces next to solids). The divergence of a node's control volume is the net flux through its faces,
-$D_i=\sum_j(F_{j,i+1/2}-F_{j,i-1/2})/h_j$, where the ground node is a half cell with zero flux through the
-ground. The projection
-\begin{equation}
-  F^{n+1}_{j,i+1/2} = F^*_{j,i+1/2} - \frac{\Delta t}{\rho_{i+1/2}}\,\frac{p_{i+1}-p_i}{h_j},\qquad
-  \sum_j\frac{1}{h_j^2}\Big[\frac{p_{i+1}-p_i}{\rho_{i+1/2}}-\frac{p_i-p_{i-1}}{\rho_{i-1/2}}\Big]
-  = \frac{D_i(F^*)-D^*_i}{\Delta t},
-\end{equation}
-with arithmetic face densities (an interpolation of the same $\rho$, chosen to keep the operator
-symmetric; the transport uses Koren-limited face values of $\rho$, Section~\ref{sec:advection}) and $D^*$
-the divergence \eqref{eq:div} at the provisional state,
-makes the face fluxes satisfy the discrete constraint to the solver tolerance (about
-$10^{-11}$~s$^{-1}$, also for density ratios of 8 and with buildings). The subgrid heat flux in $D^*$
-uses the eddy viscosity of the step. Faces next to solid nodes are closed: zero flux through walls
-and a zero-gradient pressure condition, exactly. The equation is solved by preconditioned conjugate
-gradients (symmetric with respect to the cell volumes), preconditioned by the direct inverse of the
+\subsection{Projection and pressure: the face fluxes}\label{sec:projection}
+Velocities are stored at the nodes, but mass conservation is imposed on face fluxes. $F_{j,i+1/2}$ is the
+velocity component normal to the face between nodes $i$ and $i+1$ in direction $j$ (in m\,s$^{-1}$; a face
+velocity, not a mass flux). Each step defines and uses them as follows.
+\begin{enumerate}
+  \item \textbf{Provisional fluxes.} From the provisional node velocities $\vu^*$ (after the momentum
+        update), averaged onto the faces,
+        \begin{equation}
+          F^*_{j,i+1/2}=\tfrac12\big(u^*_{j,i}+u^*_{j,i+1}\big)\,o_{j,i+1/2},
+        \end{equation}
+        with $o=0$ on faces next to buildings or below the ground (no flow through walls) and $o=1$
+        elsewhere.
+  \item \textbf{Projection.}
+        \begin{equation}
+          F_{j,i+1/2}=F^*_{j,i+1/2}-\Delta t\,\beta_{j,i+1/2}\,\frac{p_{i+1}-p_i}{h_j},\qquad
+          \beta_{j,i+1/2}=\frac{o_{j,i+1/2}}{\rho_{j,i+1/2}},
+        \end{equation}
+        with the face density $\rho_{j,i+1/2}=\tfrac12(\rho_i+\rho_{i+1})$ of the density at the start of the
+        step, and the pressure solving
+        \begin{equation}
+          \sum_j\frac{\beta_{j,i+1/2}(p_{i+1}-p_i)-\beta_{j,i-1/2}(p_i-p_{i-1})}{h_j^2}
+          =\frac{D_i(F^*)-D^*_i}{\Delta t},
+        \end{equation}
+        where $D_i(F)=\sum_j(F_{j,i+1/2}-F_{j,i-1/2})/h_j$ is the discrete divergence of node $i$'s control
+        volume and $D^*$ the constraint \eqref{eq:div} at the provisional state (its subgrid heat flux uses the
+        eddy viscosity of the step). The projected fluxes satisfy $D_i(F)=D^*_i$ to the solver tolerance
+        (about $10^{-11}$~s$^{-1}$, also for density ratios of 8 and with buildings). The arithmetic face density
+        is an interpolation of the same $\rho$, chosen to keep the operator symmetric; the transport uses
+        Koren-limited face values of $\rho$ (Section~\ref{sec:advection}).
+  \item \textbf{Boundaries.} The face below the ground row is the wall, with zero flux; row 0 is a half
+        cell, so its vertical part counts double, $2F_{1/2}/\Delta z$. The face between rows $N_z-2$ and
+        $N_z-1$ is the open top, with $p=0$ on the top row. Faces next to solids are closed: zero flux and a
+        zero-gradient pressure condition, exactly.
+  \item \textbf{Node velocities.} Each receives the average of the corrections of its two faces
+        (Rhie--Chow type), $u_{j,i}\mathrel{+}=\tfrac12\big(\Delta F_{j,i+1/2}+\Delta F_{j,i-1/2}\big)$ with
+        $\Delta F=F-F^*$.
+  \item \textbf{Reuse.} The projected $F$ is stored and drives the transport of the next step: mass fluxes
+        $m=\rho_\text{f}F$ for the density (Koren-limited, upwinded face value $\rho_\text{f}$), $m\,Y_\text{f}$
+        for the species, and $F\,u_\text{f}$ for the momentum. On the first step $F$ is the face average of
+        the initial velocities, not projected.
+\end{enumerate}
+The same $F$ thus satisfies the constraint exactly and carries the mass, so the face fluxes cancel in
+pairs in the mass budget (Appendix~\ref{app:lowmach}).
+
+\paragraph{Pressure solver.} The pressure equation is solved by preconditioned conjugate gradients
+(symmetric with respect to the cell volumes), preconditioned by the direct inverse of the
 constant-coefficient operator: finite-difference eigenvalues $-(2\sin(\pi r/N)/h)^2$ in the periodic
 directions (FFT) and an eigendecomposition of the vertical operator. With constant density and no
-solids one iteration suffices; with buildings or strong density variations 10--30. The node
-velocities receive the average of the corrections of their two faces (Rhie--Chow type), and the
-projected face fluxes transport momentum, temperature and species.
+solids one iteration suffices; with buildings or strong density variations 10--30.
 
 \subsection{Radiation solver}
 Gray discrete ordinates. Quadrature: \code{n\_polar} equal-solid-angle bands in

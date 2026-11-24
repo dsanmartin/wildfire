@@ -146,20 +146,54 @@ corresponding model is on. `E_*`: the energy budget over time.
 
 `data.npz`, every NT steps: 2D runs, full fields; 3D runs, three planes of every field (`xz_*` at
 `[output] y_slice`, `xy_*` at `z_slice`, `yz_*` through the head fire, at `yz_x`), the fuel left per
-column (`fuel_column`) and the full fields of the last output (`final_*`).
+column (`fuel_column`) and the full fields of the last output (`final_*`). `E_*` and `M_*`: the energy
+and mass budgets over time. `data.npz` is also written during the run, every `[output] save_every`
+outputs (default 20; 0: only at the end), so a long run can be analyzed before it finishes.
 
 Full-field snapshots, 2D or 3D: `[output] full_interval = 5` writes all fields every 5 s to
-`NAME/full/t_XXXXX.XXX.npz` (`full_dtype`, default float32). A 3D F19 grid of 256 x 64 x 511 takes
+`NAME/full/t_XXXXX.XXX.npz` (`full_dtype`, default float32). A 3D F19 grid of 288 x 256 x 161 takes
 about 0.6 GB per snapshot in float32.
 
+`log.txt` reports at every output: time step and CFL, temperature and fuel ranges, heat release rate
+and HRR-weighted flame temperature, divergence error, pressure iterations, step time (and GPU memory
+peak), the energy and mass budgets, and the head-fire position (most downwind ground-row node where
+half of the fuel is gone) with the burnt length (2D) or area (3D).
+
+## Tools and scripts
+
+Post-processing (`src/`):
+
 ```bash
-python src/visualize.py data/output/NAME [--field T|Ts|YF|YO2|speed|...] [--times 30 60 120] [--mp4]
-python src/firefront.py data/output/RUN1 data/output/RUN2 --obs f19_front.csv --window 20 120
+python src/visualize.py data/output/NAME --field T HRR u --xlim -20 240 [--times 30 56 86] [--no-anim]
+python src/firefront.py data/output/RUN1 data/output/RUN2 --obs data/input/f19_front_fds.csv --window 20 50
 ```
 
-`visualize.py` writes snapshots and a GIF (MP4 with `--mp4`, needs ffmpeg) to `NAME/figures/`.
-`firefront.py` writes the head and back fire positions, the rate of spread and, with `--obs` (CSV of
-`t [s], x [m]`), the comparison with observations.
+* `visualize.py`: snapshots and animations in `NAME/figures/` (MP4 with H.264 when an ffmpeg with
+  libx264 is found, GIF otherwise or with `--gif`). 2D: the x-z plane. 3D: two figures per time, a side
+  view (x-z plane at `y_slice`) and a plan view (x-y plane at `z_slice`, with the contour where half of
+  the fuel is burned, cropped to the fuel plot); `--yz` adds the cross section through the head fire. All
+  plots are at true scale (same meters per inch on both axes); `--zscale 4` stretches the vertical by 4
+  (stated in the titles). `--arrows` overlays the in-plane velocity, `--vmin/--vmax` fix the color scale.
+* `firefront.py`: head and back fire positions over time (`NAME/figures/fire_front.csv`), the rate of
+  spread fitted over `--window`, the burnt area (3D), and with `--obs` (CSV of `t [s], x [m]`) the RMSE
+  of the position and the observed rate of spread; plot `fire_front.png` in the first run.
+  `data/input/f19_front_fds.csv` holds the F19 head-fire positions of the FDS validation suite.
+
+Runs and checks (`scripts/`):
+
+| Script | Purpose |
+|---|---|
+| `calibrate_f19_fds.sh [write\|parallel\|sequential] [direct]` | F19 in 2D, four runs (H_C 13.1 and 17.4 MJ/kg, kappa_gas 0.1 and 0.3) with the burner and the FDS fuel; CUDA graphs unless `direct` |
+| `calibrate_f19_pyro.sh [write\|parallel\|sequential]` | F19 in 2D: linear vs FDS Arrhenius pyrolysis, constant vs FDS fuel heat capacity |
+| `f19_3d.sh [write\|smoke\|full]` | F19 in 3D (sponge zone, 320 x 360 m, 11.9 M cells): `smoke` is a 3 s check of speed, memory and budgets; `full` the 140 s run in the background |
+| `profile_parts.py FILE --device cuda --graphs [--dtype float32 --tol 1e-6] [--angle-increment 4]` | time of each part of a step (radiation, prediction, pressure solve, finalization), PCG iterations and GPU memory |
+| `profile_step.py FILE --device cuda` | step time with the fuel slab on and off, direct and with CUDA graphs |
+| `graph_check.py FILE [steps] --device cuda` | step-by-step difference between direct execution and CUDA graphs (should be round-off) |
+
+Typical workflow on the GPU machine: write and check with the smoke mode, then launch the full run;
+follow `tail -f NAME.out` (head-fire position and budgets in every output); run `firefront.py` and
+`visualize.py` on the partial or final `data.npz`; copy figures back with
+`rsync -av --include='*/' --include='figures/***' --include='log.txt' --exclude='*' HOST:PATH/data/output/ data/output/`.
 
 ## Wind profile and forcing
 
@@ -169,7 +203,11 @@ python src/firefront.py data/output/RUN1 data/output/RUN2 --obs f19_front.csv --
 forcing: `[wind] forcing = profile` (default; relaxation time `forcing_time`, default 1 s) nudges
 the horizontal-mean wind at each height back to the initial profile. `[wall] model = log`
 (default) replaces the no-slip ground by a log-law wall model (roughness `[wall] z_0`, default the
-wind's `z_0`); with both, the profile holds within about 2%. Details in `docs/wildfire_model.tex`.
+wind's `z_0`); with both, the profile holds within about 2%. With a fire that is large compared with the
+domain, the plane-mean forcing over-drives the inflow (+20-25% near the ground in the first 3D F19 run);
+`[wind] forcing = sponge` instead forces only a strip at the upstream end (`sponge_start`, `sponge_end`,
+default the first 15% of the domain; `sponge_time` 1 s), where the velocity, T and the species are
+relaxed to the initial state, so the air reaching the fire is ambient and the fire itself is not forced. Details in `docs/wildfire_model.tex`.
 
 ## Defaults
 
