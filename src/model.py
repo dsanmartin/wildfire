@@ -157,6 +157,24 @@ class Model:
             vel0 = to(state0[:nd])
             self.force_target = [(v * self.force_mask).sum(hdims, keepdim=True) / count for v in vel0]
             self.force_count = count
+        # Sponge zone (forcing = sponge): a strip in x where the flow is relaxed to the initial state (velocity
+        # profile, T_inf, ambient species), with smooth sin^2 ramps at both ends; no forcing elsewhere. Air that
+        # leaves the periodic domain downstream re-enters as ambient air, and the fire is not forced at all.
+        self.sponge_w = None
+        if cfg.forcing == 'sponge':
+            L = cfg.x_max - cfg.x_min
+            xs = cfg.sponge_start if cfg.sponge_start is not None else cfg.x_min
+            xe = cfg.sponge_end if cfg.sponge_end is not None else cfg.x_min + 0.15 * L
+            if not xe > xs:
+                raise ValueError("[wind] sponge_end must be larger than sponge_start")
+            ramp = 0.25 * (xe - xs)
+            X = grid['Xm']
+            rise = np.sin(0.5 * np.pi * np.clip((X - xs) / ramp, 0, 1)) ** 2
+            fall = np.sin(0.5 * np.pi * np.clip((xe - X) / ramp, 0, 1)) ** 2
+            fluid = ~(grid['solid'] | grid['dead'])
+            self.sponge_w = to(rise * fall * fluid) / cfg.sponge_time         # 1/s
+            self.sponge_u0 = [to(v) for v in state0[:nd]]
+            self.sponge_Y = {nd + 4: 0.0, nd + 5: cfg.Y_O2_amb}               # ambient fuel gas and oxygen
         # Pressure solver
         lengths = [cfg.x_max - cfg.x_min] + ([cfg.y_max - cfg.y_min] if nd == 3 else [])
         legacy_length = cfg.x_max if (cfg.legacy and nd == 2) else None
@@ -331,8 +349,12 @@ class Model:
             s = solid if solid is not None else self.solid_rates(y, rho)
             net = s['Q_comb'].clone()
             net[:s['k']] -= s['Q_conv']                           # fuel slab
-            return out + net / rho_cp
-        return out + self.q(T, Y)
+            out = out + net / rho_cp
+        else:
+            out = out + self.q(T, Y)
+        if self.sponge_w is not None:                             # sponge zone: relax to T_inf (enters the
+            out = out + self.sponge_w * (c.T_inf - T)            # divergence, so the gas contracts)
+        return out
 
     def wall_stress(self, y):
         """Log-law wall model. u_tau = kappa |u_1| / [ln(z_1/z_0) - psi_m(z_1/L) + psi_m(z_0/L)] from the
@@ -359,6 +381,8 @@ class Model:
         local flow around the fire) and applied in the fluid only. In a periodic domain nothing else
         drives the wind, and ground friction would slowly decelerate it."""
         c, nd = self.cfg, self.nd
+        if self.sponge_w is not None:                             # sponge zone only
+            return [self.sponge_w * (self.sponge_u0[i] - vel[i]) for i in range(nd)]
         hdims = tuple(range(1, nd))
         out = []
         for i in range(nd):
@@ -672,7 +696,7 @@ class Model:
             F = self.faces if self.faces is not None else self.face_proj.to_faces(vel)
             divF = self.face_proj.divergence(F)
             self._F, self._divF = F, divF
-        forcing = self.wind_forcing(vel) if c.forcing == 'profile' else None
+        forcing = self.wind_forcing(vel) if c.forcing in ('profile', 'sponge') else None
         wall_drag = self.wall_stress(y) if c.wall_model == 'log' else None
         for i in range(nd):
             if face_mode:
@@ -740,6 +764,8 @@ class Model:
                     # that it moves the species between cells without creating or destroying them
                     k_Y = rho * D + self._mu_sgs / c.Pr if c.turbulence else rho * D
                     drhoY = -self.face_proj.divergence(flux) + self.flux_diffusion(Yk, k_Y) + src
+                    if self.sponge_w is not None:                 # sponge zone: relax to the ambient value
+                        drhoY = drhoY + rho * self.sponge_w * (self.sponge_Y[i_sp] - Yk)
                     out[i_sp] = (drhoY - Yk * drho) / rho          # d(rho Y / rho)/dt
                     self._drhoY[i_sp] = drhoY
                 sources = {}
@@ -759,6 +785,8 @@ class Model:
                     for j in range(nd):
                         acc = acc + self._grad_mu[j] * grad_Yk[j]
                     rate = rate + acc / (c.Pr * rho)
+                if self.sponge_w is not None:                     # sponge zone: relax to the ambient value
+                    rate = rate + self.sponge_w * (self.sponge_Y[i_sp] - Yk)
                 out[i_sp] = rate
         else:
             out[nd + 1] = -c.Y_f * self.reaction(T) * Y

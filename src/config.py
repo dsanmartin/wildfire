@@ -139,6 +139,9 @@ class Config:
     L_obukhov: float = None             # Obukhov length, m (monin-obukhov; None: neutral). FDS Case_F19: -500
     forcing: str = 'profile'            # profile: nudge the horizontal-mean wind to the initial profile; none
     forcing_time: float = 1.0           # relaxation time of the wind forcing, s
+    sponge_start: float = None          # forcing = sponge: x range of the sponge zone (default: the first 15% of
+    sponge_end: float = None            # the domain); there u -> initial profile, T -> T_inf, Y_k -> ambient
+    sponge_time: float = 1.0            # relaxation time in the sponge zone, s
     wall_model: str = 'log'             # log: wall stress from the log law; none: no-slip ground
     wall_z0: float = None               # roughness length of the wall model, m; None: the wind's z_0
     u_r: float = 4.8
@@ -235,6 +238,8 @@ _KEYS = {
     ('wind', 'u_r'): ('u_r', float), ('wind', 'shape'): ('initial_u_type', str),
     ('wind', 'z_r'): ('z_r', float), ('wind', 'z_0'): ('u_z_0', float), ('wind', 'L'): ('L_obukhov', float),
     ('wind', 'forcing'): ('forcing', str), ('wind', 'forcing_time'): ('forcing_time', float),
+    ('wind', 'sponge_start'): ('sponge_start', float), ('wind', 'sponge_end'): ('sponge_end', float),
+    ('wind', 'sponge_time'): ('sponge_time', float),
     ('wall', 'model'): ('wall_model', str), ('wall', 'z_0'): ('wall_z0', float),
     ('pressure', 'tol'): ('tol', float), ('pressure', 'max_iter'): ('max_iter', int),
     ('pressure', 'log_solver'): ('log_solver', bool), ('pressure', 'poisson'): ('poisson', str),
@@ -334,7 +339,7 @@ def load_config(path: str, **overrides) -> Config:
                          ('model', ('vertical', 'planview')), ('projection', ('face', 'nodal')),
                          ('cp_model', ('constant', 'variable', 'mixture')), ('transport', ('constant', 'sutherland')),
                          ('initial_u_type', ('power law', 'log', 'constant', 'monin-obukhov')),
-                         ('forcing', ('none', 'profile')), ('wall_model', ('none', 'log')),
+                         ('forcing', ('none', 'profile', 'sponge')), ('wall_model', ('none', 'log')),
                          ('dilatation', ('consistent', 'published')), ('ignition', ('temperature', 'burner')),
                          ('scalar_transport', ('density', 'temperature')),
                          ('c_s_model', ('constant', 'fds'))):

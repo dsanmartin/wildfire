@@ -410,6 +410,22 @@ where the overbar is the average over the fluid nodes of a horizontal plane and 
 the local flow around the fire; with a large domain the fire changes the plane averages only
 slightly.
 
+\paragraph{Sponge zone (\code{forcing = sponge}).} With a fire that is large compared with the domain the
+plane-mean forcing over-drives the wind: the indraft and the plume slow the flow in a large part of the
+domain and the uniform force compensates everywhere, including the inflow of the fire. In the 3D F19 run
+($400\times240$~m, fire 200~m wide) the near-ground wind upstream of the fire rose 20--25\% above the
+profile while the head grew, and air disturbed by the fire re-entered through the periodic boundary after
+70--100~s. With \code{forcing = sponge} the flow is forced only in a strip
+$x_\text{s}\le x\le x_\text{e}$ (\code{sponge\_start}, \code{sponge\_end}; default the first 15\% of the
+domain), where the velocity is relaxed to the initial profile, $T$ to $T_\infty$ (through the heating rate,
+so the cooled gas contracts and mass is conserved) and the species to ambient, with time scale
+\code{sponge\_time} (default 1~s) and weight $w(x)$ rising and falling as $\sin^2$ over a quarter of the
+strip at each end. Air leaving downstream re-enters as ambient air, and the fire is not forced at all.
+Tests: a hot blob carried through the periodic boundary returned to 288.4~K, against 304--315~K with the
+plane-mean forcing; upstream of a 2D fire the wind from 1 to 5~m stayed within 2--3\% of the profile, against
+18--27\% above it with the plane-mean forcing (at 0.5~m it was 14--20\% below the profile, the fire's own
+blocking, which the plane-mean forcing had masked).
+
 \subsection{Wall model}\label{sec:wall}
 With \code{[wall] model = log} (default) the ground (and terrain surfaces) carry a wall-stress model.
 The friction velocity follows from the log law at the first node above the ground, at height $z_1$,
@@ -688,7 +704,10 @@ volume-weighted mixing of $T$ described in Section~\ref{sec:gas}.
 \subsection{Log diagnostics and output}
 Besides the extreme values and the budgets, the log reports the total heat release rate and the gas
 temperature weighted by the local heat release rate, $T_\text{flame}=\sum\dot q_\text{c} T/\sum\dot q_\text{c}$, which is
-comparable with measured flame temperatures, unlike the single-cell maximum. 2D runs save the full
+comparable with measured flame temperatures, unlike the single-cell maximum, and the head-fire position
+(the most downwind ground-row node where half of the fuel is gone) with the burnt length (2D) or area (3D)
+of the ground row. \code{data.npz} is also written during the run, every \code{save\_every} outputs, so
+partial results can be analyzed. 2D runs save the full
 fields every $N_T$ steps; 3D runs save three planes (\code{xz\_*}, \code{xy\_*}, \code{yz\_*} through the
 head fire), the fuel left per column and the final full fields. Full snapshots are written every
 \code{full\_interval} seconds (2D or 3D). Derived fields: heat release rate (\code{HRR}), pyrolysis
@@ -769,7 +788,9 @@ any name & -- & building box \code{x0, x1, height} (3D: \code{x0, x1, y0, y1, he
 \code{u\_r}, \code{z\_r} & 4.8~m\,s$^{-1}$, 2~m & reference wind speed and height \\
 \code{shape} & \code{monin-obukhov} & \code{monin-obukhov}, \code{log}, \code{constant}, \code{power law} \\
 \code{z\_0}, \code{L} & 0.03~m, neutral & roughness and Obukhov lengths \\
-\code{forcing}, \code{forcing\_time} & \code{profile}, 1~s & wind forcing and its relaxation time \\
+\code{forcing}, \code{forcing\_time} & \code{profile}, 1~s & \code{profile} (plane mean), \code{sponge} or \code{none}; relaxation time \\
+\code{sponge\_start}, \code{sponge\_end} & first 15\% of $x$ & sponge zone (\code{forcing = sponge}) \\
+\code{sponge\_time} & 1~s & relaxation time in the sponge zone \\
 \psec{wall}
 \code{model}, \code{z\_0} & \code{log}, wind $z_0$ & ground wall model and its roughness \\
 \psec{ignition}
@@ -792,6 +813,7 @@ any name & -- & building box \code{x0, x1, height} (3D: \code{x0, x1, y0, y1, he
 \code{z\_slice}, \code{y\_slice} & 1~m, center & planes saved in 3D \\
 \code{full\_interval} & 0 (off) & seconds between full snapshots \\
 \code{full\_dtype} & \code{float32} & precision of the snapshots \\
+\code{save\_every} & 20 & outputs between partial writes of \code{data.npz}; 0: only at the end \\
 \end{longtable}
 
 \subsection{Defaults and calibration policy}\label{sec:defaults}
