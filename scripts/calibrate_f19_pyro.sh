@@ -6,7 +6,7 @@
 #   bash scripts/calibrate_f19_pyro.sh              # write them and run all at once (default)
 #   bash scripts/calibrate_f19_pyro.sh sequential   # one after another
 #
-# Runs (output in data/output/<name>/, log in <name>.out); the baseline (linear pyrolysis between 400 and
+# Runs (output in data/output/<name>/, log in logs/<name>.out); the baseline (linear pyrolysis between 400 and
 # 500 K, constant c_s = 1500 J/(kg K)) is f19_hc131_kg01:
 #   f19_lin_csfds   linear pyrolysis, FDS heat capacity ramp (1100 -> 2000 J/(kg K) from 0 to 200 C)
 #   f19_arr_cs      FDS Arrhenius kinetics (A = 1040 1/s, E = 61 kJ/mol: T_act = 7342 K), constant c_s
@@ -16,6 +16,7 @@
 #              data/output/f19_arr_cs data/output/f19_arr_csfds --obs data/input/f19_front_fds.csv --window 20 50
 set -e
 cd "$(dirname "$0")/.."
+mkdir -p logs                                  # console output of the runs: logs/<name>.out
 mode=${1:-parallel}
 dir=data/input/2D/calibration_pyro
 mkdir -p "$dir"
@@ -71,12 +72,12 @@ echo "parameter files in $dir: $runs"
 if [ "$mode" = "write" ]; then
     exit 0
 elif [ "$mode" = "sequential" ]; then
-    nohup bash -c "for r in $runs; do python -u src/main.py $dir/\$r.ini -n \$r --device cuda > \$r.out 2>&1; done" \
-        > calibration_pyro.out 2>&1 &
-    echo "started the runs one after another; follow with: tail -f f19_lin_csfds.out"
+    nohup bash -c "for r in $runs; do python -u src/main.py $dir/\$r.ini -n \$r --device cuda > logs/\$r.out 2>&1; done" \
+        > logs/calibration_pyro.out 2>&1 &
+    echo "started the runs one after another; follow with: tail -f logs/f19_lin_csfds.out"
 else
     for r in $runs; do
-        nohup python -u src/main.py "$dir/$r.ini" -n "$r" --device cuda > "$r.out" 2>&1 &
+        nohup python -u src/main.py "$dir/$r.ini" -n "$r" --device cuda > "logs/$r.out" 2>&1 &
     done
-    echo "started all runs in parallel; follow with: tail -f f19_arr_cs.out"
+    echo "started all runs in parallel; follow with: tail -f logs/f19_arr_cs.out"
 fi

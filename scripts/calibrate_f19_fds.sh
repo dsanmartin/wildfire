@@ -17,13 +17,14 @@
 # H_C: FDS burns 75% of the dry fuel as gas with 17.4 MJ/kg (the rest is char), i.e. 13.1 MJ per kg of
 # dry fuel in the gas phase; this model gasifies all of it, so 13.1 matches the FDS gas-phase heat and
 # 17.4 is the upper bound (all fuel burning as FDS fuel vapor).
-# Runs (output in data/output/<name>/, log in <name>.out):
+# Runs (output in data/output/<name>/, log in logs/<name>.out):
 #   f19_hc131_kg01   H_C = 13.1 MJ/kg, kappa_gas = 0.1 1/m
 #   f19_hc131_kg03   H_C = 13.1 MJ/kg, kappa_gas = 0.3 1/m
 #   f19_hc174_kg01   H_C = 17.4 MJ/kg, kappa_gas = 0.1 1/m
 #   f19_hc174_kg03   H_C = 17.4 MJ/kg, kappa_gas = 0.3 1/m
 set -e
 cd "$(dirname "$0")/.."
+mkdir -p logs                                  # console output of the runs: logs/<name>.out
 mode=${1:-parallel}
 extra=""
 if [ "$2" = "direct" ] || [ "$1" = "direct" ]; then
@@ -78,12 +79,12 @@ echo "parameter files in $dir: $runs"
 if [ "$mode" = "write" ]; then
     exit 0
 elif [ "$mode" = "sequential" ]; then
-    nohup bash -c "for r in $runs; do python -u src/main.py $dir/\$r.ini -n \$r --device cuda $extra > \$r.out 2>&1; done" \
-        > calibration_fds.out 2>&1 &
-    echo "started the runs one after another; follow with: tail -f f19_hc131_kg01.out"
+    nohup bash -c "for r in $runs; do python -u src/main.py $dir/\$r.ini -n \$r --device cuda $extra > logs/\$r.out 2>&1; done" \
+        > logs/calibration_fds.out 2>&1 &
+    echo "started the runs one after another; follow with: tail -f logs/f19_hc131_kg01.out"
 else
     for r in $runs; do
-        nohup python -u src/main.py "$dir/$r.ini" -n "$r" --device cuda $extra > "$r.out" 2>&1 &
+        nohup python -u src/main.py "$dir/$r.ini" -n "$r" --device cuda $extra > "logs/$r.out" 2>&1 &
     done
-    echo "started all runs in parallel${extra:+ without CUDA graphs}; follow with: tail -f f19_hc131_kg01.out"
+    echo "started all runs in parallel${extra:+ without CUDA graphs}; follow with: tail -f logs/f19_hc131_kg01.out"
 fi

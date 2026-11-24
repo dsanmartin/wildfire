@@ -191,7 +191,7 @@ Runs and checks (`scripts/`):
 | `graph_check.py FILE [steps] --device cuda` | step-by-step difference between direct execution and CUDA graphs (should be round-off) |
 
 Typical workflow on the GPU machine: write and check with the smoke mode, then launch the full run;
-follow `tail -f NAME.out` (head-fire position and budgets in every output); run `firefront.py` and
+follow `tail -f logs/NAME.out` (the scripts write the console output of each run to `logs/`) (head-fire position and budgets in every output); run `firefront.py` and
 `visualize.py` on the partial or final `data.npz`; copy figures back with
 `rsync -av --include='*/' --include='figures/***' --include='log.txt' --exclude='*' HOST:PATH/data/output/ data/output/`.
 

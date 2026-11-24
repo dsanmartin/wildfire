@@ -147,3 +147,5 @@ scripts/commands.txt
 # Sphinx
 .readthedocs.yaml
 pyproject.toml
+# Console output of the runs (scripts/*.sh write logs/<name>.out)
+logs/

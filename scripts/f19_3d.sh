@@ -18,6 +18,7 @@
 # Compare with: python src/firefront.py data/output/f19_3d_sponge data/output/f19_3d --obs data/input/f19_front_fds.csv
 set -e
 cd "$(dirname "$0")/.."
+mkdir -p logs                                  # console output of the runs: logs/<name>.out
 mode=${1:-smoke}
 dir=data/input/3D/f19
 mkdir -p "$dir"
@@ -73,11 +74,11 @@ echo "parameter files in $dir: f19_3d_sponge_smoke.ini, f19_3d_sponge.ini"
 case "$mode" in
     write) ;;
     smoke)
-        python -u src/main.py "$dir/f19_3d_sponge_smoke.ini" -n f19_3d_sponge_smoke --device cuda 2>&1 | tee f19_3d_sponge_smoke.out
+        python -u src/main.py "$dir/f19_3d_sponge_smoke.ini" -n f19_3d_sponge_smoke --device cuda 2>&1 | tee logs/f19_3d_sponge_smoke.out
         echo
         echo "check: 'CUDA graphs: captured ...', mean step time, GPU memory peak, mass residual near 0%" ;;
     full)
-        nohup python -u src/main.py "$dir/f19_3d_sponge.ini" -n f19_3d_sponge --device cuda > f19_3d_sponge.out 2>&1 &
-        echo "started; follow with: tail -f f19_3d_sponge.out" ;;
+        nohup python -u src/main.py "$dir/f19_3d_sponge.ini" -n f19_3d_sponge --device cuda > logs/f19_3d_sponge.out 2>&1 &
+        echo "started; follow with: tail -f logs/f19_3d_sponge.out" ;;
     *) echo "usage: bash scripts/f19_3d.sh [write|smoke|full]"; exit 1 ;;
 esac

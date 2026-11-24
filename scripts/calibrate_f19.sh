@@ -5,7 +5,7 @@
 #   bash scripts/calibrate_f19.sh             # write them and run one after another (in the background)
 #   bash scripts/calibrate_f19.sh parallel    # write them and run all at the same time (shares the GPU)
 #
-# Runs (output in data/output/<name>/, log in <name>.out):
+# Runs (output in data/output/<name>/, log in logs/<name>.out):
 #   cal_base        H_C = 21 MJ/kg, kappa_gas = 0.1   (reference, current defaults)
 #   cal_hc156       H_C = 15.6 MJ/kg                  (heat of combustion of the pyrolysis gas, Mell et al. 2007)
 #   cal_kg03        kappa_gas = 0.3 1/m               (stronger flame radiation)
@@ -15,6 +15,7 @@
 # Common: 1.17 m grid, moisture 0.058, turbulence filter width 0.30 m, ignition and wind of the paper case.
 set -e
 cd "$(dirname "$0")/.."
+mkdir -p logs                                  # console output of the runs: logs/<name>.out
 mode=${1:-sequential}
 dir=data/input/2D/calibration
 mkdir -p "$dir"
@@ -63,11 +64,11 @@ if [ "$mode" = "write" ]; then
     exit 0
 elif [ "$mode" = "parallel" ]; then
     for r in $runs; do
-        nohup python -u src/main.py "$dir/$r.ini" -n "$r" --device cuda > "$r.out" 2>&1 &
+        nohup python -u src/main.py "$dir/$r.ini" -n "$r" --device cuda > "logs/$r.out" 2>&1 &
     done
-    echo "started all runs in parallel; follow with: tail -f cal_base.out"
+    echo "started all runs in parallel; follow with: tail -f logs/cal_base.out"
 else
-    nohup bash -c "for r in $runs; do python -u src/main.py $dir/\$r.ini -n \$r --device cuda > \$r.out 2>&1; done" \
-        > calibration.out 2>&1 &
-    echo "started the runs one after another; follow with: tail -f cal_base.out"
+    nohup bash -c "for r in $runs; do python -u src/main.py $dir/\$r.ini -n \$r --device cuda > logs/\$r.out 2>&1; done" \
+        > logs/calibration.out 2>&1 &
+    echo "started the runs one after another; follow with: tail -f logs/cal_base.out"
 fi
