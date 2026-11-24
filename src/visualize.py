@@ -242,69 +242,89 @@ def render(d, name, args, out_dir, ffmpeg):
         return
 
     y = d['y']
-    ylim = args.ylim or (float(y[0]), float(y[-1]))
     col = d['fuel_column']
     frac = col / np.where(col[0] > 0, col[0], np.nan)
     zs, ys = float(d['z_slice']), float(d['y_slice'])
     solid = d.get('solid')
     j_plane, k_plane = int(np.argmin(np.abs(y - ys))), int(np.argmin(np.abs(z - zs)))
+    if args.ylim:                                             # plan view: the fuel plot plus 15 m
+        ylim = args.ylim
+    else:
+        rows = y[:col.shape[1]][(col[0] > 0).any(axis=1)] if (col[0] > 0).any() else y
+        ylim = (max(float(y[0]), float(rows.min()) - 15), min(float(y[-1]), float(rows.max()) + 15))
+    vert = f', vertical x{args.zscale:g}' if args.zscale != 1 else ''
+    W = 12.0                                                  # inches for the x range of the plots
+    xspan = xlim[1] - xlim[0]
 
-    def draw(axs, n):
-        for ax in axs:
-            ax.clear()
-        m = axs[0].pcolormesh(x, y, planes['xy'][n], cmap=cmap, vmin=vmin, vmax=vmax, shading='auto')
-        axs[0].contour(x, y, np.nan_to_num(frac[n], nan=1.0), levels=[0.5], colors='w', linewidths=0.8)
+    def draw_side(ax, n):
+        ax.clear()
+        m = ax.pcolormesh(x, z, planes['xz'][n], cmap=cmap, vmin=vmin, vmax=vmax, shading='auto')
         if solid is not None:
-            ix = int(np.argmin(np.abs(x - d['yz_x'][n])))
-            solids(axs[0], x, y, solid[k_plane]); solids(axs[1], x, z, solid[:, j_plane, :])
-            solids(axs[2], y, z, solid[:, :, ix])
+            solids(ax, x, z, solid[:, j_plane, :])
         if args.arrows:
-            arrows(axs[0], x, y, d['xy_u'][n], d['xy_v'][n], xlim, ylim, arrow_scale)
-            arrows(axs[1], x, z, d['xz_u'][n], d['xz_w'][n], xlim, zlim, arrow_scale)
-            arrows(axs[2], y, z, d['yz_v'][n], d['yz_w'][n], ylim, zlim, arrow_scale)
-        axs[0].axhline(ys, color='w', lw=0.5, ls=':')
-        axs[0].axvline(d['yz_x'][n], color='w', lw=0.5, ls=':')
-        vert = f' (vertical x{args.zscale:g})' if args.zscale != 1 else ''
-        axs[0].set(xlim=xlim, ylim=ylim, ylabel='y [m]', title=f'x-y plane, z = {zs:.2f} m')
-        axs[1].pcolormesh(x, z, planes['xz'][n], cmap=cmap, vmin=vmin, vmax=vmax, shading='auto')
-        axs[1].set(xlim=xlim, ylim=zlim, xlabel='x [m]', ylabel='z [m]', title=f'x-z plane, y = {ys:.1f} m' + vert)
-        axs[2].pcolormesh(y, z, planes['yz'][n], cmap=cmap, vmin=vmin, vmax=vmax, shading='auto')
-        axs[2].set(xlim=ylim, ylim=zlim, xlabel='y [m]', ylabel='z [m]',
-                   title=f'y-z plane, x = {d["yz_x"][n]:.1f} m (head fire)' + vert)
-        axs[0].set_aspect(1.0)                                # same scale in meters on every axis
-        axs[1].set_aspect(args.zscale)
-        axs[2].set_aspect(args.zscale)
-        for ax in axs:
-            ax.title.set_fontsize(9)
-        axs[0].figure.suptitle(f't = {t[n]:.1f} s', x=0.01, ha='left', fontsize=10)
+            arrows(ax, x, z, d['xz_u'][n], d['xz_w'][n], xlim, zlim, arrow_scale)
+        ax.axvline(d['yz_x'][n], color='w', lw=0.5, ls=':')
+        ax.set(xlim=xlim, ylim=zlim, xlabel='x [m]', ylabel='z [m]')
+        ax.set_aspect(args.zscale)
+        ax.set_title(f'{label}, side view (x-z plane at y = {ys:.0f} m{vert}), t = {t[n]:.1f} s', fontsize=10, loc='left')
         return m
 
-    # Planes stacked vertically at one scale: x-y on top, the x-z plane below it (same x axis), then y-z
-    xspan, yspan, zspan = xlim[1] - xlim[0], ylim[1] - ylim[0], (zlim[1] - zlim[0]) * args.zscale
-    W = 10.0                                                  # inches for the x range
+    def draw_plan(ax, n):
+        ax.clear()
+        m = ax.pcolormesh(x, y, planes['xy'][n], cmap=cmap, vmin=vmin, vmax=vmax, shading='auto')
+        ax.contour(x, y, np.nan_to_num(frac[n], nan=1.0), levels=[0.5], colors='w', linewidths=0.8)
+        if solid is not None:
+            solids(ax, x, y, solid[k_plane])
+        if args.arrows:
+            arrows(ax, x, y, d['xy_u'][n], d['xy_v'][n], xlim, ylim, arrow_scale)
+        ax.axhline(ys, color='w', lw=0.5, ls=':')              # where the side view is taken
+        ax.axvline(d['yz_x'][n], color='w', lw=0.5, ls=':')    # head fire
+        ax.set(xlim=xlim, ylim=ylim, xlabel='x [m]', ylabel='y [m]')
+        ax.set_aspect(1.0)
+        ax.set_title(f'{label}, plan view (x-y plane at z = {zs:.1f} m; white: half of the fuel burned), '
+                     f't = {t[n]:.1f} s', fontsize=10, loc='left')
+        return m
 
-    def new_figure():
-        heights = [yspan, zspan, zspan]
-        H = W / xspan * sum(heights) + 2.2                    # plus titles and labels
-        fig, axs = plt.subplots(3, 1, figsize=(W + 1.8, H), constrained_layout=True,
-                                gridspec_kw={'height_ratios': heights})
-        return fig, axs
+    def draw_yz(ax, n):
+        ax.clear()
+        m = ax.pcolormesh(y, z, planes['yz'][n], cmap=cmap, vmin=vmin, vmax=vmax, shading='auto')
+        if solid is not None:
+            solids(ax, y, z, solid[:, :, int(np.argmin(np.abs(x - d['yz_x'][n])))])
+        if args.arrows:
+            arrows(ax, y, z, d['yz_v'][n], d['yz_w'][n], ylim, zlim, arrow_scale)
+        ax.set(xlim=ylim, ylim=zlim, xlabel='y [m]', ylabel='z [m]')
+        ax.set_aspect(args.zscale)
+        ax.set_title(f'{label}, cross section at the head fire (y-z plane at x = {d["yz_x"][n]:.0f} m{vert}), '
+                     f't = {t[n]:.1f} s', fontsize=10, loc='left')
+        return m
 
-    for n in idx:
-        fig, axs = new_figure()
-        m = draw(axs, n)
-        fig.colorbar(m, ax=axs, label=label, shrink=0.6)
-        path = os.path.join(out_dir, f'{name}_planes_t{t[n]:06.1f}.png')
-        fig.savefig(path, dpi=150); plt.close(fig)
-        print('wrote', path)
-    if not args.no_anim:
-        fig, axs = new_figure()
-        m = draw(axs, 0)
-        fig.colorbar(m, ax=axs, label=label, shrink=0.6)
-        anim = animation.FuncAnimation(fig, lambda n: draw(axs, n), frames=len(t), interval=1000 / args.fps)
-        save_anim(anim, out_dir, name, args, ffmpeg)
-        plt.close(fig)
+    # Each view is its own figure at true scale (same meters per inch on both axes, unless --zscale)
+    views = [('side', draw_side, xspan, (zlim[1] - zlim[0]) * args.zscale),
+             ('plan', draw_plan, xspan, ylim[1] - ylim[0])]
+    if args.yz:
+        views.append(('yz', draw_yz, ylim[1] - ylim[0], (zlim[1] - zlim[0]) * args.zscale))
+    for view, draw, span_h, span_v in views:
+        width = W * span_h / xspan
+        size = (width + 1.4, width * span_v / span_h + 0.9)
 
+        def figure():
+            fig, ax = plt.subplots(figsize=size, constrained_layout=True)
+            return fig, ax
+        for n in idx:
+            fig, ax = figure()
+            m = draw(ax, n)
+            fig.colorbar(m, ax=ax, label=label, fraction=0.03, pad=0.01)
+            path = os.path.join(out_dir, f'{name}_{view}_t{t[n]:06.1f}.png')
+            fig.savefig(path, dpi=150); plt.close(fig)
+            print('wrote', path)
+        if not args.no_anim:
+            fig, ax = figure()
+            m = draw(ax, 0)
+            fig.colorbar(m, ax=ax, label=label, fraction=0.03, pad=0.01)
+            anim = animation.FuncAnimation(fig, lambda n, draw=draw, ax=ax: draw(ax, n), frames=len(t),
+                                           interval=1000 / args.fps)
+            save_anim(anim, out_dir, f'{name}_{view}', args, ffmpeg)
+            plt.close(fig)
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -320,6 +340,7 @@ def main():
     ap.add_argument('--arrows', action='store_true', help='overlay velocity arrows (in-plane components)')
     ap.add_argument('--gif', action='store_true', help='GIF animations even if ffmpeg is available')
     ap.add_argument('--fps', type=int, default=8)
+    ap.add_argument('--yz', action='store_true', help='3D: also the y-z cross section through the head fire')
     ap.add_argument('--zscale', type=float, default=1.0,
                     help='vertical exaggeration of the x-z and y-z planes (default 1: true proportions)')
     args = ap.parse_args()
