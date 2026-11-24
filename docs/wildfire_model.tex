@@ -138,7 +138,10 @@ $\mu_0$ and $\kappa_0$.
   \frac{\partial\rho}{\partial t} + \nabla\cdot(\rho\vu) = \dot m''',\qquad T=\frac{\rho_\infty T_\infty}{\rho},
 \end{equation}
 with $\dot m'''$ the pyrolysis and burner gas. This is the only equation that changes the gas
-temperature. With the velocity satisfying \eqref{eq:div}, it is equivalent to \eqref{eq:energy}. Why
+temperature. With the velocity satisfying \eqref{eq:div}, it is equivalent to \eqref{eq:energy}: by the
+gas law $\mathrm{D}T/\mathrm{D}t=-(T/\rho)\,\mathrm{D}\rho/\mathrm{D}t=T\nabla\cdot\vu-T\dot m'''/\rho=\dot q/(\rho c_\text{p})$,
+so the temperature rises by exactly the heating rate of \eqref{eq:energy}; the derivation, the energy
+balance and the discrete time step are in Appendix~\ref{app:lowmach}. Why
 the density and not the temperature is advanced: an advection scheme for $T$ conserves $\int T\dd V$,
 so wherever hot and cold gas mix, numerically or through the subgrid model, the mixed temperature is
 the volume-weighted one (744~K for equal volumes at 1200 and 288~K) instead of the mass-weighted one
@@ -850,22 +853,164 @@ Policy for changing a default:
 \section{Known limitations and open issues}\label{sec:limitations}
 %======================================================================
 \begin{itemize}
-  \item Not yet calibrated: $\kappa_\text{g}$, $H_\text{C}$ and $\tau_\text{mix}$ control the heat release. With the
-        earlier fuel values ($\sigma_\text{s}=4000$~m$^{-1}$, $C_\text{d}=0.15$, hot-gas ignition) the 2D F19 runs
-        spread at about 5~m\,s$^{-1}$ almost from the start, whereas the observed head fire advanced
-        only 71~m in the first 86~s and at least 3.6~m\,s$^{-1}$ afterwards. Most of the slow start is the
-        progressive lighting of the 174~m line (56~s) and the growth of the head-fire width, which only
-        3D runs with the burner can represent.
-  \item No dissociation; one gray absorption coefficient for the gas, independent of soot or
-        products. No char oxidation; constant fuel heat capacity.
+  \item \textbf{Spread rate of F19 not yet reproduced.} The FDS validation data for F19 place the head
+        fire at 80, 120 and 200~m at 56, 86 and 138~s (1.47~m\,s$^{-1}$; file
+        \code{data/input/f19\_front\_fds.csv}). With linear pyrolysis the 2D runs spread at
+        4.7--5.2~m\,s$^{-1}$ and reach the end of the plot (200~m) at 52~s; $H_\text{C}$ (13.1 to 17.4~MJ\,kg$^{-1}$)
+        and $\kappa_\text{g}$ (0.1 to 0.3~m$^{-1}$) change this by only 8\% and 4\%. A 2D run is an infinitely wide
+        line fire without lateral entrainment, the fastest case. The first 3D run (240~m-wide periodic
+        domain, plane-mean wind forcing) spread at about 2.8~m\,s$^{-1}$, with the head at 139~m at 56~s and
+        at 200~m at 78~s: 3D effects halve the spread rate, but it remains about twice the observed one.
+        Candidates, under test: the pyrolysis kinetics (the linear model releases gas from 400~K, the FDS
+        Arrhenius kinetics need 700--900~K; \code{scripts/calibrate\_f19\_pyro.sh}), the fuel heat capacity,
+        and the boundaries (next item).
+  \item \textbf{Periodic horizontal boundaries.} There are no open boundaries. With the plane-mean
+        forcing and a fire large compared with the domain, the forcing over-drives the wind: in the first 3D
+        run the near-ground inflow rose 20--25\% above the profile while the head grew, fire-disturbed air
+        re-entered through the periodic boundary after 70--100~s, and the fire covered 83\% of the width, so
+        its periodic images were only 40~m apart. The sponge zone (\code{forcing = sponge}) removes the
+        forcing from the fire region and returns ambient air at the inflow; the domain stays periodic, so
+        the width must leave room between the images of the fire (\code{scripts/f19\_3d.sh}: 360~m for a
+        200~m plot).
+  \item \textbf{Cost.} The 3D F19 run (9.9~M cells of $1.25\times1.25\times0.125$~m, 140~s) took 14~h on an RTX
+        4090. The uniform vertical grid, fine enough for the 0.49~m fuel bed up to the 20~m top, sets
+        both the cell count and, through the vertical CFL limit, a time step of 4--5~ms; double precision is
+        slow on consumer GPUs. Options: a stretched vertical grid (a model-wide change), mixed precision, and
+        cheaper radiation (\code{angle\_increment}, \code{update\_every}); \code{scripts/profile\_parts.py}
+        measures the cost of each part of a step.
+  \item \textbf{Mass budget.} Exact to round-off except for the mass changed by the temperature bounds:
+        negligible in 2D, a few tenths of a percent of the outflow in 3D (up to 4\% during ignition) with
+        the larger time step.
+  \item No dissociation; one gray absorption coefficient for the gas, independent of soot or products.
+        No char oxidation; the temperature-dependent fuel heat capacity of FDS is an option
+        (\code{c\_s\_model = fds}), not the default.
   \item Water vapor from drying and combustion products are not transported.
-  \item Periodic horizontal boundaries instead of open ones, compensated by the wind forcing.
-        Building walls have no wall model.
-  \item With terrain the ground row of the scalars is still copied from the row above, and the burner
-        is not available.
+  \item Building walls have no wall model.
+  \item With terrain the ground row of the scalars is still copied from the row above, and the burner is
+        not available.
 \end{itemize}
 
 \appendix
+
+%======================================================================
+\section{Low Mach number formulation: derivation}\label{app:lowmach}
+%======================================================================
+This appendix derives the constraint \eqref{eq:div} from the energy and continuity equations, shows
+that the model, which integrates continuity and the constraint, satisfies the energy equation
+\eqref{eq:energy}, and gives the consequences for energy conservation, mixing and the discrete time step.
+
+\subsection{Assumptions}
+\begin{itemize}
+  \item Ideal gas with a constant mean molar mass $W$ (that of air): $p_\text{th}=\rho RT/W$.
+  \item Low Mach number: the pressure splits into a thermodynamic part $p_0(t)$, uniform in space, and a
+        hydrodynamic part $p$ with $p/p_0=O(\mathrm{Ma}^2)$, which drives the flow but does not enter the
+        gas law. The top boundary is open to the atmosphere, so $p_0$ is constant and
+        \begin{equation}\label{eq:eos}
+          \rho\,T=\frac{p_0W}{R}=\rho_\infty T_\infty\quad\text{everywhere and at all times.}
+        \end{equation}
+  \item Viscous heating and the work of the hydrodynamic pressure are neglected (both are $O(\mathrm{Ma}^2)$
+        relative to the heat release).
+  \item Pyrolysis and burner gas enter at the local gas temperature, so they carry no extra enthalpy.
+\end{itemize}
+
+\subsection{Energy equation}
+For sensible enthalpy at constant thermodynamic pressure ($\mathrm{D}p_0/\mathrm{D}t=0$),
+\begin{equation}\label{eq:enthalpy}
+  \rho c_\text{p}\frac{\mathrm{D}T}{\mathrm{D}t}=\dot q,\qquad \frac{\mathrm{D}}{\mathrm{D}t}=\frac{\partial}{\partial t}+\vu\cdot\nabla,
+\end{equation}
+with $\dot q$ (W\,m$^{-3}$) all the heating of the gas: conduction (molecular and subgrid), radiation,
+combustion, exchange with the fuel and, if active, the sponge zone. This is \eqref{eq:energy}.
+
+\subsection{Continuity}
+\begin{equation}\label{eq:cont-app}
+  \frac{\partial\rho}{\partial t}+\nabla\cdot(\rho\vu)=\dot m'''
+  \quad\Longleftrightarrow\quad
+  \frac{\mathrm{D}\rho}{\mathrm{D}t}=-\rho\,\nabla\cdot\vu+\dot m'''.
+\end{equation}
+
+\subsection{The constraint}
+Differentiating \eqref{eq:eos} along a fluid particle gives
+\begin{equation}\label{eq:drho-dT}
+  T\frac{\mathrm{D}\rho}{\mathrm{D}t}+\rho\frac{\mathrm{D}T}{\mathrm{D}t}=0
+  \quad\Longrightarrow\quad
+  \frac{\mathrm{D}\rho}{\mathrm{D}t}=-\frac{\rho}{T}\frac{\mathrm{D}T}{\mathrm{D}t}.
+\end{equation}
+Inserting \eqref{eq:drho-dT} in \eqref{eq:cont-app} and \eqref{eq:enthalpy} in the result,
+\begin{equation}
+  \rho\,\nabla\cdot\vu=\dot m'''+\frac{\rho}{T}\frac{\mathrm{D}T}{\mathrm{D}t}
+  \quad\Longrightarrow\quad
+  \nabla\cdot\vu=\frac{1}{T}\frac{\mathrm{D}T}{\mathrm{D}t}+\frac{\dot m'''}{\rho}
+  =\frac{\dot q}{\rho c_\text{p}T}+\frac{\dot m'''}{\rho},
+\end{equation}
+which is \eqref{eq:div}. Heating expands the gas; added gas adds volume.
+
+\subsection{What the model integrates}
+The three equations \eqref{eq:enthalpy}, \eqref{eq:cont-app} and \eqref{eq:div} are not independent:
+with \eqref{eq:eos}, any two imply the third. The model integrates continuity \eqref{eq:cont-app} for
+$\rho$ and imposes \eqref{eq:div} on the velocity through the projection; the energy equation is only
+used to evaluate $\dot q$. That the temperature then obeys the energy equation follows in the reverse
+order: with $T=\rho_\infty T_\infty/\rho$, \eqref{eq:drho-dT}, \eqref{eq:cont-app} and \eqref{eq:div},
+\begin{equation}
+  \frac{\mathrm{D}T}{\mathrm{D}t}=-\frac{T}{\rho}\frac{\mathrm{D}\rho}{\mathrm{D}t}
+  =T\,\nabla\cdot\vu-\frac{T\dot m'''}{\rho}
+  =T\Big(\frac{\dot q}{\rho c_\text{p}T}+\frac{\dot m'''}{\rho}\Big)-\frac{T\dot m'''}{\rho}
+  =\frac{\dot q}{\rho c_\text{p}},
+\end{equation}
+which is \eqref{eq:enthalpy}. In the code: \code{Model.heat} evaluates $\dot q/(\rho c_\text{p})$;
+\code{Model.target\_divergence} and \code{Model.dilatation} turn it into $D$; the projection makes the
+face fluxes satisfy $\nabla\cdot F=D$; the next step advances $\rho$ with these fluxes and sets
+$T=\rho_\infty T_\infty/\rho$. The same $D$ also appears in the viscous term $(\nu/3)\nabla D$ of the
+momentum equation. With \code{scalar\_transport = temperature} the code integrates
+\eqref{eq:enthalpy} for $T$ directly instead (the original approach).
+
+\subsection{Energy conservation}
+With constant $c_\text{p}$, \eqref{eq:eos} makes the enthalpy per unit volume uniform and constant,
+$\rho c_\text{p}T=c_\text{p}\rho_\infty T_\infty$. Integrating \eqref{eq:div} over the domain $V$, with the
+volume flux leaving through its boundary $\partial V$,
+\begin{equation}
+  \oint_{\partial V}\vu\cdot\mathbf{n}\,\mathrm{d}A=\int_V\nabla\cdot\vu\,\mathrm{d}V
+  =\frac{1}{c_\text{p}\rho_\infty T_\infty}\int_V\dot q\,\mathrm{d}V+\int_V\frac{\dot m'''}{\rho}\,\mathrm{d}V,
+\end{equation}
+and multiplying by $c_\text{p}\rho_\infty T_\infty$, the enthalpy flux leaving the domain equals the heat
+released plus the enthalpy of the added gas. The energy budget therefore closes exactly when the discrete
+divergence of the face fluxes equals $D$, which the projection enforces (to about $10^{-11}$~s$^{-1}$) and
+when the heat terms are in conservative form (Section~\ref{sec:advection}). With a variable $c_\text{p}$ it
+holds to the variation of $c_\text{p}$.
+
+\subsection{Mixing}
+Two equal volumes $V$ of gas at $T_1$ and $T_2$ mix at constant pressure without heat exchange. Mass
+and enthalpy are conserved, and by \eqref{eq:eos} so is the volume ($\rho T$ is the same for both), so the
+mixed density is the volume average of the densities and
+\begin{equation}
+  \rho=\tfrac12(\rho_1+\rho_2),\qquad
+  T=\frac{\rho_\infty T_\infty}{\rho}=\frac{2}{1/T_1+1/T_2}=\frac{\rho_1T_1+\rho_2T_2}{\rho_1+\rho_2},
+\end{equation}
+the harmonic mean of the temperatures, which is also their mass-weighted average: 464~K for 1200 and
+288~K. Transporting $\rho$ conservatively gives this result for any mixing, physical or numerical. An
+advection scheme for $T$ conserves $\int T\,\mathrm{d}V$ instead and gives the arithmetic mean, 744~K: the
+mixed gas is too hot, its density $\rho_\infty T_\infty/744$ is 38\% below the true one, and that mass
+disappears without any flux.
+
+\subsection{The discrete time step}
+With forward Euler and the face fluxes $F^n$ of the previous projection, whose discrete divergence is
+$D^n$ (the constraint evaluated at the provisional state of the previous step), the density update of
+cell $i$ is
+\begin{equation}
+  \rho_i^{n+1}=\rho_i^n-\Delta t\sum_j\frac{m_{j,i+1/2}-m_{j,i-1/2}}{h_j}+\Delta t\,\dot m'''_i,
+  \qquad m=\rho_\text{f}F^n.
+\end{equation}
+The fluxes of neighboring cells cancel, so the total mass changes only through the top faces and the
+sources: the mass budget closes to round-off. Writing $\rho_\text{f}=\rho_i+(\rho_\text{f}-\rho_i)$ splits
+the flux difference into $\rho_i^nD_i^n$ plus an advective part $A_i\approx\vu\cdot\nabla\rho$, and with
+$T=\rho_\infty T_\infty/\rho$,
+\begin{align}
+  \frac{T_i^{n+1}-T_i^n}{\Delta t}&=-\frac{T_i^n}{\rho_i^n}\,\frac{\rho_i^{n+1}-\rho_i^n}{\Delta t}+O(\Delta t)
+  =T_i^nD_i^n-\frac{T_i^n\dot m'''_i}{\rho_i^n}+\frac{T_i^n}{\rho_i^n}A_i+O(\Delta t)\nonumber\\[4pt]
+  &=\Big(\frac{\dot q}{\rho c_\text{p}}-\vu\cdot\nabla T\Big)_i+O(\Delta t),
+\end{align}
+using $D=\dot q/(\rho c_\text{p}T)+\dot m'''/\rho$ and $(T/\rho)\nabla\rho=-\nabla T$. The temperature
+therefore follows the energy equation to first order in time, with the heating applied one step late
+(through $F^n$), which is within the first-order accuracy of the scheme.
 
 %======================================================================
 \section{The published model and the legacy mode}\label{app:legacy}
