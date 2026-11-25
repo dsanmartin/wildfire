@@ -808,7 +808,8 @@ FDS, 0.25~m (80 cores) & 59~m & 97~m & 159~m & 172~s & 50.5~h for 180~s \\
 \end{center}
 The model is within 5~m of the measured positions (RMSE 3.6~m). The head definitions differ: the model uses
 the most downwind point where half of the fuel column is gone, FDS the location of the maximum temperature
-below 1~m. On the same machine the GPU model ran about three times faster than FDS on 24 cores.
+below 1~m. On the same machine the GPU model ran about three times faster than FDS on 24 cores
+(Appendix~\ref{app:cost}).
 
 \paragraph{How the spread rate came down.} Each step changed the head-fire spread rate:
 \begin{itemize}
@@ -1257,6 +1258,61 @@ Key & Default & Published model \\
 \psec{wind}
 \code{shape} & \code{monin-obukhov} & \code{power law}: $u_\text{r}(d_\text{w}/z_\text{r})^{\alpha_\text{u}}$, $\alpha_\text{u}=1/7$ \\
 \end{longtable}
+
+%======================================================================
+\section{Computational cost compared with FDS}\label{app:cost}
+%======================================================================
+The F19 case (Section~\ref{sec:validation}) was also run with FDS on two machines, which allows a comparison
+of computing cost:
+\begin{itemize}
+  \item \textbf{horus}: workstation with a 13th Gen Intel Core i9-13900K (24 cores: 8 performance and 16
+        efficiency, 32 threads) and an NVIDIA RTX 4090 (24~GB). FDS ran on the CPU with 24 and 36 MPI ranks
+        (one mesh per rank; 36 ranks oversubscribe the 32 threads); this model ran on the GPU.
+  \item \textbf{NLHPC cluster} (Leftraru): one node with two AMD EPYC 9754 (256 cores); FDS used 80 ranks.
+\end{itemize}
+
+\begin{center}
+\small
+\begin{tabular}{llrlrr}
+\toprule
+Run & Hardware & Cells & Cell size & Steps (sim.\ time) & Wall clock \\
+\midrule
+FDS 6.10 & horus CPU, 36 ranks & 9.22~M & 0.5~m & 10\,627 (180~s) & 13.4~h \\
+FDS 6.11 & horus CPU, 24 ranks & 9.22~M & 0.5~m & 10\,647 (180~s) & 13.5~h \\
+FDS 6.8 & cluster, 80 cores & 9.22~M & 0.5~m & 10\,261 (180~s) & 2.8~h \\
+FDS 6.8 & cluster, 80 cores & 73.7~M & 0.25~m & 22\,317 (180~s) & 50.5~h \\
+this model & horus GPU, float32 & 11.87~M & $1.25^2\times0.125$~m & 36\,467 (140~s) & 3.5~h \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{center}
+\small
+\begin{tabular}{lrrr}
+\toprule
+Run & ns per cell-step & steps per sim.\ second & wall clock, 140~s \\
+\midrule
+FDS, horus CPU (24 or 36 ranks) & 491--494 & 59 & 10.5~h \\
+FDS, 80 EPYC cores, 0.5~m & 107 & 57 & 2.2~h \\
+FDS, 80 EPYC cores, 0.25~m & 111 & 124 & 39~h \\
+this model, RTX 4090 & 29 & 260 & 3.5~h \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Per cell and time step the GPU model is 17 times faster than FDS on the CPU of the same machine and 3.7 times
+faster than 80 cores of the cluster node. It takes, however, 4.5 times more time steps per simulated second:
+its 0.125~m vertical cells, needed to resolve the 0.49~m fuel bed on the grid, limit the time step through the
+vertical CFL condition to about 3.8~ms, while the 0.5~m cubic cells of FDS, which represents the grass as
+Lagrangian particles, allow about 17~ms. The time to solution is therefore three times shorter than FDS on
+the same machine and 1.6 times longer than FDS on 80 cluster cores. A stretched vertical grid (fine near the
+ground, coarse above the fuel bed) would reduce both the cell count and the number of steps.
+
+The comparison is between different models and setups: FDS also models char oxidation and uses RadCal
+radiation with soot and 104 angles, and it ran a $240\times240\times20$~m domain with open boundaries; this
+model uses gray radiation and single precision on a $320\times360\times20$~m periodic domain with a sponge zone.
+Both place the head fire within about 5~m (this model) and 10--20~m (FDS at 0.5~m, maximum-temperature
+definition of the head) of the measurements.
 
 \section*{References}
 \begin{itemize}
