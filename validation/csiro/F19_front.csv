@@ -1,0 +1,6 @@
+# CSIRO grassland fire F19: head-fire position (FDS validation suite, Case_F19_exp.csv, https://github.com/firemodels/exp/tree/master/CSIRO_Grassland_Fires)
+# t [s], x [m]: x from the downwind edge of the ignition line (x = 0), t from the start of ignition
+t,x
+56.0,80.0
+86.0,120.0
+138.0,200.0
