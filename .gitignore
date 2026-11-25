@@ -149,3 +149,14 @@ scripts/commands.txt
 pyproject.toml
 # Console output of the runs (scripts/*.sh write logs/<name>.out)
 logs/
+
+# LaTeX build files (docs/wildfire_model.pdf is tracked)
+*.aux
+*.fdb_latexmk
+*.fls
+*.out
+*.toc
+*.synctex.gz
+*.synctex(busy)
+*.bbl
+*.blg
