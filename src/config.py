@@ -184,6 +184,7 @@ class Config:
     full_interval: float = 0.0      # s between full-field snapshots (files in NAME/full/); 0: none
     full_dtype: str = 'float32'     # precision of the full-field snapshots
     save_every: int = 20            # outputs between partial writes of data.npz during the run; 0: only at the end
+    checkpoint_every: int = 0       # outputs between restart checkpoints (checkpoint.pt); 0: only at the end; -1: none
     y_slice: float = None           # position of the x-z plane, m; None: middle of the domain
     # Run
     device: str = 'auto'
@@ -219,7 +220,7 @@ _KEYS = {
     ('model', 'type'): ('model', str), ('wind', 'direction'): ('wind_direction', float),
     ('wind', 'factor'): ('wind_factor', float), ('planview', 'heat_retained'): ('heat_retained', float),
     ('planview', 'h_top'): ('h_top', float), ('planview', 'delta_bed'): ('delta_bed', float),
-    ('output', 'full_interval'): ('full_interval', float), ('output', 'full_dtype'): ('full_dtype', str), ('output', 'save_every'): ('save_every', int),
+    ('output', 'full_interval'): ('full_interval', float), ('output', 'full_dtype'): ('full_dtype', str), ('output', 'save_every'): ('save_every', int), ('output', 'checkpoint_every'): ('checkpoint_every', int),
     ('fuel', 'pyrolysis'): ('pyrolysis', str), ('fuel', 'T_pyr'): ('T_pyr', float),
     ('fuel', 'slab'): ('fuel_slab', bool), ('fuel', 'c_s_model'): ('c_s_model', str),
     ('fuel', 'T_pyr_end'): ('T_pyr_end', float), ('combustion', 's_O2'): ('s_O2', float),

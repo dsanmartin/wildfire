@@ -958,6 +958,53 @@ class Model:
                 frac = frac + (fb - fa) * ((tau - ta) / (tb - ta)).clamp(0, 1)
         return b['coef'] * frac
 
+    # Attributes carried from one step to the next (restart): tensors, lists of tensors, dicts of tensors,
+    # and plain numbers. Everything else is recomputed at every step.
+    _CARRIED = ('faces', '_p', 'G', '_G_parts', '_target', '_u_tau_wall', '_mu_sgs', '_grad_mu', 'dt_t', 't_t',
+                'energy', 'mass')
+    _CARRIED_NUMBERS = ('step_count', '_rad_next', 'dt', 'pressure_iterations', 'max_divergence')
+
+    def checkpoint_state(self):
+        """State needed to continue the run exactly (see main.write_checkpoint), on the CPU."""
+        cpu = lambda v: v.detach().cpu().clone()
+        out = {}
+        for name in self._CARRIED:
+            v = getattr(self, name, None)
+            if torch.is_tensor(v):
+                out[name] = cpu(v)
+            elif isinstance(v, (list, tuple)):
+                out[name] = [cpu(t) for t in v]
+            elif isinstance(v, dict):
+                out[name] = {k: cpu(t) for k, t in v.items()}
+        for name in self._CARRIED_NUMBERS:
+            if hasattr(self, name):
+                out[name] = getattr(self, name)
+        return out
+
+    def load_checkpoint_state(self, state):
+        """Restore checkpoint_state, in place where the buffers already exist (CUDA graphs keep addresses)."""
+        dev = lambda v, like=None: v.to(device=self.device, dtype=like.dtype if like is not None else v.dtype)
+        for name, v in state.items():
+            cur = getattr(self, name, None)
+            if torch.is_tensor(v):
+                if torch.is_tensor(cur) and cur.shape == v.shape:
+                    cur.copy_(dev(v, cur))
+                else:
+                    setattr(self, name, dev(v))
+            elif isinstance(v, list):
+                if isinstance(cur, list) and len(cur) == len(v):
+                    for c_, t in zip(cur, v):
+                        c_.copy_(dev(t, c_))
+                else:
+                    setattr(self, name, [dev(t) for t in v])
+            elif isinstance(v, dict):
+                for k, t in v.items():
+                    if isinstance(cur, dict) and k in cur and torch.is_tensor(cur[k]):
+                        cur[k].copy_(dev(t, cur[k]))
+            else:
+                setattr(self, name, v)
+        self.dt_t.fill_(self.dt)
+
     def set_time(self, t):
         """Set the simulation time of the coming step (device tensor)."""
         self.t_t.fill_(float(t))

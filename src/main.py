@@ -119,7 +119,7 @@ def make_runner(model, y, p, say):
         return None
 
 
-def run(cfg, verbose=True):
+def run(cfg, verbose=True, restart=False):
     device = pick_device(cfg.device)
     dtype = getattr(torch, cfg.dtype)
     if device.type == 'mps' and dtype == torch.float64:
@@ -131,7 +131,10 @@ def run(cfg, verbose=True):
     model = Model(cfg, grid, device, dtype)
     nd, Nt, NT, t = cfg.ndim, cfg.Nt, cfg.NT, grid['t']
     os.makedirs(cfg.save_path, exist_ok=True)
-    log = open(os.path.join(cfg.save_path, 'log.txt'), 'w')
+    ck_path = os.path.join(cfg.save_path, 'checkpoint.pt')
+    if restart and not os.path.exists(ck_path):
+        raise FileNotFoundError(f'no checkpoint to restart from: {ck_path}')
+    log = open(os.path.join(cfg.save_path, 'log.txt'), 'a' if restart else 'w')
 
     def say(*lines):
         for line in lines:
@@ -155,24 +158,47 @@ def run(cfg, verbose=True):
     extra = model.output_fields(y)
     names = names + ['p'] + list(extra)
     rec = Recorder(cfg, grid, names)
-    rec.add(y, p, t[0], extra)
-    next_full = None
-    if cfg.full_interval and cfg.full_interval > 0:
-        save_full(cfg, grid, names, y, p, extra, t[0])
-        next_full = t[0] + cfg.full_interval
     unit = 'kJ/m' if nd == 2 else 'kJ'
-    energy = {key: [0.0] for key in ENERGY_TERMS}
     munit = 'kg/m' if nd == 2 else 'kg'
-    mass = {'total': [float(model.mass_total(y))], 'outflow': [0.0], 'pyrolysis': [0.0], 'residual': [0.0]} \
-        if model.mass is not None else {}
+    next_full = None
+    if restart:                     # continue from checkpoint.pt (written by write_checkpoint)
+        ck = torch.load(ck_path, map_location='cpu', weights_only=False)
+        dt_ck = ck['loop']['dt_max']
+        if abs(model.dt - dt_ck) > 1e-12 * dt_ck:
+            raise ValueError(f"(t_max - t_min) / Nt = {model.dt:.6g} s differs from the checkpoint's {dt_ck:.6g} s: "
+                             "to extend a run, scale Nt with t_max")
+        y = ck['y'].to(device=device, dtype=dtype)
+        p = ck['p'].to(device=device, dtype=dtype)
+        model.load_checkpoint_state(ck['model'])
+        rec.times, rec.frames = ck['rec']['times'], ck['rec']['frames']
+        if 'last' in ck['rec']:
+            rec.last = ck['rec']['last']
+        energy, mass = ck['energy'], ck['mass']
+        next_full = ck['loop']['next_full']
+        say("", f"Restarted from {ck_path} at t = {ck['loop']['t_now']:.4f} s (step {ck['loop']['n']}), "
+                f"continuing to t_max = {cfg.t_max} s", "")
+    else:
+        rec.add(y, p, t[0], extra)
+        if cfg.full_interval and cfg.full_interval > 0:
+            save_full(cfg, grid, names, y, p, extra, t[0])
+            next_full = t[0] + cfg.full_interval
+        energy = {key: [0.0] for key in ENERGY_TERMS}
+        mass = {'total': [float(model.mass_total(y))], 'outflow': [0.0], 'pyrolysis': [0.0], 'residual': [0.0]} \
+            if model.mass is not None else {}
     # Time stepping. Fixed step dt_max = (t_max - t_min) / Nt, or adaptive ([numerics] cfl > 0): each step
     # takes the largest dt allowed by the CFL target and the diffusion limit, at most dt_max, and steps
     # are shortened to land exactly on the output times, which stay every NT * dt_max seconds.
     dt_max = model.dt
+    if restart:                     # the checkpoint's exact value (t_max / Nt of another file can differ by an ulp)
+        dt_max = dt_ck
     out_dt = NT * dt_max
     t_end = t[-1]
     t_now, n, steps_since = t[0], 0, 0
     next_out = t[0] + out_dt
+    if restart:
+        t_now, n, next_out = ck['loop']['t_now'], ck['loop']['n'], ck['loop']['next_out']
+        del ck
+    n_here = 0                                                   # steps taken in this process
     dt_min_seen, dt_max_seen = np.inf, 0.0
     runner = None
     use_graph = cfg.cuda_graph == 'on' or (cfg.cuda_graph == 'auto' and device.type == 'cuda')
@@ -184,7 +210,7 @@ def run(cfg, verbose=True):
             model.set_dt(dt)
             model.set_time(t_now)
             dt_min_seen, dt_max_seen = min(dt_min_seen, dt), max(dt_max_seen, dt)
-            if runner is None and use_graph and n == 3:          # capture after a few direct steps
+            if runner is None and use_graph and n_here == 3:     # capture after a few direct steps
                 runner = make_runner(model, y, p, say)
             if runner is not None:
                 y, p = runner.step()
@@ -192,6 +218,7 @@ def run(cfg, verbose=True):
                 y, p = model.step(t_now, y, p)
             t_now += dt
             n += 1
+            n_here += 1
             steps_since += 1
             if next_full is not None and t_now >= next_full - 0.5 * dt:
                 save_full(cfg, grid, names, y, p, model.output_fields(y), t_now)
@@ -255,8 +282,14 @@ def run(cfg, verbose=True):
                 rec.add(y, p, t_now, model.output_fields(y))
                 if cfg.save_every > 0 and len(rec.times) % cfg.save_every == 0:   # partial data.npz
                     write_data(cfg, grid, rec, energy, mass)
+                if cfg.checkpoint_every > 0 and len(rec.times) % cfg.checkpoint_every == 0:
+                    write_checkpoint(cfg, model, y, p, rec, energy, mass,
+                                     dict(t_now=t_now, n=n, next_out=next_out, next_full=next_full, dt_max=dt_max))
     elapsed = time.perf_counter() - start
     say(f"\nSolver time: {timedelta(seconds=round(elapsed))} ({elapsed / max(n, 1) * 1e3:.2f} ms per step, {n} steps)\n")
+    if cfg.checkpoint_every >= 0:                                 # restart point at the end of the run
+        write_checkpoint(cfg, model, y, p, rec, energy, mass,
+                         dict(t_now=t_now, n=n, next_out=next_out, next_full=next_full, dt_max=dt_max))
     log.close()
 
     data = write_data(cfg, grid, rec, energy, mass)
@@ -266,6 +299,20 @@ def run(cfg, verbose=True):
     with open(os.path.join(cfg.save_path, 'parameters.pkl'), 'wb') as f:
         pickle.dump(parameters, f)
     return data, elapsed
+
+
+def write_checkpoint(cfg, model, y, p, rec, energy, mass, loop):
+    """Write checkpoint.pt: everything needed to continue the run exactly (main.py --restart): the state,
+    the pressure, the model buffers carried between steps, the outputs recorded so far, the budgets and the
+    loop counters. Written to a temporary file and renamed."""
+    path = os.path.join(cfg.save_path, 'checkpoint.pt')
+    ck = {'y': y.detach().cpu().clone(), 'p': p.detach().cpu().clone(), 'model': model.checkpoint_state(),
+          'rec': {'times': list(rec.times), 'frames': list(rec.frames)}, 'energy': energy, 'mass': mass,
+          'loop': loop}
+    if hasattr(rec, 'last'):
+        ck['rec']['last'] = rec.last
+    torch.save(ck, path + '.partial')
+    os.replace(path + '.partial', path)
 
 
 def write_data(cfg, grid, rec, energy, mass):
@@ -293,11 +340,11 @@ def write_data(cfg, grid, rec, energy, mass):
     return data
 
 
-def save_provenance(cfg, parameters_file, device):
+def save_provenance(cfg, parameters_file, device, subdir=None):
     """Store what is needed to reproduce the run: the parameter file as given, all resolved
     parameters, the code that ran (src/*.py, which also covers uncommitted changes) and the git
     and library versions."""
-    out = cfg.save_path
+    out = cfg.save_path if subdir is None else os.path.join(cfg.save_path, subdir)
     os.makedirs(out, exist_ok=True)
     shutil.copyfile(parameters_file, os.path.join(out, 'input.ini'))
     with open(os.path.join(out, 'config.json'), 'w') as f:
@@ -346,14 +393,18 @@ def main():
                     help='replay each time step as CUDA graphs (default: auto, on with CUDA; emulated on CPU)')
     ap.add_argument('--no-cuda-graph', dest='cuda_graph', action='store_const', const='off',
                     help='run every step directly, without CUDA graphs')
+    ap.add_argument('--restart', action='store_true',
+                    help='continue the run in the output folder from its checkpoint.pt (keep t_max / Nt; a larger '
+                         't_max extends the run)')
     args = ap.parse_args()
     if args.threads:
         torch.set_num_threads(args.threads)
     save_path = args.save_path or f'./data/output/{args.name}/'
     cfg = load_config(args.parameters_file, sim_name=args.name, save_path=save_path, device=args.device,
                       dtype=args.dtype, poisson=args.poisson, legacy=args.legacy, cuda_graph=args.cuda_graph)
-    save_provenance(cfg, args.parameters_file, pick_device(cfg.device))
-    run(cfg)
+    save_provenance(cfg, args.parameters_file, pick_device(cfg.device),
+                    subdir=datetime.now().strftime('restart_%Y%m%d%H%M%S') if args.restart else None)
+    run(cfg, restart=args.restart)
     print("Simulation name:", cfg.sim_name)
 
 
