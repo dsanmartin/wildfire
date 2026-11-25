@@ -33,6 +33,8 @@ class Config:
     Nx: int = 128
     Ny: int = 128
     Nz: int = 64
+    z_ratio: float = 1.0            # vertical grid: growth factor of the cell height per row (1: uniform)
+    z_dz_max: float = None          # vertical grid: largest cell height, m (the growth stops there)
     Nt: int = 1000
     NT: int = 100
     method: str = 'euler'           # euler, RK2, RK4
@@ -70,6 +72,8 @@ class Config:
     h_c: float = 1.42
     Y_f: float = 70.0
     Y_h: float = 0.49               # fuel bed height, m (FDS Case_F19)
+    fuel_fill: str = 'nodes'        # nodes: Y = 1 at the nodes up to Y_h; exact: Y = fraction of each node's
+                                    # control volume inside the bed, so the fuel load is rho_b Y_h on any grid
     reaction: str = 'exact'         # exact: fuel decay integrated exactly over dt; explicit: original rate
     # Solid fuel phase: its own temperature T_s, heated by convection and radiation, and moisture W
     solid_temperature: bool = True  # False: one temperature for gas and fuel (published model)
@@ -203,11 +207,12 @@ _KEYS = {
     ('domain', 'z_min'): ('z_min', float), ('domain', 'z_max'): ('z_max', float),
     ('domain', 't_min'): ('t_min', float), ('domain', 't_max'): ('t_max', float),
     ('numerics', 'Nx'): ('Nx', int), ('numerics', 'Ny'): ('Ny', int), ('numerics', 'Nz'): ('Nz', int),
+    ('numerics', 'z_ratio'): ('z_ratio', float), ('numerics', 'z_dz_max'): ('z_dz_max', float),
     ('numerics', 'Nt'): ('Nt', int), ('numerics', 'NT'): ('NT', int),
     ('numerics', 'time_method'): ('method', str),
     ('experiment', 'name'): ('experiment', str),
     ('topography', 'shape'): ('topography_shape', str),
-    ('fuel', 'C_d'): ('C_d', float), ('fuel', 'Y_h'): ('Y_h', float), ('fuel', 'T_act'): ('T_act', float),
+    ('fuel', 'C_d'): ('C_d', float), ('fuel', 'Y_h'): ('Y_h', float), ('fuel', 'fill'): ('fuel_fill', str), ('fuel', 'T_act'): ('T_act', float),
     ('fuel', 'Y_f'): ('Y_f', float), ('fuel', 'A'): ('A', float), ('fuel', 'H_C'): ('H_C', float),
     ('fuel', 'sigma_s'): ('sigma_s', float), ('fuel', 'alpha_s'): ('alpha_s', float),
     ('fuel', 'reaction'): ('reaction', str), ('temperature', 'sink'): ('sink', str),
@@ -320,6 +325,15 @@ def load_config(path: str, **overrides) -> Config:
                             ('alpha_s', 0.002), ('sigma_s', 4000.0), ('Y_h', 0.51)):         # defaults
             if attr not in given:
                 setattr(cfg, attr, value)
+    if cfg.fuel_fill not in ('nodes', 'exact'):
+        raise ValueError(f"[fuel] fill must be 'nodes' or 'exact', not '{cfg.fuel_fill}'")
+    if cfg.z_ratio != 1.0 or cfg.z_dz_max is not None:
+        if cfg.z_ratio < 1.0:
+            raise ValueError('[numerics] z_ratio must be >= 1 (cells growing upward)')
+        if (cfg.legacy or cfg.projection != 'face' or cfg.topography_shape != 'flat' or cfg.model != 'vertical'
+                or cfg.buildings):
+            raise NotImplementedError('a stretched vertical grid needs the vertical model with the face '
+                                      'projection, flat ground, no buildings and no --legacy')
     if 'T_inf' in given and 'rho_inf' not in given and not cfg.legacy:
         cfg.rho_inf = 1.225 * T_INF / cfg.T_inf     # ideal gas at the same pressure (1.225 kg/m^3 at 15 C)
     if cfg.cp_model == 'mixture' and not cfg.solid_temperature:

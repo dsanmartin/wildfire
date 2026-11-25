@@ -26,6 +26,27 @@ def monin_obukhov(z, u_ref, z_ref, z0, L, kappa=0.41):
     return np.where(z > z0, u_star / kappa * shape(zc), 0.0), u_star
 
 
+def vertical_nodes(z_min, z_max, n, ratio=1.0, dz_max=None):
+    """n nodes from z_min to z_max. Uniform (ratio = 1, no dz_max), or cell heights growing by ratio per
+    row from the ground, dz_k = min(dz_0 ratio^k, dz_max), with dz_0 chosen so that they add up to
+    z_max - z_min."""
+    if ratio == 1.0 and dz_max is None:
+        return np.linspace(z_min, z_max, n)
+    H, k = z_max - z_min, np.arange(n - 1)
+    cells = lambda dz0: np.minimum(dz0 * ratio ** k, dz_max if dz_max else np.inf)
+    lo, hi = 0.0, H / (n - 1)                               # sum(cells(hi)) >= H: the uniform height
+    if dz_max is not None and dz_max * (n - 1) < H:
+        raise ValueError(f"z_dz_max = {dz_max} m is too small: {n - 1} cells cannot span {H} m")
+    for _ in range(200):                                    # bisection on the first cell height
+        mid = 0.5 * (lo + hi)
+        lo, hi = (mid, hi) if cells(mid).sum() < H else (lo, mid)
+    dz = cells(hi)
+    dz *= H / dz.sum()                                      # exact total height
+    z = z_min + np.concatenate([[0.0], np.cumsum(dz)])
+    z[-1] = z_max
+    return z
+
+
 def topography(cfg):
     """Returns f(x) (2D) or f(x, y) (3D): terrain height."""
     shape = cfg.topography_shape
@@ -50,7 +71,7 @@ def build(cfg):
     (Nz, Ny-1, Nx-1): the last node of each periodic axis is not stored.
     """
     x = np.linspace(cfg.x_min, cfg.x_max, cfg.Nx)
-    z = np.linspace(cfg.z_min, cfg.z_max, cfg.Nz)
+    z = vertical_nodes(cfg.z_min, cfg.z_max, cfg.Nz, cfg.z_ratio, cfg.z_dz_max)
     t = np.linspace(cfg.t_min, cfg.t_max, cfg.Nt + 1)
     dx, dz, dt = x[1] - x[0], z[1] - z[0], t[1] - t[0]
     if cfg.ndim == 2:
@@ -81,8 +102,20 @@ def build(cfg):
         raise ValueError(f"unknown wind profile '{cfg.initial_u_type}'")
     velocity = [u] + [np.zeros_like(u) for _ in range(cfg.ndim - 1)]
 
-    # Fuel: 1 up to Y_h above the terrain, optionally limited to a horizontal rectangle
-    Y = (Zm <= ground + cfg.Y_h).astype(np.float64)
+    # Fuel: 1 up to Y_h above the terrain, optionally limited to a horizontal rectangle. The nodes up to Y_h
+    # hold a depth that depends on the grid (0.4375 m for Y_h = 0.49 m and dz = 0.125 m, with the half cell at
+    # the ground); fill = exact gives every node the fraction of its control volume, [z_k - h_{k-1/2}/2,
+    # z_k + h_{k+1/2}/2] (row 0 from the ground), that lies inside the bed, so the depth is exactly Y_h.
+    if cfg.fuel_fill == 'exact':
+        hf = np.diff(z)
+        col = (-1,) + (1,) * (Zm.ndim - 1)
+        lo = np.concatenate([[z[0]], z[1:] - 0.5 * hf]).reshape(col)
+        hi = np.concatenate([z[:-1] + 0.5 * hf, [z[-1]]]).reshape(col)
+        inside = np.minimum(hi, ground + cfg.Y_h) - np.maximum(lo, ground)
+        Y = np.clip(inside / (hi - lo), 0.0, 1.0)
+        Y = np.where(Zm < ground - 1e-12, 0.0, Y)            # below the terrain: no fuel
+    else:
+        Y = (Zm <= ground + cfg.Y_h).astype(np.float64)
     for coord, lo, hi in ((Xm, cfg.fuel_x_start, cfg.fuel_x_end), (Ym, cfg.fuel_y_start, cfg.fuel_y_end)):
         if coord is not None and lo is not None and hi is not None:
             Y *= ((coord >= lo) & (coord <= hi))

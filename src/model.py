@@ -56,9 +56,22 @@ class Model:
         self._clip_tol = 1e-4 * cfg.T_min if dtype == torch.float32 else 0.0
         self._p = None                                            # pressure of the last step (warm start)
         self._target = None                                       # divergence target of the last projection
-        self.h = tuple(float(s) for s in grid['spacings'])
-        self.op = Operators(self.h, legacy=cfg.legacy)
+        self.h = tuple(float(s) for s in grid['spacings'])        # stretched z: h[-1] is the first cell height
+        z = np.asarray(grid['z'], dtype=np.float64)
+        # Stretched code path: a non-uniform grid, or forced by grid['force_stretched'] (tests: on a uniform grid
+        # it must agree with the uniform path to round-off)
+        self.stretched = bool(grid.get('force_stretched')) or not np.allclose(np.diff(z), z[1] - z[0], rtol=1e-12, atol=0)
+        z_grid = z if self.stretched else None
+        self.op = Operators(self.h, legacy=cfg.legacy, z=z_grid)
         to = lambda a: torch.as_tensor(np.ascontiguousarray(a), dtype=dtype, device=device)
+        col = (-1,) + (1,) * (nd - 1)
+        if self.stretched:
+            # Local vertical spacing of each row (row 0 and the top row: the adjacent face spacing), for the
+            # filter width and the time step limits
+            hf = np.diff(z)
+            dz_row = np.concatenate([[hf[0]], 0.5 * (hf[:-1] + hf[1:]), [hf[-1]]])
+            self.dz_row = to(dz_row).reshape(col)
+            self.dz_min = float(hf.min())
         self.Zm = to(grid['Zm'])
         self.shape = tuple(self.Zm.shape)
         # Distance to the wall for the turbulence damping (the original uses the height above z_min)
@@ -68,6 +81,8 @@ class Model:
         # under refinement and the solution keeps changing. A fixed physical width makes the model
         # independent of the grid, so results can converge as the grid is refined.
         self.Delta = cfg.filter_width if cfg.filter_width else float(np.prod(self.h)) ** (1.0 / nd)
+        if self.stretched and not cfg.filter_width:               # (dx [dy] dz_k)^(1/nd), row by row
+            self.Delta = (float(np.prod(self.h[:-1])) * self.dz_row) ** (1.0 / nd)
         self.Lz = cfg.z_max - cfg.z_min
         # Boundary data
         state0 = grid['state']
@@ -117,7 +132,7 @@ class Model:
         self.faces = None
         if cfg.projection == 'face':
             self.face_proj = FaceProjection(self.shape, self.h, device, dtype,
-                                            grid['solid'] if self.has_solids else None)
+                                            grid['solid'] if self.has_solids else None, z=z_grid)
         self.max_divergence = 0.0
         # Density transport (needs the face fluxes and a variable density)
         self.density_mode = (cfg.scalar_transport == 'density' and cfg.projection == 'face'
@@ -150,7 +165,7 @@ class Model:
             lidx = lambda a: torch.as_tensor(a, dtype=torch.long, device=device)
             self.wall_W, self.wall_U, self.wall_cols = lidx(W), lidx(U), lidx(cols)
             self.wall_coef = to(cfg.von_karman / denom)               # u_tau = coef |u_1|
-            self.wall_dz = self.h[-1]
+            self.wall_dz = float(self.face_proj.hc_np[1]) if self.stretched else self.h[-1]   # height of row 1
             self._u_tau_wall = None
         # Wind forcing (periodic domains): target = horizontal mean of the initial velocity at each height
         if cfg.forcing == 'profile':
@@ -185,7 +200,12 @@ class Model:
         self.poisson = PoissonSolver(self.shape, self.h, lengths, device, dtype, cfg.poisson, legacy_length)
         self.pressure_iterations = 0
         # Gas-phase mixing time and the components with a zero-gradient condition at the walls
-        self.tau_mix = cfg.tau_mix or float(np.sqrt(2 * self.Delta / abs(cfg.g)))
+        if cfg.tau_mix:
+            self.tau_mix = cfg.tau_mix
+        elif torch.is_tensor(self.Delta):                         # stretched z: row by row
+            self.tau_mix = torch.sqrt(2 * self.Delta / abs(cfg.g))
+        else:
+            self.tau_mix = float(np.sqrt(2 * self.Delta / abs(cfg.g)))
         ncomp = state0.shape[0]
         if cfg.legacy:
             self.neumann = list(range(nd, ncomp))
@@ -197,12 +217,16 @@ class Model:
         self.step_count = 0
         self._first_stage, self._last_omega = True, None
         if cfg.radiation == 'transport':
-            self.rad = Radiation(self.shape, self.h, cfg.n_polar, cfg.n_azimuth, device, dtype, cfg.angle_increment)
+            self.rad = Radiation(self.shape, self.h, cfg.n_polar, cfg.n_azimuth, device, dtype, cfg.angle_increment,
+                                 z=z_grid)
             if self.has_terrain:
                 self.dead_mask = torch.zeros(self.shape, dtype=torch.bool, device=device)
                 self.dead_mask.view(-1)[self.dead] = True
         # Energy budget, accumulated on the device (J per metre of depth in 2D, J in 3D)
         self.dV = float(np.prod(self.h))
+        # Volume of each node relative to dV (stretched z: hc_k / hc_0-face spacing, half cell at the ground) for
+        # the energy sums; the uniform grid keeps its plain sums (bitwise as before)
+        self._vol = self.face_proj.weight if self.stretched else None
         # Budgets accumulated in float64 even in a float32 run (sums of millions of terms over many steps)
         self.energy = {key: torch.zeros((), dtype=torch.float64, device=device) for key in ENERGY_TERMS}
 
@@ -406,7 +430,7 @@ class Model:
         for j in range(nd):
             a = nd - 1 - j
             kf = 0.5 * (k + P._shift(k, a, 1))
-            fluxes.append(kf * (P._shift(phi, a, 1) - phi) / self.h[j] * P.open[j])
+            fluxes.append(kf * (P._shift(phi, a, 1) - phi) / P.face_spacing(j) * P.open[j])
         return P.divergence(fluxes)
 
     def flux_advection(self, phi, F, divF):
@@ -612,7 +636,7 @@ class Model:
         T_s, T_g = T.gather(0, i_s)[0], T.gather(0, i_g)[0]
         dT = T_g - T_s
         Q = c.h_c * (torch.abs(dT) / c.Y_h) ** (1 / 4) * dT * has.to(T.dtype)
-        rho_cp_dz = self.rho(T) * self.cp(T) * self.h[-1]
+        rho_cp_dz = self.rho(T) * self.cp(T) * (self.face_proj.hc if self.stretched else self.h[-1])
         out = torch.zeros_like(T)
         out.scatter_add_(0, i_s, (Q / rho_cp_dz.gather(0, i_s)[0]).unsqueeze(0))
         out.scatter_add_(0, i_g, (-Q / rho_cp_dz.gather(0, i_g)[0]).unsqueeze(0))
@@ -1141,13 +1165,18 @@ class Model:
             rho1 = self.rho(y1[nd])
             dT = y1[nd] - T_raw
             rcp = rho1 * self.cp(y1[nd], y1)
-            self.energy['clip_low'] += (rcp * dT.clamp(min=0)).sum() * self.dV
-            self.energy['clip_high'] += (rcp * dT.clamp(max=0)).sum() * self.dV
-            self.energy['fuel_overshoot'] += (fuel_density(y1[nd]) * (-Y_raw).clamp(min=0)).sum() * self.dV
+            vsum = self._vsum
+            self.energy['clip_low'] += vsum(rcp * dT.clamp(min=0)) * self.dV
+            self.energy['clip_high'] += vsum(rcp * dT.clamp(max=0)) * self.dV
+            self.energy['fuel_overshoot'] += vsum(fuel_density(y1[nd]) * (-Y_raw).clamp(min=0)) * self.dV
         if not c.solid_temperature:
             burned = (y[nd + 1] - y1[nd + 1]).clamp(min=0)
-            self.energy['combustion'] += (fuel_density(y1[nd]) * burned).sum() * self.dV
+            self.energy['combustion'] += self._vsum(fuel_density(y1[nd]) * burned) * self.dV
         return y1
+
+    def _vsum(self, a):
+        """Sum over the nodes, weighted by the node volume relative to dV on a stretched grid."""
+        return a.sum() if self._vol is None else (a * self._vol).sum()
 
     def radiation_due(self):
         c = self.cfg
@@ -1224,21 +1253,29 @@ class Model:
         and by the explicit diffusion limit dt <= 0.25 / (nu_eff sum 1/h_j^2), with nu_eff the largest
         molecular plus subgrid kinematic viscosity of the last right-hand side evaluation."""
         c, nd = self.cfg, self.nd
-        s = sum(float(y[j].abs().max()) / self.h[j] for j in range(nd))
+        s = self._cfl_rate(y)
         dt = min(dt_max, c.cfl / s) if s > 0 else dt_max
         rho = self.rho(y[nd])
         nu = self.viscosity(y[nd]) / rho
         nu_max = float(nu.max()) if torch.is_tensor(nu) else nu
         if getattr(self, '_mu_sgs', None) is not None:
             nu_max += float((self._mu_sgs / rho).max())
-        inv_h2 = sum(1 / h ** 2 for h in self.h)
+        inv_h2 = sum(1 / h ** 2 for h in self.h[:-1]) + 1 / (self.dz_min if self.stretched else self.h[-1]) ** 2
         if nu_max > 0:
             dt = min(dt, 0.25 / (nu_max * inv_h2))
         return dt
 
+    def _cfl_rate(self, y):
+        """sum over directions of max|u_j| / h_j (stretched z: max over the rows of |w| / dz_k)."""
+        nd = self.nd
+        s = sum(float(y[j].abs().max()) / self.h[j] for j in range(nd - 1))
+        if self.stretched:
+            return s + float((y[nd - 1].abs() / self.dz_row).max())
+        return s + float(y[nd - 1].abs().max()) / self.h[-1]
+
     def diagnostics(self, y):
         nd = self.nd
-        cfl = sum(float(y[j].abs().max()) / self.h[j] for j in range(nd)) * self.dt
+        cfl = self._cfl_rate(y) * self.dt
         T, Y = y[nd], y[nd + 1]
         return cfl, float(T.min()), float(T.max()), float(Y.min()), float(Y.max())
 
@@ -1276,8 +1313,11 @@ class Model:
         Y, T_s = y[nd + 1], y[nd + 2]
         fuel = Y > c.fuel_threshold
         rho = self.rho(y[nd])
-        hrr = float((rho * torch.minimum(y[nd + 4].clamp(min=0), y[nd + 5].clamp(min=0) / c.s_O2)).sum()) \
-            * c.H_C / self.tau_mix * self.dV
+        rate = rho * torch.minimum(y[nd + 4].clamp(min=0), y[nd + 5].clamp(min=0) / c.s_O2)
+        if self.stretched:                                        # tau_mix varies with the row
+            hrr = float(self._vsum(rate * c.H_C / self.tau_mix)) * self.dV
+        else:
+            hrr = float(rate.sum()) * c.H_C / self.tau_mix * self.dV
         if not bool(fuel.any()):
             return float('nan'), float('nan'), hrr
         return float(T_s[fuel].min()), float(T_s[fuel].max()), hrr

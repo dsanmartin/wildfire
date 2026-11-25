@@ -27,8 +27,9 @@ import torch
 
 
 class FaceProjection:
-    def __init__(self, shape, spacings, device, dtype, solid=None):
-        """shape: (Nz, [Ny,] Nx). spacings: (dx, [dy,] dz). solid: boolean array of the grid shape."""
+    def __init__(self, shape, spacings, device, dtype, solid=None, z=None):
+        """shape: (Nz, [Ny,] Nx). spacings: (dx, [dy,] dz). solid: boolean array of the grid shape.
+        z: node heights of a stretched vertical grid (None: the uniform spacing dz)."""
         self.shape = tuple(shape)
         self.nd = nd = len(shape)
         self.h = tuple(spacings)                 # direction j lives on tensor axis nd-1-j
@@ -36,6 +37,19 @@ class FaceProjection:
         self.dz = dz = spacings[-1]
         self.device, self.dtype = device, dtype
         to = lambda a: torch.as_tensor(np.ascontiguousarray(a), dtype=dtype, device=device)
+        # Non-uniform vertical grid: face spacings hf (between nodes k and k+1) and control-volume heights hc
+        # (half a cell at the ground: hc_0 = hf_0 / 2). The uniform grid keeps the scalar dz (bitwise as before).
+        self.stretched = z is not None                        # the caller passes z only for a stretched grid
+        if self.stretched:
+            hf = np.diff(np.asarray(z, dtype=np.float64))                    # Nz - 1 faces
+            hc = np.empty(shape[0])
+            hc[0] = 0.5 * hf[0]
+            hc[1:-1] = 0.5 * (hf[:-1] + hf[1:])
+            hc[-1] = hf[-1]                     # top row: not a control volume; a full cell, as on the uniform grid
+            col = (-1,) + (1,) * (len(shape) - 1)
+            self.hf_np, self.hc_np = hf, hc
+            self.hf = to(np.append(hf, hf[-1])).reshape(col)                 # last row unused
+            self.hc = to(hc).reshape(col)
         # Open faces: both nodes fluid; vertical faces only up to k+1/2 = Nz-3/2 (the top row is p = 0)
         solid = np.zeros(shape, dtype=bool) if solid is None else solid
         self.solid = torch.as_tensor(solid, device=device)
@@ -52,6 +66,8 @@ class FaceProjection:
         # Cell volume weights (row 0: half cell) and the unknowns (rows 0..Nz-2, fluid)
         w = np.ones(shape)
         w[0] = 0.5
+        if self.stretched:                                  # cell height relative to the first face spacing
+            w = np.broadcast_to((self.hc_np / self.hf_np[0]).reshape((-1,) + (1,) * (len(shape) - 1)), shape).copy()
         self.weight = to(w)
         unknown = np.ones(shape, dtype=bool)
         unknown[-1] = False
@@ -76,21 +92,34 @@ class FaceProjection:
         nd = self.nd
         return [0.5 * (vel[j] + self._shift(vel[j], nd - 1 - j, 1)) * self.open[j] for j in range(nd)]
 
+    def face_spacing(self, j):
+        """Distance between the two nodes of the faces of direction j (a tensor for a stretched z)."""
+        return self.hf if (self.stretched and j == self.nd - 1) else self.h[j]
+
+    def cell_size(self, j):
+        """Control-volume size along direction j (a tensor for a stretched z)."""
+        return self.hc if (self.stretched and j == self.nd - 1) else self.h[j]
+
     def divergence(self, F):
         nd = self.nd
         out = torch.zeros(self.shape, dtype=self.dtype, device=self.device)
         for j in range(nd):
             axis = nd - 1 - j
-            part = (F[j] - self._shift(F[j], axis, -1)) / self.h[j]
-            if axis == 0:
+            if axis == 0 and self.stretched:
+                part = (F[j] - self._shift(F[j], axis, -1)) / self.hc
                 part = part.clone()
-                part[0] = 2 * F[j][0] / self.h[j]          # half cell, zero flux through the ground
+                part[0] = F[j][0] / self.hc[0]             # half cell, zero flux through the ground
+            else:
+                part = (F[j] - self._shift(F[j], axis, -1)) / self.h[j]
+                if axis == 0:
+                    part = part.clone()
+                    part[0] = 2 * F[j][0] / self.h[j]      # half cell, zero flux through the ground
             out = out + part
         return out
 
     def face_gradient(self, p, j):
         axis = self.nd - 1 - j
-        return (self._shift(p, axis, 1) - p) / self.h[j]
+        return (self._shift(p, axis, 1) - p) / self.face_spacing(j)
 
     def laplacian(self, p, beta):
         """L p with face coefficients beta[j] (open / rho_face). p is zero on the top row."""
@@ -99,10 +128,15 @@ class FaceProjection:
         for j in range(nd):
             axis = nd - 1 - j
             flux = beta[j] * self.face_gradient(p, j)
-            part = (flux - self._shift(flux, axis, -1)) / self.h[j]
-            if axis == 0:
+            if axis == 0 and self.stretched:
+                part = (flux - self._shift(flux, axis, -1)) / self.hc
                 part = part.clone()
-                part[0] = 2 * flux[0] / self.h[j]
+                part[0] = flux[0] / self.hc[0]
+            else:
+                part = (flux - self._shift(flux, axis, -1)) / self.h[j]
+                if axis == 0:
+                    part = part.clone()
+                    part[0] = 2 * flux[0] / self.h[j]
             out = out + part
         return out
 
@@ -121,6 +155,17 @@ class FaceProjection:
         A[0, 0], A[0, 1] = -2.0, 2.0
         A /= dz ** 2
         w = np.ones(n); w[0] = 0.5
+        if self.stretched:   # rows k: [(p_{k+1} - p_k)/hf_k - (p_k - p_{k-1})/hf_{k-1}] / hc_k; symmetric with W = diag(hc)
+            hf, hc = self.hf_np, self.hc_np
+            A = np.zeros((n, n))
+            for k in range(n):
+                A[k, k] = -1.0 / hf[k] - (1.0 / hf[k - 1] if k > 0 else 0.0)
+                if k + 1 < n:
+                    A[k, k + 1] = 1.0 / hf[k]
+                if k > 0:
+                    A[k, k - 1] = 1.0 / hf[k - 1]
+                A[k] /= hc[k]
+            w = hc[:n].copy()
         S = np.sqrt(w)[:, None] * A / np.sqrt(w)[None, :]
         S = 0.5 * (S + S.T)
         lam, Q = np.linalg.eigh(S)                           # A = W^-1/2 Q diag(lam) Q^T W^1/2

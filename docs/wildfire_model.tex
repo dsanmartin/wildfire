@@ -204,7 +204,13 @@ the advective form of the species equations (the original approach, Appendix~\re
 
 \subsection{Fuel bed}
 The fuel occupies the nodes up to a height $Y_\text{h}$ above the terrain (optionally limited
-horizontally), with $Y=1$ initially. The elements are characterized by the packing ratio
+horizontally), with $Y=1$ initially. The depth these nodes hold depends on the grid: with the half cell
+at the ground, $Y_\text{h}=0.49$~m and $\Delta z=0.125$~m give four nodes and 0.4375~m of fuel, 11\% less
+than the bed. With \code{[fuel] fill = exact} every node instead starts with the fraction of its control
+volume $[z_k-\tfrac12h_{k-1/2},\,z_k+\tfrac12h_{k+1/2}]$ (row 0 from the ground) that lies inside the bed,
+so the fuel load is $\rho_\text{b}Y_\text{h}$ per unit ground area on any grid (in the example, a fifth node
+with $Y=0.42$); the moisture follows $Y$. The default (\code{fill = nodes}) keeps the earlier runs
+reproducible. The elements are characterized by the packing ratio
 $\alpha_\text{s}$, the surface-to-volume ratio $\sigma_\text{s}$ (equivalent cylinder diameter $d=4/\sigma_\text{s}$) and
 the dry bulk density $\rho_\text{b}$. Fuel surface per unit volume: $a=\alpha_\text{s}\sigma_\text{s} Y$.
 
@@ -305,7 +311,9 @@ Smagorinsky model with Van Driest damping:
 $z^+=d_\text{w}\rho u_\tau/\mu$ with $d_\text{w}$ the distance to the ground (or the nearest building) and $u_\tau$
 the friction velocity of the wall model (Section~\ref{sec:wall}). Filter width
 $\Delta=(\Delta x\Delta z)^{1/2}$ (2D), $(\Delta x\Delta y\Delta z)^{1/3}$ (3D), or a fixed width
-(\code{filter\_width}). With the grid-based width the mixing length shrinks under refinement and
+(\code{filter\_width}); on a stretched grid (Section~\ref{sec:grid}) $\Delta z$ is the local spacing of
+each row, so the grid-based width, and the mixing time $\tau_\text{mix}=\sqrt{2\Delta/g}$ that follows
+from it, grow with height. With the grid-based width the mixing length shrinks under refinement and
 the results do not converge; tests on the F19 case showed a fixed width removes this.
 \begin{align}
   \tau_{\text{sgs},i} &= -\frac{2}{\rho}\big(\nabla\mu_\text{t}\cdot S_{i\cdot} + \mu_\text{t}\,\nabla\cdot S_{i\cdot}\big),\\
@@ -443,7 +451,7 @@ with the stability function of the wind profile when an Obukhov length is given,
 length $z_0$ (\code{[wall] z\_0}, default the wind's \code{z\_0}). The tangential velocity at the wall
 is set equal to that of the first node, so the resolved stress at the wall vanishes, the vertical
 velocity at the wall is zero, and the wall stress enters as a momentum sink in the first cell,
-$-u_\tau^2\,u_i/|\mathbf{u}_1|/\Delta z$. The Van Driest damping uses the modeled $u_\tau$. Building
+$-u_\tau^2\,u_i/|\mathbf{u}_1|/\Delta z$ ($\Delta z$: the height of that cell, $\Delta V_1$ on a stretched grid). The Van Driest damping uses the modeled $u_\tau$. Building
 walls are no-slip.
 
 Verification (no fire, Monin--Obukhov profile of the F19 case, 4.7~m~$\times$~0.31~m grid, 60~s):
@@ -518,11 +526,30 @@ died, with $\chi=0.15$--$0.25$ it spread at about 3~m\,s$^{-1}$ but the bed temp
 \section{Numerical methods}\label{sec:numerics}
 %======================================================================
 
-\subsection{Grid and storage}
-Uniform, collocated grid with $N_x$ ($N_y$) nodes in the periodic directions, of which the last
-(equal to the first) is not stored, and $N_z$ nodes in $z$ including both walls. Spacings
-$\Delta x=(x_\text{max}-x_\text{min})/(N_x-1)$, etc. All variables live at the nodes. Computations run in
-PyTorch on CPU or GPU, by default in double precision.
+\subsection{Grid and storage}\label{sec:grid}
+Collocated grid with $N_x$ ($N_y$) nodes in the periodic directions, of which the last
+(equal to the first) is not stored, and $N_z$ nodes in $z$ including both walls. The horizontal spacings
+are uniform, $\Delta x=(x_\text{max}-x_\text{min})/(N_x-1)$, etc. All variables live at the nodes.
+Computations run in PyTorch on CPU or GPU, by default in double precision.
+
+\paragraph{Stretched vertical grid.} The vertical spacing is uniform by default; with
+\code{[numerics] z\_ratio} $r>1$ the cell heights grow geometrically from the ground,
+\begin{equation}
+  \Delta z_k=\min\big(\Delta z_0\,r^k,\ \Delta z_\text{max}\big),\qquad k=0,\dots,N_z-2,
+\end{equation}
+optionally capped at $\Delta z_\text{max}$ (\code{z\_dz\_max}), with $\Delta z_0$ chosen so that the cells
+add up to $z_\text{max}-z_\text{min}$. The fuel bed and the flame base, where the gradients are steepest,
+keep a fine spacing while the plume above gets coarser cells: fewer rows and, since the vertical CFL
+limit in the plume dominates the time step, a larger $\Delta t$. With nodes $z_k$, the face spacings are
+$h_{k+1/2}=z_{k+1}-z_k$ and the control-volume heights
+$\Delta V_k=\tfrac12(h_{k-1/2}+h_{k+1/2})$, with the half cell $\Delta V_0=\tfrac12h_{1/2}$ at the ground.
+Only the vertical direction is stretched: the horizontal directions keep the FFT preconditioner of the
+pressure solver, and a stretched grid needs the face projection, flat ground and no buildings. A
+uniform grid runs the uniform code and gives the same results as before bit for bit; on a uniform grid
+the stretched code agrees with it to round-off ($3\times10^{-13}$ of the range of any field after 300 steps of a
+2D and a 3D fire, \code{scripts/check\_stretched.py}). The Koren reconstruction of the face values
+(Section~\ref{sec:advection}) keeps its uniform-grid form, which is still bounded but less accurate where
+the spacing changes.
 
 \subsection{Spatial derivatives}\label{sec:derivatives}
 Periodic directions use central differences
@@ -533,7 +560,10 @@ are used at the walls, $\partial_z\phi_0\approx(-3\phi_0+4\phi_1-\phi_2)/(2\Delt
 $\partial_{zz}\phi_0\approx(2\phi_0-5\phi_1+4\phi_2-\phi_3)/\Delta z^2$ (mirrored at the top). For
 the scalars ($T$, $\Yf$, $\YO$) the ground row is a half cell next to an adiabatic, impermeable wall:
 $\partial_z\phi_0=0$ and $\partial_{zz}\phi_0\approx2(\phi_1-\phi_0)/\Delta z^2$, the flux balance of
-the half cell.
+the half cell. On a stretched grid the vertical stencils have the same points, with weights for the actual
+node positions (Fornberg's algorithm): second order for $\partial_z$, and for $\partial_{zz}$ second order
+on a smoothly stretched grid (first order in the truncation error, second order in practice for a
+geometric growth); the wall row uses $\partial_{zz}\phi_0\approx2(\phi_1-\phi_0)/h_{1/2}^2$.
 
 \subsection{Advection}\label{sec:advection}
 \paragraph{Momentum: second-order upwind.}
@@ -571,6 +601,7 @@ $\dot q$ are written as differences of face fluxes,
   \nabla\cdot(k\nabla\phi)_i\approx\sum_j\frac{1}{h_j}\Big[k_{j,i+1/2}\,\frac{\phi_{i+1}-\phi_i}{h_j}-k_{j,i-1/2}\,\frac{\phi_i-\phi_{i-1}}{h_j}\Big],
   \qquad k_{j,i+1/2}=\tfrac12(k_i+k_{i+1}),
 \end{equation}
+(on a stretched grid the vertical face gradients divide by $h_{k\pm1/2}$ and the difference by $\Delta V_k$)
 with zero flux through closed faces and the half cell at the ground, so that diffusion only moves heat
 and species between cells: $k=\kappa+c_\text{p}\mu_\text{t}/\mathrm{Pr}$ for the heat and $\rho\mathcal D+\mu_\text{t}/\mathrm{Pr}$ for the
 species. Since $\rho c_\text{p}T$ is constant, the integral of the expansion due to conduction then equals the
@@ -585,7 +616,9 @@ Explicit. The time step is adaptive by default (\code{[numerics] cfl}, target 0.
   \Delta t = \min\Big(\Delta t_\text{max},\ \frac{\mathrm{CFL}}{\sum_j\max|u_j|/h_j},\
   \frac{0.25}{\nu_\text{eff}\sum_j h_j^{-2}}\Big),\qquad \Delta t_\text{max}=\frac{t_\text{max}-t_\text{min}}{N_t},
 \end{equation}
-with $\nu_\text{eff}$ the largest molecular plus subgrid kinematic viscosity, and steps are
+with $\nu_\text{eff}$ the largest molecular plus subgrid kinematic viscosity (on a stretched grid
+the vertical CFL term is the largest $|w|/\Delta z$ over the rows, with the local spacing, and the diffusion
+limit uses the smallest vertical spacing), and steps are
 shortened to land exactly on the output times, which stay every $N_T\Delta t_\text{max}$. In calm periods
 $\Delta t=\Delta t_\text{max}$ and the results equal those of a fixed step; \code{cfl = 0} fixes it. (A fixed
 1~ms step failed in an F19 run when gusts in the plume raised the CFL number from 0.43 to 0.73 within
@@ -624,7 +657,9 @@ velocity, not a mass flux). Each step defines and uses them as follows.
         is an interpolation of the same $\rho$, chosen to keep the operator symmetric; the transport uses
         Koren-limited face values of $\rho$ (Section~\ref{sec:advection}).
   \item \textbf{Boundaries.} The face below the ground row is the wall, with zero flux; row 0 is a half
-        cell, so its vertical part counts double, $2F_{1/2}/\Delta z$. The face between rows $N_z-2$ and
+        cell, so its vertical part counts double, $2F_{1/2}/\Delta z$ ($F_{1/2}/\Delta V_0$ on a stretched
+        grid, where in general the vertical differences of $D$ divide by $\Delta V_k$ and the face
+        gradients by $h_{k+1/2}$). The face between rows $N_z-2$ and
         $N_z-1$ is the open top, with $p=0$ on the top row. Faces next to solids are closed: zero flux and a
         zero-gradient pressure condition, exactly.
   \item \textbf{Node velocities.} Each receives the average of the corrections of its two faces
@@ -641,7 +676,10 @@ pairs in the mass budget (Appendix~\ref{app:lowmach}).
 \paragraph{Pressure solver.} The pressure equation is solved by preconditioned conjugate gradients
 (symmetric with respect to the cell volumes), preconditioned by the direct inverse of the
 constant-coefficient operator: finite-difference eigenvalues $-(2\sin(\pi r/N)/h)^2$ in the periodic
-directions (FFT) and an eigendecomposition of the vertical operator. With constant density and no
+directions (FFT) and an eigendecomposition of the vertical operator. On a stretched grid the vertical
+operator $[(p_{k+1}-p_k)/h_{k+1/2}-(p_k-p_{k-1})/h_{k-1/2}]/\Delta V_k$ is not symmetric, but
+$W^{1/2}AW^{-1/2}$ with $W=\mathrm{diag}(\Delta V_k)$ is, so it still has a real orthogonal
+eigendecomposition and the preconditioner stays exact for constant density. With constant density and no
 solids one iteration suffices; with buildings or strong density variations 10--30.
 
 \subsection{Radiation solver}
@@ -652,7 +690,8 @@ half the azimuths are kept with double weight, so a 2D run and a $y$-invariant 3
 $G$. Every direction has $\mu\ne0$, so the equation is integrated row by row in $z$ (upward
 directions from the ground, downward ones from the top). Between rows the ray travels
 $\Delta s=\Delta z/|\mu|$ and moves horizontally by $\Delta s\,\Omega_x$ (and $\Delta s\,\Omega_y$); the
-upstream intensity is interpolated linearly (bilinearly in 3D) in the periodic directions, and
+upstream intensity is interpolated linearly (bilinearly in 3D) in the periodic directions (on a stretched
+grid $\Delta s=h_{k\mp1/2}/|\mu|$ changes from row to row, and so do the interpolation weights), and
 \begin{equation}
   I_k = I_{\text{upstream}}\,e^{-\kappa\Delta s} + \big(1-e^{-\kappa\Delta s}\big)\,I_\text{b},
 \end{equation}
@@ -851,6 +890,8 @@ Key & Default & Meaning \\
 \code{x\_min}\dots\code{t\_max} & -- & domain and time interval \\
 \psec{numerics}
 \code{Nx}, \code{Ny}, \code{Nz} & -- & nodes per direction \\
+\code{z\_ratio} & 1 & growth factor of the vertical cell height per row (1: uniform; Section~\ref{sec:grid}) \\
+\code{z\_dz\_max} & -- & largest vertical cell height (m) of a stretched grid \\
 \code{Nt}, \code{NT} & -- & $\Delta t_\text{max}=(t_\text{max}-t_\text{min})/N_t$; output every $N_T\Delta t_\text{max}$ \\
 \code{time\_method} & \code{euler} & \code{euler}, \code{RK2}, \code{RK4} \\
 \code{cfl} & 0.4 & adaptive step target; 0: fixed step \\
@@ -876,6 +917,7 @@ any name & -- & building box \code{x0, x1, height} (3D: \code{x0, x1, y0, y1, he
 -- & $\mathrm{Pr}=0.7323$ & Prandtl number (also turbulent) \\
 \psec{fuel}
 \code{Y\_h} & 0.49~m & fuel bed height \\
+\code{fill} & \code{nodes} & initial fuel: \code{nodes} ($Y=1$ up to $Y_\text{h}$) or \code{exact} (fuel load $\rho_\text{b}Y_\text{h}$) \\
 \code{C\_d} & 0.7 & drag coefficient (Section~\ref{sec:fds-fuel}) \\
 \code{alpha\_s} & 0.00123 & packing ratio \\
 \code{sigma\_s} & 12240~m$^{-1}$ & surface-to-volume ratio \\

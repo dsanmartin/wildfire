@@ -33,9 +33,11 @@ SIGMA = 5.670374419e-8
 
 
 class Radiation:
-    def __init__(self, shape, spacings, n_polar, n_azimuth, device, dtype, n_groups=1):
+    def __init__(self, shape, spacings, n_polar, n_azimuth, device, dtype, n_groups=1, z=None):
         """shape: (Nz, [Ny,] Nx) grid without periodic end points. spacings: (dx, [dy,] dz).
-        n_groups: number of direction groups (angle increment), each solved separately by solve_group."""
+        n_groups: number of direction groups (angle increment), each solved separately by solve_group.
+        z: node heights of a non-uniform vertical grid: the path length and the horizontal shift of a ray
+        then change from row to row, and the interpolation stencils are computed during the march."""
         if n_polar % 2 or n_azimuth % 2:
             raise ValueError("n_polar and n_azimuth must be even")
         self.shape = tuple(shape)
@@ -99,8 +101,21 @@ class Radiation:
                 'ds': to(ds[sel]).unsqueeze(1),                           # (D_g, 1)
                 'up': torch.as_tensor(up[sel], device=device).unsqueeze(1),
                 'w_up': to(np.where(up[sel], weight, 0.0)),
-                'w_down': to(np.where(up[sel], 0.0, weight))})
+                'w_down': to(np.where(up[sel], 0.0, weight)),
+                'ox': to(ox[sel] / spacings[0]).unsqueeze(1),            # horizontal cells per meter of
+                'oy': to((oy[sel] / spacings[1]) if nd == 3 else 0 * ox[sel]).unsqueeze(1),   # vertical
+                'imu': to(1.0 / np.abs(MU[sel])).unsqueeze(1)})          # path per vertical meter
         self.H = H
+        self.stretched = z is not None                        # the caller passes z only for a stretched grid
+        if self.stretched:
+            hf = np.diff(np.asarray(z, dtype=np.float64))
+            # vertical step of march row j: upward rays go from row j-1 to j, downward from nz-j to nz-1-j
+            # (row 0 of the march: the first spacing at each end)
+            self.dz_up = [float(hf[max(j - 1, 0)]) for j in range(self.nz)]
+            self.dz_down = [float(hf[min(self.nz - 1 - j, self.nz - 2)]) for j in range(self.nz)]
+            ar = torch.arange(H, device=device)
+            self.ix = (ar % self.hshape[-1]).unsqueeze(0)
+            self.iy = (ar // self.hshape[-1]).unsqueeze(0) if nd == 3 else None
 
     def solve(self, kappa, Ib, I_bottom, I_top):
         """kappa [1/m], Ib [W/m^2/sr]: fields of the grid shape. I_bottom: ground intensity per
@@ -109,6 +124,31 @@ class Radiation:
         for g in range(1, self.n_groups):
             G = G + self.solve_group(kappa, Ib, I_bottom, I_top, g)
         return G
+
+    def _shifted(self, I, grp, ds):
+        """I interpolated (linearly; bilinearly in 3D) at the upstream point of each ray, which moved
+        horizontally by ds * Omega_h over the row (stretched grids: the shift differs from row to row)."""
+        Nx = self.hshape[-1]
+        xs = ds * grp['ox']
+        nx = torch.floor(xs)
+        fx = xs - nx
+        nx = nx.long()
+        if self.nd == 2:
+            i0 = (self.ix - nx) % Nx
+            i1 = (self.ix - nx - 1) % Nx
+            return (1 - fx) * I.gather(1, i0) + fx * I.gather(1, i1)
+        Ny = self.hshape[0]
+        ys = ds * grp['oy']
+        ny = torch.floor(ys)
+        fy = ys - ny
+        ny = ny.long()
+        out = 0.0
+        for a, wy in ((0, 1 - fy), (1, fy)):
+            jj = (self.iy - ny - a) % Ny
+            for b, wx in ((0, 1 - fx), (1, fx)):
+                ii = (self.ix - nx - b) % Nx
+                out = out + (wy * wx) * I.gather(1, jj * Nx + ii)
+        return out
 
     def solve_group(self, kappa, Ib, I_bottom, I_top, g):
         """Contribution of direction group g to G (all of G when there is a single group)."""
@@ -120,14 +160,21 @@ class Radiation:
         I = torch.where(up, I_bottom.reshape(1, H), torch.full_like(I_bottom.reshape(1, H), I_top))
         G = torch.zeros((nz, H), dtype=Ib.dtype, device=Ib.device)
         for j in range(nz):
-            if j > 0:   # value carried from the previous row, interpolated at the upstream position
+            if self.stretched:                                       # path length of this row
+                ds = torch.where(up, torch.full_like(grp['imu'], self.dz_up[j]),
+                                 torch.full_like(grp['imu'], self.dz_down[j])) * grp['imu']
+            else:
+                ds = grp['ds']
+            if j > 0 and self.stretched:   # stencil of the upstream point for this row's shift
+                I = self._shifted(I, grp, ds)
+            elif j > 0:   # value carried from the previous row, interpolated at the upstream position
                 shifted = grp['wts'][0] * I.gather(1, grp['idx'][0])
                 for p in range(1, len(grp['idx'])):
                     shifted = shifted + grp['wts'][p] * I.gather(1, grp['idx'][p])
                 I = shifted
             k_row = torch.where(up, kappa[j], kappa[nz - 1 - j])          # up: row j, down: row nz-1-j
             b_row = torch.where(up, Ib[j], Ib[nz - 1 - j])
-            A = torch.exp(-k_row * grp['ds'])
+            A = torch.exp(-k_row * ds)
             I = A * I + (1 - A) * b_row
             G[j] += grp['w_up'] @ I
             G[nz - 1 - j] += grp['w_down'] @ I

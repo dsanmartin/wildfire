@@ -4,6 +4,9 @@
 #   bash scripts/f19_3d.sh write    # only write the parameter files
 #   bash scripts/f19_3d.sh smoke    # 3 s test: speed, GPU memory, CUDA graphs, budgets (a few minutes)
 #   bash scripts/f19_3d.sh full     # 140 s run in the background (several hours)
+#   bash scripts/f19_3d.sh sz_smoke # stretched vertical grid, exact fuel load (below)
+#   bash scripts/f19_3d.sh sz_full
+#   bash scripts/f19_3d.sh ux_full  # uniform grid, exact fuel load: the reference for sz_full
 #
 # Grid: x -60..260 m, y -180..180 m, z 0..20 m; 256 x 288 x 160 cells of 1.25 x 1.25 x 0.125 m (11.8 M cells,
 # about 4 cells across the 0.49 m fuel bed). Grass plot x = 0-200 m, y = -100..100 m as in FDS; periodic in x
@@ -22,6 +25,11 @@
 # filter width ((dx dy dz)^(1/3) = 0.58 m; a fixed 0.30 m would be far below the horizontal spacing).
 # Output: planes every 1 s (x-z at y = 0, x-y at z = 1 m, y-z through the head fire), full fields every 20 s.
 # Output in data/output/f19_3d_sponge (the earlier run without sponge, 240 m wide, is data/output/f19_3d).
+# Stretched vertical grid (f19_3d_sz): 57 rows instead of 161, cell heights growing by 4% per row from 0.13 m
+# at the ground (4 nodes in the fuel bed, as on the uniform grid) to at most 0.5 m (0.17 m at 1 m, 0.21 m at
+# 2 m, 0.33 m at 5 m, 0.5 m above 9.5 m); filter width and mixing time follow the local cell height.
+# Both grid-comparison runs (f19_3d_sz, f19_3d_ux) use [fuel] fill = exact, so that both hold the 0.49 m bed
+# (with fill = nodes the uniform grid holds 0.4375 m and the stretched one 0.475 m).
 # Compare with: python src/firefront.py data/output/f19_3d_sponge data/output/f19_3d --obs data/input/f19_front_fds.csv
 set -e
 cd "$(dirname "$0")/.."
@@ -30,7 +38,7 @@ mode=${1:-smoke}
 dir=data/input/3D/f19
 mkdir -p "$dir"
 
-write_ini() {   # name t_max Nt NT full_interval
+write_ini() {   # name t_max Nt NT full_interval [Nz] [extra numerics lines] [extra fuel lines]
     cat > "$dir/$1.ini" <<EOF
 [domain]
 x_min = -60
@@ -44,10 +52,11 @@ t_max = $2
 [numerics]
 Nx = 257
 Ny = 289
-Nz = 161
+Nz = ${6:-161}
 Nt = $3
 NT = $4
 cfl = 0.4
+$7
 [pressure]
 tol = 1e-6
 [temperature]
@@ -73,6 +82,7 @@ x_start = 0
 x_end = 200
 y_start = -100
 y_end = 100
+$8
 [radiation]
 kappa_gas = 0.1
 angle_increment = 4
@@ -85,7 +95,12 @@ EOF
 
 write_ini f19_3d_sponge_smoke 3 600 100 0         # dt_max 5 ms, output every 0.5 s, no full snapshots
 write_ini f19_3d_sponge 140 28000 200 20          # dt_max 5 ms, output every 1 s, full fields every 20 s
-echo "parameter files in $dir: f19_3d_sponge_smoke.ini, f19_3d_sponge.ini"
+SZ="z_ratio = 1.04
+z_dz_max = 0.5"
+write_ini f19_3d_sz_smoke 3 600 100 0 57 "$SZ" "fill = exact"
+write_ini f19_3d_sz 140 28000 200 20 57 "$SZ" "fill = exact"
+write_ini f19_3d_ux 140 28000 200 20 161 "" "fill = exact"
+echo "parameter files in $dir: f19_3d_sponge_smoke.ini, f19_3d_sponge.ini, f19_3d_sz_smoke.ini, f19_3d_sz.ini, f19_3d_ux.ini"
 
 case "$mode" in
     write) ;;
@@ -96,5 +111,13 @@ case "$mode" in
     full)
         nohup python -u src/main.py "$dir/f19_3d_sponge.ini" -n f19_3d_sponge --device cuda --dtype float32 > logs/f19_3d_sponge.out 2>&1 &
         echo "started; follow with: tail -f logs/f19_3d_sponge.out" ;;
-    *) echo "usage: bash scripts/f19_3d.sh [write|smoke|full]"; exit 1 ;;
+    sz_smoke)
+        python -u src/main.py "$dir/f19_3d_sz_smoke.ini" -n f19_3d_sz_smoke --device cuda --dtype float32 2>&1 | tee logs/f19_3d_sz_smoke.out ;;
+    sz_full)
+        nohup python -u src/main.py "$dir/f19_3d_sz.ini" -n f19_3d_sz --device cuda --dtype float32 > logs/f19_3d_sz.out 2>&1 &
+        echo "started; follow with: tail -f logs/f19_3d_sz.out" ;;
+    ux_full)
+        nohup python -u src/main.py "$dir/f19_3d_ux.ini" -n f19_3d_ux --device cuda --dtype float32 > logs/f19_3d_ux.out 2>&1 &
+        echo "started; follow with: tail -f logs/f19_3d_ux.out" ;;
+    *) echo "usage: bash scripts/f19_3d.sh [write|smoke|full|sz_smoke|sz_full|ux_full]"; exit 1 ;;
 esac

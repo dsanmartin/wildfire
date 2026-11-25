@@ -3,6 +3,7 @@
 Axis 0 is the vertical, non-periodic axis (one-sided O(h^2) closures at both ends).
 Every other axis is periodic. Same stencils as src_legacy/derivatives.py.
 """
+import numpy as np
 import torch
 
 
@@ -30,6 +31,93 @@ def d2_vertical(phi, h):
     out[0] = (2 * phi[0] - 5 * phi[1] + 4 * phi[2] - phi[3]) / h ** 2
     out[-1] = (2 * phi[-1] - 5 * phi[-2] + 4 * phi[-3] - phi[-4]) / h ** 2
     return out
+
+
+def fd_weights(x0, x, m):
+    """Finite-difference weights for the m-th derivative at x0 from the values at the points x
+    (Fornberg 1988); exact for polynomials of degree len(x) - 1."""
+    n = len(x)
+    c = np.zeros((n, m + 1))
+    c1, c4 = 1.0, x[0] - x0
+    c[0, 0] = 1.0
+    for i in range(1, n):
+        mn, c2, c5, c4 = min(i, m), 1.0, c4, x[i] - x0
+        for j in range(i):
+            c3 = x[i] - x[j]
+            c2 *= c3
+            if j == i - 1:
+                for k in range(mn, 0, -1):
+                    c[i, k] = c1 * (k * c[i - 1, k - 1] - c5 * c[i - 1, k]) / c2
+                c[i, 0] = -c1 * c5 * c[i - 1, 0] / c2
+            for k in range(mn, 0, -1):
+                c[j, k] = (c4 * c[j, k] - k * c[j, k - 1]) / c3
+            c[j, 0] = c4 * c[j, 0] / c3
+        c1 = c2
+    return c[:, m]
+
+
+class VerticalStencils:
+    """Derivatives along axis 0 on a non-uniform vertical grid z (the same stencils as the uniform
+    functions above: three points in the interior, three (first derivative) or four (second derivative)
+    one-sided points at the ends; Fornberg weights for the actual node positions)."""
+
+    def __init__(self, z):
+        z = np.asarray(z, dtype=np.float64)
+        n = z.size
+        self.n = n
+        self.d1 = np.zeros((n, 3)); self.d1_off = np.zeros(n, dtype=np.int64)
+        self.d2 = np.zeros((n, 4)); self.d2_off = np.zeros(n, dtype=np.int64)
+        for k in range(n):
+            o1 = 0 if k == 0 else (n - 3 if k == n - 1 else k - 1)
+            self.d1[k] = fd_weights(z[k], z[o1:o1 + 3], 1); self.d1_off[k] = o1
+            if k == 0 or k == n - 1:
+                o2 = 0 if k == 0 else n - 4
+                self.d2[k] = fd_weights(z[k], z[o2:o2 + 4], 2)
+            else:
+                o2 = k - 1
+                self.d2[k, :3] = fd_weights(z[k], z[o2:o2 + 3], 2)
+            self.d2_off[k] = o2
+        self.h_wall = z[1] - z[0]
+        self._cache = {}
+
+    def _w(self, like):
+        key = (like.device, like.dtype)
+        if key not in self._cache:
+            shape = (self.n,) + (1,) * (like.dim() - 1)
+            to = lambda a: torch.as_tensor(a, dtype=like.dtype, device=like.device)
+            self._cache[key] = ([to(self.d1[:, i]).reshape(shape) for i in range(3)],
+                                [to(self.d2[:, i]).reshape(shape) for i in range(4)])
+        return self._cache[key]
+
+    def _apply(self, phi, w, k_off, npts):
+        """sum_i w_i[k] phi[k_off[k] + i]: interior rows use the centered offsets k - 1."""
+        out = torch.empty_like(phi)
+        n = self.n
+        # interior rows 1..n-2: points k-1, k, k+1
+        out[1:-1] = w[0][1:-1] * phi[:-2] + w[1][1:-1] * phi[1:-1] + w[2][1:-1] * phi[2:]
+        # end rows: one-sided points
+        o0, o1 = int(k_off[0]), int(k_off[-1])
+        out[0] = sum(w[i][0] * phi[o0 + i] for i in range(npts))
+        out[-1] = sum(w[i][-1] * phi[o1 + i] for i in range(npts))
+        return out
+
+    def first(self, phi):
+        return self._apply(phi, self._w(phi)[0], self.d1_off, 3)
+
+    def second(self, phi):
+        d1w, d2w = self._w(phi)
+        return self._apply(phi, d2w, self.d2_off, 4)
+
+    def first_wall(self, phi):
+        out = self.first(phi)
+        out[0] = 0.0
+        return out
+
+    def second_wall(self, phi):
+        """Half cell at the ground next to an adiabatic wall: 2 (phi_1 - phi_0) / h_0^2."""
+        out = self.second(phi)
+        out[0] = 2 * (phi[1] - phi[0]) / self.h_wall ** 2
+        return out
 
 
 def d1_vertical_wall(phi, h):
@@ -138,22 +226,30 @@ class Operators:
     """Vector calculus for a given grid. Directions are ordered like the velocity
     components, (x, z) or (x, y, z): direction j lives on tensor axis ``ndim - 1 - j``."""
 
-    def __init__(self, spacings, legacy=False, all_periodic=False):
+    def __init__(self, spacings, legacy=False, all_periodic=False, z=None):
         self.h = tuple(spacings)            # (dx, dz) or (dx, dy, dz); plan view: (dx, dy)
         self.ndim = len(self.h)
         self.legacy = legacy
         self.all_periodic = all_periodic    # plan-view model: no vertical axis, every axis periodic
+        # Non-uniform vertical grid (node heights z): VerticalStencils; uniform grids keep the functions above
+        self.vz = None
+        if z is not None:                                         # given only for a stretched grid
+            self.vz = VerticalStencils(z)
 
     def _vertical(self, axis):
         return axis == 0 and not self.all_periodic
 
     def d1(self, phi, j):
         axis = self.ndim - 1 - j
-        return d1_vertical(phi, self.h[j]) if self._vertical(axis) else d1_periodic(phi, self.h[j], axis)
+        if self._vertical(axis):
+            return self.vz.first(phi) if self.vz is not None else d1_vertical(phi, self.h[j])
+        return d1_periodic(phi, self.h[j], axis)
 
     def d2(self, phi, j):
         axis = self.ndim - 1 - j
-        return d2_vertical(phi, self.h[j]) if self._vertical(axis) else d2_periodic(phi, self.h[j], axis)
+        if self._vertical(axis):
+            return self.vz.second(phi) if self.vz is not None else d2_vertical(phi, self.h[j])
+        return d2_periodic(phi, self.h[j], axis)
 
     def upwind(self, a, phi, j):
         axis = self.ndim - 1 - j
@@ -190,14 +286,15 @@ class Operators:
         if not self._wall():
             return self.grad(phi)
         nz = self.ndim - 1
-        return [self.d1(phi, j) if j != nz else d1_vertical_wall(phi, self.h[j]) for j in range(self.ndim)]
+        wall = (lambda p: self.vz.first_wall(p)) if self.vz is not None else (lambda p: d1_vertical_wall(p, self.h[nz]))
+        return [self.d1(phi, j) if j != nz else wall(phi) for j in range(self.ndim)]
 
     def lap_s(self, phi):
         """Laplacian of a scalar with the zero-flux half cell at the ground (see grad_s)."""
         if not self._wall():
             return self.lap(phi)
         nz = self.ndim - 1
-        out = d2_vertical_wall(phi, self.h[nz])
+        out = self.vz.second_wall(phi) if self.vz is not None else d2_vertical_wall(phi, self.h[nz])
         for j in range(nz):
             out = out + self.d2(phi, j)
         return out
