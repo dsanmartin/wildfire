@@ -936,7 +936,15 @@ class Model:
         points = sorted(tuple(float(v) for v in pair.split()) for pair in c.burner_ramp.split(','))
         if any(len(pt) != 2 for pt in points) or len(points) < 2:
             raise ValueError(f"[ignition] ramp: expected 'time fraction' pairs separated by commas, got '{c.burner_ramp}'")
-        coef = c.burner_hrrpua / c.H_C / (0.5 * self.h[-1]) * inside
+        # Keep the total power of the strip (as FDS does for a vent): the nodes inside it cover a whole number
+        # of cells, so scale the heat release by (strip area) / (area of those cells)
+        x0, x1 = max(c.burner_x_start, c.x_min), min(c.burner_x_end, c.x_max)
+        strip, cells = x1 - x0, float(inside.sum()) * self.h[0]
+        if nd == 3:
+            strip *= min(c.burner_y_end, c.y_max) - max(c.burner_y_start, c.y_min)
+            cells *= self.h[1]
+        self.burner_area = (strip, cells)
+        coef = c.burner_hrrpua * (strip / cells) / c.H_C / (0.5 * self.h[-1]) * inside
         return {'coef': to(coef), 'delay': to(delay), 'ramp': points}
 
     def burner_rate(self):
