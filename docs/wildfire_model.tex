@@ -879,7 +879,9 @@ density 1.33~kg\,m$^{-3}$, $\sigma_\text{s}=9770$~m$^{-1}$, moisture 6.3\%, $C_\
 line ($y=\pm25$~m) lit from the center at 1.0~m\,s$^{-1}$, wind 4.6~m\,s$^{-1}$ at 2~m, ambient 32~$^\circ$C; the
 vegetation model, $H_\text{C}$, $\kappa_\text{g}$, sponge zone, precision and radiation settings are those of F19.
 Domain $200\times180\times20$~m (the plot covers 56\% of the width), $1\times1\times0.1$~m cells (7.2~M; three
-nodes in the bed), with the burner power scaled to the strip area.
+nodes in the bed), with the burner power scaled to the strip area. The run used the default fuel fill (\code{fill = nodes},
+Section~\ref{sec:solid}): the three nodes up to 0.21~m hold 0.25~m of fuel, 19\% more than the bed, which may
+contribute to the early lead below; \code{scripts/c064\_3d.sh ux\_full} repeats it with the exact load.
 
 \paragraph{Head-fire position.}
 \begin{center}

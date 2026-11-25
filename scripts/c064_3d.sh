@@ -5,6 +5,9 @@
 #   bash scripts/c064_3d.sh write    # only write the parameter files
 #   bash scripts/c064_3d.sh smoke    # 3 s test: speed, GPU memory, CUDA graphs, budgets (a few minutes)
 #   bash scripts/c064_3d.sh full     # 120 s run in the background
+#   bash scripts/c064_3d.sh sz_smoke # stretched vertical grid, exact fuel load (below)
+#   bash scripts/c064_3d.sh sz_full
+#   bash scripts/c064_3d.sh ux_full  # uniform grid, exact fuel load: the reference for sz_full
 #
 # Case (Case_C064.fds): ambient 32 C, wind 4.6 m/s at 2 m (L = -500 m, z_0 = 0.03 m); grass plot x = 0-100 m,
 # y = -50..50 m, bed height 0.21 m, bulk density 1.33 kg/m3 (packing ratio 1.33 / 500), surface-to-volume
@@ -15,6 +18,11 @@
 # nodes in the 0.21 m bed). Sponge zone at x = -40..-20 m; the plot covers 56% of the width.
 # float32, pressure solver tolerance 1e-6, radiation angle increment 4; adaptive time step (CFL 0.4, at most
 # 5 ms). Output: planes every 1 s (x-z at y = 0, x-y at z = 1 m), full fields every 20 s.
+# Stretched vertical grid (c064_3d_sz): 65 rows instead of 201, cell heights growing by 4.75% per row from
+# 0.10 m at the ground (3 nodes in the bed, as on the uniform grid) to at most 0.4 m (0.15 m at 1 m, 0.20 m at
+# 2 m, 0.34 m at 5 m, 0.4 m above 6.4 m). The grid-comparison runs (c064_3d_sz, c064_3d_ux) use [fuel]
+# fill = exact, so that both hold the 0.21 m bed (with fill = nodes, as in c064_3d, the uniform grid holds
+# 0.25 m, 19% more, and the stretched one 0.26 m).
 # Measured: head at 15, 42 and 100 m at 27, 53 and 100 s (validation/csiro/C064_front.csv).
 # Compare: python src/firefront.py data/output/c064_3d --obs validation/csiro/C064_front.csv
 #          python scripts/compare_perimeters.py data/output/c064_3d --case C064
@@ -25,7 +33,7 @@ mode=${1:-smoke}
 dir=data/input/3D/c064
 mkdir -p "$dir"
 
-write_ini() {   # name t_max Nt NT full_interval
+write_ini() {   # name t_max Nt NT full_interval [Nz] [extra numerics lines] [extra fuel lines]
     cat > "$dir/$1.ini" <<EOF
 [domain]
 x_min = -40
@@ -39,10 +47,11 @@ t_max = $2
 [numerics]
 Nx = 201
 Ny = 181
-Nz = 201
+Nz = ${6:-201}
 Nt = $3
 NT = $4
 cfl = 0.4
+$7
 [pressure]
 tol = 1e-6
 [temperature]
@@ -80,6 +89,7 @@ x_start = 0
 x_end = 100
 y_start = -50
 y_end = 50
+$8
 [radiation]
 kappa_gas = 0.1
 angle_increment = 4
@@ -92,7 +102,12 @@ EOF
 
 write_ini c064_3d_smoke 3 600 100 0         # dt_max 5 ms, output every 0.5 s, no full snapshots
 write_ini c064_3d 120 24000 200 20          # dt_max 5 ms, output every 1 s, full fields every 20 s
-echo "parameter files in $dir: c064_3d_smoke.ini, c064_3d.ini"
+SZ="z_ratio = 1.0475
+z_dz_max = 0.4"
+write_ini c064_3d_sz_smoke 3 600 100 0 65 "$SZ" "fill = exact"
+write_ini c064_3d_sz 120 24000 200 20 65 "$SZ" "fill = exact"
+write_ini c064_3d_ux 120 24000 200 20 201 "" "fill = exact"
+echo "parameter files in $dir: c064_3d_smoke.ini, c064_3d.ini, c064_3d_sz_smoke.ini, c064_3d_sz.ini, c064_3d_ux.ini"
 
 case "$mode" in
     write) ;;
@@ -103,5 +118,13 @@ case "$mode" in
     full)
         nohup python -u src/main.py "$dir/c064_3d.ini" -n c064_3d --device cuda --dtype float32 > logs/c064_3d.out 2>&1 &
         echo "started; follow with: tail -f logs/c064_3d.out" ;;
-    *) echo "usage: bash scripts/c064_3d.sh [write|smoke|full]"; exit 1 ;;
+    sz_smoke)
+        python -u src/main.py "$dir/c064_3d_sz_smoke.ini" -n c064_3d_sz_smoke --device cuda --dtype float32 2>&1 | tee logs/c064_3d_sz_smoke.out ;;
+    sz_full)
+        nohup python -u src/main.py "$dir/c064_3d_sz.ini" -n c064_3d_sz --device cuda --dtype float32 > logs/c064_3d_sz.out 2>&1 &
+        echo "started; follow with: tail -f logs/c064_3d_sz.out" ;;
+    ux_full)
+        nohup python -u src/main.py "$dir/c064_3d_ux.ini" -n c064_3d_ux --device cuda --dtype float32 > logs/c064_3d_ux.out 2>&1 &
+        echo "started; follow with: tail -f logs/c064_3d_ux.out" ;;
+    *) echo "usage: bash scripts/c064_3d.sh [write|smoke|full|sz_smoke|sz_full|ux_full]"; exit 1 ;;
 esac
