@@ -128,6 +128,13 @@ class Model:
                 fuel0 = fuel0 | (state0[nd + 3] > 0)
             rows = np.flatnonzero(fuel0.reshape(nz, -1).any(axis=1))
             self.k_fuel = min(nz, int(rows.max()) + 2) if rows.size else 1    # one spare row
+        # Burning structures: their fuel gas and wall heat exchange enter through the fuel slab, which then has
+        # to reach the fluid nodes next to the buildings
+        self.struct = None
+        if cfg.structures == 'ignition':
+            from structures import Structures
+            self.struct = Structures(self, grid, to)
+            self.k_fuel = max(self.k_fuel, min(nz, self.struct.k_needed))
         # Face-based projection (default): discretely conservative face fluxes, also used for transport
         self.faces = None
         if cfg.projection == 'face':
@@ -269,7 +276,13 @@ class Model:
         near = np.zeros(N, dtype=bool)                            # fluid nodes touching a wall
         near[neighbours[wall].ravel()[is_fluid[wall].ravel()]] = True
         self.near_wall = torch.as_tensor(near.reshape(shape), device=self.device)
-        # Wall distance for the turbulence damping: also the distance to the nearest building
+        # Wall distance for the turbulence damping: also the distance to the nearest building. On a stretched
+        # grid, exactly from the boxes of solid nodes (the distance to the nearest solid node, as the Euclidean
+        # distance transform gives on a uniform grid, which keeps the transform: bitwise as before)
+        if self.stretched:
+            self.wall_distance = torch.minimum(self.wall_distance, to(self._box_distance(grid)))
+            self.wall_divergence = 0.0
+            return
         try:
             from scipy.ndimage import distance_transform_edt
             d = distance_transform_edt(fluid, sampling=self.h[::-1])
@@ -277,6 +290,36 @@ class Model:
         except ImportError:
             print("scipy not available: turbulence wall damping ignores building walls")
         self.wall_divergence = 0.0
+
+    def _box_distance(self, grid):
+        """Distance of every node to the nearest solid node of the buildings: each building is the box of its
+        solid nodes, so the distance is that to the box (zero inside)."""
+        coords = [grid['Zm']] + ([grid['Ym']] if self.nd == 3 else []) + [grid['Xm']]
+        dist = np.full(self.shape, np.inf)
+        for mask in self._building_masks(grid):
+            d2 = np.zeros(self.shape)
+            for X in coords:
+                lo, hi = X[mask].min(), X[mask].max()
+                d2 += np.maximum(np.maximum(lo - X, X - hi), 0.0) ** 2
+            dist = np.minimum(dist, np.sqrt(d2))
+        return dist
+
+    def _building_masks(self, grid, with_boxes=False):
+        """Solid nodes of each building of [buildings], in order (boxes standing on the ground); with_boxes:
+        (box, mask) pairs. Buildings that cover no node are left out."""
+        Xm, Zm, ground = grid['Xm'], grid['Zm'], grid['ground']
+        masks = []
+        for _, box in self.cfg.buildings:
+            if self.nd == 2:
+                x0, x1, height = box
+                inside = (Xm >= x0) & (Xm <= x1)
+            else:
+                x0, x1, y0, y1, height = box
+                inside = (Xm >= x0) & (Xm <= x1) & (grid['Ym'] >= y0) & (grid['Ym'] <= y1)
+            mask = inside & (Zm <= ground + height)
+            if mask.any():
+                masks.append((box, mask) if with_boxes else mask)
+        return masks
 
     def apply_solids(self, y, homogeneous=False):
         """Wall conditions of the buildings (see _init_solids)."""
@@ -378,6 +421,8 @@ class Model:
             s = solid if solid is not None else self.solid_rates(y, rho)
             net = s['Q_comb'].clone()
             net[:s['k']] -= s['Q_conv']                           # fuel slab
+            if 'Q_wall' in s:                                     # heat convected to the structures
+                net[:s['k']] -= s['Q_wall']
             out = out + net / rho_cp
         else:
             out = out + self.q(T, Y)
@@ -548,8 +593,12 @@ class Model:
         dY = -mdot / c.rho_bulk
         if self.burner is not None:                               # ignition burner: fuel gas in row 0
             mdot[0] += self.burner_rate()
-        return {'k': k, 'Q_conv': Q_conv, 'Q_comb': omega * c.H_C, 'dY': dY, 'dT_s': dT_s,
-                'dW': dW, 'mdot': mdot, 'omega': omega}
+        out = {'k': k, 'Q_conv': Q_conv, 'Q_comb': omega * c.H_C, 'dY': dY, 'dT_s': dT_s,
+               'dW': dW, 'mdot': mdot, 'omega': omega}
+        if self.struct is not None:                               # burning structures: fuel gas, heat to walls
+            out['Q_wall'] = torch.zeros_like(Q_conv)
+            self.struct.add_sources(y, rho, mdot, out['Q_wall'])
+        return out
 
     def update_radiation(self, y, group=None):
         """Solve the radiative transfer equation for the current state and store G. With an angle
@@ -566,7 +615,8 @@ class Model:
             Ib = torch.where(self.dead_mask, c.sigma * T ** 4 / np.pi, Ib)
         if self.has_solids:                                       # buildings: opaque, at their wall temperature
             kappa = torch.where(self.solid_mask, torch.full_like(kappa, 1e3), kappa)
-            Ib = torch.where(self.solid_mask, c.sigma * T ** 4 / np.pi, Ib)
+            T_wall = self.struct.T_node if self.struct is not None else T
+            Ib = torch.where(self.solid_mask, c.sigma * T_wall ** 4 / np.pi, Ib)
         I_ground = c.sigma * T[0] ** 4 / np.pi
         I_top = c.sigma * c.T_inf ** 4 / np.pi
         if self.rad.n_groups > 1:
@@ -1003,11 +1053,17 @@ class Model:
         for name in self._CARRIED_NUMBERS:
             if hasattr(self, name):
                 out[name] = getattr(self, name)
+        if self.struct is not None:
+            out['structures'] = {k: [cpu(t) for t in v] if isinstance(v, list) else cpu(v)
+                                 for k, v in self.struct.state().items()}
         return out
 
     def load_checkpoint_state(self, state):
         """Restore checkpoint_state, in place where the buffers already exist (CUDA graphs keep addresses)."""
         dev = lambda v, like=None: v.to(device=self.device, dtype=like.dtype if like is not None else v.dtype)
+        state = dict(state)
+        if 'structures' in state:
+            self.struct.load_state(state.pop('structures'))
         for name, v in state.items():
             cur = getattr(self, name, None)
             if torch.is_tensor(v):
@@ -1074,6 +1130,19 @@ class Model:
         else:
             self._p.copy_(p)
         return self._p
+
+    def project_initial(self, y):
+        """Project the initial velocity (in place) and set the face fluxes before the first step. Without it the
+        first step transports with the face average of the initial wind, which blows into the buildings: the gas
+        piles up against them, cools below T_min, and the temperature bound deletes that mass. Only needed with
+        buildings (on flat ground the initial wind already satisfies the constraint)."""
+        c, P = self.cfg, self.face_proj
+        self.project_begin(y, y[self.nd], self._p)
+        for _ in range(max(c.max_iter, 200)):
+            P.pcg_iterate(1)
+            if float(P.pcg_residual()) < c.tol:
+                break
+        self.project_end(y)
 
     def update_diagnostics(self):
         """Divergence errors of the last face projection (host synchronization: call at outputs)."""
@@ -1172,6 +1241,8 @@ class Model:
         if not c.solid_temperature:
             burned = (y[nd + 1] - y1[nd + 1]).clamp(min=0)
             self.energy['combustion'] += self._vsum(fuel_density(y1[nd]) * burned) * self.dV
+        if self.struct is not None:                               # wall temperatures, ignition, combustible mass
+            self.struct.advance(y1, self.dt_t)
         return y1
 
     def _vsum(self, a):
@@ -1200,6 +1271,8 @@ class Model:
         if c.projection == 'face':
             if self._p is None:
                 self._p = p.clone()
+            if self.faces is None and self.has_solids:
+                self.project_initial(y)
             y1 = self.predict(y)
             P = self.face_proj
             for it in range(1, max(c.max_iter, 200) + 1):
@@ -1305,6 +1378,13 @@ class Model:
         x_head = float(self._x_ground[burnt].max())
         cell = self.h[0] * (self.h[1] if self.nd == 3 else 1.0)
         return x_head, float(burnt.sum()) * cell
+
+    def structure_diagnostics(self, y):
+        """Per-building diagnostics of the burning structures (Structures.diagnostics), host side."""
+        c, nd = self.cfg, self.nd
+        rho = self.rho(y[nd])
+        hrr = rho * torch.minimum(y[nd + 4].clamp(min=0), y[nd + 5].clamp(min=0) / c.s_O2) * c.H_C / self.tau_mix
+        return self.struct.diagnostics(hrr, self._mass_w * self.dV)
 
     def solid_diagnostics(self, y):
         """Fuel temperature range over the nodes that still hold fuel, and the total heat release rate

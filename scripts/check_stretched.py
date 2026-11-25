@@ -3,7 +3,7 @@ grid['force_stretched']) must give the same solution as the uniform path, to rou
 
     python scripts/check_stretched.py [--steps 300]
 
-Runs a small 2D and 3D fire (burner, solid fuel, radiation, turbulence, wall model, face projection) with
+Runs small 2D and 3D fires (burner, solid fuel, radiation, turbulence, wall model, face projection, buildings) with
 both paths in float64 on the CPU for a fixed number of steps and prints the largest difference of every
 field, relative to its range. Expected: about 1e-12 or less (the two paths differ only in the order of
 floating-point operations: Fornberg weights instead of the fixed stencils, F/(dz/2) instead of 2F/dz, ...).
@@ -49,6 +49,33 @@ x_end = 80
 [radiation]
 kappa_gas = 0.1
 """,
+    '2D buildings': """[domain]
+x_min = -60
+x_max = 100
+y_min = 0
+y_max = 10
+t_min = 0
+t_max = 1
+[numerics]
+Nx = 129
+Ny = 41
+Nt = 1000
+[ignition]
+model = burner
+[wind]
+u_r = 4.9
+z_r = 2
+forcing = sponge
+sponge_start = -60
+sponge_end = -30
+[fuel]
+x_start = 0
+x_end = 80
+[buildings]
+house = 30, 40, 4
+[radiation]
+kappa_gas = 0.1
+""",
     '3D': """[domain]
 x_min = -40
 x_max = 80
@@ -76,6 +103,8 @@ x_start = 0
 x_end = 60
 y_start = -20
 y_end = 20
+[buildings]
+house = 30, 45, -10, 5, 4
 [radiation]
 kappa_gas = 0.1
 angle_increment = 2

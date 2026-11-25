@@ -470,7 +470,10 @@ zero velocity, no fuel and ambient values. Solid nodes with a fluid face neighbo
 the average of their fluid neighbors for $T$ and the species: adiabatic, impermeable walls. The faces
 between solid and fluid carry no flux. Solids are opaque to radiation at the temperature of their
 wall nodes, and the turbulence damping uses the distance to the nearest building as well as the
-height above the ground.
+height above the ground: the Euclidean distance transform of the solid nodes on a uniform grid, and on a
+stretched grid the distance to the box of solid nodes of each building, which is the same distance (the
+two agree exactly). Buildings are inert unless \code{[structures] model = ignition}
+(Section~\ref{sec:structures}).
 
 Verification: a building in a 5~m\,s$^{-1}$ wind with all physics on and no fire keeps $T$ and
 $\YO$ exactly at their ambient values with no flow inside the solid. Flow around a 10~m cube on a
@@ -479,6 +482,95 @@ $1.6\times10^{-10}$~s$^{-1}$, mean upstream separation 0.8--1.5 heights ahead of
 reattachment 3.5--3.7 heights behind the rear face. Wind-tunnel data for cubes give about 1 and 1.6
 heights (e.g.\ Martinuzzi \& Tropea 1993, channel flow); the longer wake is attributed to the coarse
 resolution, the absence of inflow turbulence and the short averaging time.
+
+\subsection{Burning structures}\label{sec:structures}
+With \code{[structures] model = ignition} (\code{src/structures.py}) the buildings ignite and burn as surfaces
+with an ignition temperature and a prescribed heat release rate per unit area, like the FDS surfaces with
+\code{IGNITION\_TEMPERATURE} and \code{HRRPUA} on an obstruction with \code{BULK\_DENSITY}. Each face between a
+solid node of a building and a fluid neighbor is a surface element: a roof element when the gas is above, a
+wall element when it is beside (or below). The element areas of each building are scaled so that its roof
+and walls have their exact areas (the boxes are snapped to the grid nodes).
+
+\paragraph{Wall heating.} Each element is a 1D wall of layers (\code{wall\_layers}, \code{roof\_layers}:
+thickness, density, conductivity and specific heat of each layer; by default 10~mm of inert wood,
+$\rho=400$~kg\,m$^{-3}$, $k=0.10$~W\,m$^{-1}$\,K$^{-1}$, $c=1200$~J\,kg$^{-1}$\,K$^{-1}$, on 89~mm of insulation,
+$\rho=24$, $k=0.04$, $c=840$, the \code{IGNITABLE WOOD WALL} and \code{IGNITABLE ROOF} surfaces of the FDS C064
+structures case), heated at the exposed side and insulated at the back:
+\begin{equation}
+  \rho c\,\frac{\partial T}{\partial t}=\frac{\partial}{\partial x}\Big(k\,\frac{\partial T}{\partial x}\Big),\qquad
+  -k\,\frac{\partial T}{\partial x}\Big|_{x=0}=\dot q''_\text{net},\qquad
+  \frac{\partial T}{\partial x}\Big|_{\text{back}}=0.
+\end{equation}
+The cells are graded from 20~$\mu$m at the surface (growing by 30\% per cell in the first layer, uniform in the
+others; 39 cells for the default walls), and the equation is advanced implicitly (backward Euler, a tridiagonal
+solve for all elements at once) with the net flux of the start of the step. The surface temperature $T_\text{s}$
+is that of the first cell. Against the exact surface temperature of a semi-infinite solid under a constant
+flux, $T_\text{s}-T_0=2\dot q''\sqrt{t/(\pi k\rho c)}$ (100~mm of wood, 20~kW\,m$^{-2}$, 60~s), the error is 0.2\%
+of the rise for steps of 5 and 50~ms.
+
+\paragraph{Surface heat balance.}
+\begin{equation}
+  \dot q''_\text{net}=h\,(T_\text{g}-T_\text{s})+\varepsilon\big(\dot q''_\text{inc}-\sigma T_\text{s}^4\big),\qquad
+  \dot q''_\text{inc}=\max\big(\tfrac12G-\sigma T_\text{s}^4,\,0\big),
+\end{equation}
+with $T_\text{g}$ and $G$ those of the fluid node of the element and the emissivity $\varepsilon$ (0.9). The
+convection coefficient is that of FDS, $h=\max\big(C\,|T_\text{g}-T_\text{s}|^{1/3},\ (k_\text{g}/L)\,0.037\,
+\mathrm{Re}^{4/5}\mathrm{Pr}^{1/3}\big)$, with $C=1.52$ for roofs and 1.31 for walls, $L=1$~m and $\mathrm{Re}=|\vu|L/\nu$.
+The incident radiation follows from $G$ next to the wall: half of the directions arrive from the wall, which
+emits $\sigma T_\text{s}^4/\pi$ (the radiation solver gives each solid node the mean surface temperature of its
+elements), so the gas side contributes $\frac12G-\sigma T_\text{s}^4$; at a uniform temperature
+$\dot q''_\text{inc}=\sigma T^4$ and $\dot q''_\text{net}=0$. The gas loses the convected heat,
+$h\,(T_\text{g}-T_\text{s})A/V$ per unit volume of the fluid node ($A$ the element area, $V$ the control volume),
+which enters the heating rate $\dot q$ and so the divergence constraint. The diagnostics also give the FDS
+gauge heat flux, $\dot q''_\text{inc}-\sigma T_\text{gauge}^4+h\,(T_\text{g}-T_\text{gauge})$ with
+$T_\text{gauge}=T_\infty$ by default.
+
+\paragraph{Ignition and burning.} An element ignites when $T_\text{s}$ reaches the ignition temperature
+(\code{wall\_T\_ign}, \code{roof\_T\_ign}; 150 and 160~$^\circ$C) and burns from then on: it releases fuel gas at
+\begin{equation}
+  \dot m''=\frac{\dot q''_\text{A}\,f(t-t_\text{ign})}{H_\text{C}}
+\end{equation}
+into its fluid node, $\dot m''A/V$ per unit volume, with $\dot q''_\text{A}$ the heat release rate per unit
+area (\code{wall\_hrrpua}, \code{roof\_hrrpua}; 750 and 600~kW\,m$^{-2}$) and $f$ the ramp of \code{ramp} (by
+default 0, 0.5, 1, 1 and 0.8 at 0, 2, 8, 100 and 120~s after ignition). The fuel gas enters the density, the
+fuel-gas species and the divergence like the pyrolysis gas (the fuel slab is extended to the fluid nodes of
+the roofs), and burns in the gas phase with the available oxygen (Section~\ref{sec:combustion}): the flame
+of a house, its heat and its plume, which can ignite other houses, come from the same combustion model as
+the grass fire. Each building holds \code{bulk\_density} (150~kg\,m$^{-3}$) times its volume of combustible
+mass, and its elements stop releasing when it is used up. The structure gas is part of the mass budget.
+
+\paragraph{Diagnostics.} At every output each building reports its mean and maximum surface temperature,
+the burning fraction of its surface and the time of its first ignition, the fuel released (kg\,s$^{-1}$, and
+times $H_\text{C}$ in W), the gas-phase heat release within \code{envelope} (2~m) of the building and up to
+\code{envelope\_top} (5~m) above its roof, the surface-integrated gauge and net heat fluxes and the
+combustible mass left; they are written to the log and to \code{data.npz} (\code{S\_*}, one column per
+building). \code{scripts/compare\_structures.py} compares them with the house devices of the FDS case.
+
+\paragraph{Tests.} At ambient conditions nothing changes (net flux $\sim10^{-3}$~W per house). The 2D tests
+(\code{scripts/houses\_2d.sh}, 120~s) put 15~m long, 5~m tall houses in the C064 grass fire, with grass from
+the ignition line to $x=150$~m, also between and behind the houses:
+\begin{itemize}
+  \item \textbf{One house} at $x=30$--45~m: the bent plume heats the upwind wall and roof, the first element ignites
+        at 20~s with the grass fire 20~m away, and the whole surface burns within about 30~s: 16.5~MW\,m$^{-1}$ of
+        fuel released (15~m of roof at 600~kW\,m$^{-2}$ and 10~m of walls at 750), up to 15.6~MW\,m$^{-1}$ burning
+        within 2~m of the house, surface temperatures of about 970~K (mean) and 1250~K (maximum). The grass fire
+        stops at the upwind wall.
+  \item \textbf{Two houses 20~m apart} ($x=30$--45 and 65--80~m): the first house ignites at 20.6~s and the
+        second at 59.6~s, 39~s later, by the flame of the first one, which the wind lays over its roof and
+        across the gap onto the upwind corner of the second (the gas-phase heat release next to the second
+        house rises before it releases any fuel; its surface had warmed only from 324 to 350~K in the 20~s
+        before). The grass fire in the gap never reaches the second house: the gap burns later, from the wake
+        of the first house (head fire at 64~m at 90~s), and the flame of the second house ignites the grass
+        behind it (82~m at 120~s). The second house burns completely, like the first.
+\end{itemize}
+The mass budget closes to $2\times10^{-5}$\% of the domain mass in both runs, with the fuel of the houses
+included (the two houses add 56~kg\,m$^{-1}$ to the pyrolysis and burner gas). The upwind flow keeps the
+undisturbed profile and the ambient temperature throughout: the sponge zone removes the plume that leaves
+the periodic domain. With both houses burning, the hot layer (600--900~K) reaches the 20~m top of the domain
+downwind of the second house; \code{houses\_2d\_two\_tall} repeats the two-house case with the top at 40~m
+(the grid below 20~m unchanged) to measure the effect of the domain height. In 2D a house blocks the whole
+width, so the grass fire cannot pass around it, and the plume is pressed onto it: the 2D runs test the
+coupling, not the ignition times.
 
 \subsection{Terrain (immersed boundary)}
 Nodes with height between the terrain height minus $\Delta z$ and the terrain height are \emph{cut
@@ -546,7 +638,7 @@ limit in the plume dominates the time step, a larger $\Delta t$. With nodes $z_k
 $h_{k+1/2}=z_{k+1}-z_k$ and the control-volume heights
 $\Delta V_k=\tfrac12(h_{k-1/2}+h_{k+1/2})$, with the half cell $\Delta V_0=\tfrac12h_{1/2}$ at the ground.
 Only the vertical direction is stretched: the horizontal directions keep the FFT preconditioner of the
-pressure solver, and a stretched grid needs the face projection, flat ground and no buildings. A
+pressure solver, and a stretched grid needs the face projection and flat ground. A
 uniform grid runs the uniform code and gives the same results as before bit for bit; on a uniform grid
 the stretched code agrees with it to round-off ($3\times10^{-13}$ of the range of any field after 300 steps of a
 2D and a 3D fire, \code{scripts/check\_stretched.py}). The Koren reconstruction of the face values
@@ -670,7 +762,11 @@ velocity, not a mass flux). Each step defines and uses them as follows.
   \item \textbf{Reuse.} The projected $F$ is stored and drives the transport of the next step: mass fluxes
         $m=\rho_\text{f}F$ for the density (Koren-limited, upwinded face value $\rho_\text{f}$), $m\,Y_\text{f}$
         for the species, and $F\,u_\text{f}$ for the momentum. On the first step $F$ is the face average of
-        the initial velocities, not projected.
+        the initial velocities, not projected, which on flat ground already satisfies the constraint. With
+        buildings it does not: the wind blows into the walls, the gas piles up against them, cools below
+        $T_\text{min}$, and the temperature bound deletes that mass (0.135~kg\,m$^{-1}$ in the first 5~ms step of a
+        2D case with one house, $4\times10^{-3}$\% of the domain mass). With buildings the initial velocity is
+        therefore projected before the first step, which reduces the loss to $10^{-10}$~kg\,m$^{-1}$.
 \end{enumerate}
 The same $F$ thus satisfies the constraint exactly and carries the mass, so the face fluxes cancel in
 pairs in the mass budget (Appendix~\ref{app:lowmach}).
@@ -981,6 +1077,16 @@ Key & Default & Meaning \\
 \code{constant} & \code{False} & constant density (incompressible) \\
 \psec{buildings}
 any name & -- & building box \code{x0, x1, height} (3D: \code{x0, x1, y0, y1, height}) \\
+\psec{structures}
+\code{model} & \code{none} & \code{ignition}: burning structures (Section~\ref{sec:structures}) \\
+\code{wall\_T\_ign}, \code{roof\_T\_ign} & 423.15, 433.15~K & ignition temperature \\
+\code{wall\_hrrpua}, \code{roof\_hrrpua} & 750, 600~kW\,m$^{-2}$ & heat release rate per unit area \\
+\code{ramp} & \code{0 0, 2 0.5, 8 1, 100 1, 120 0.8} & time since ignition (s) and fraction of the hrrpua \\
+\code{wall\_layers}, \code{roof\_layers} & wood + insulation & \code{thickness density conductivity specific\_heat}, \ldots \\
+\code{emissivity} & 0.9 & surface emissivity \\
+\code{bulk\_density} & 150~kg\,m$^{-3}$ & combustible mass per building volume \\
+\code{T\_gauge} & $T_\infty$ & gauge temperature of the gauge heat flux \\
+\code{envelope}, \code{envelope\_top} & 2, 5~m & region of the gas-phase heat release of a building \\
 \psec{gas}
 \code{cp\_model} & \code{mixture} & \code{mixture}, \code{variable} ($c_\text{p}(T)$ of air), \code{constant} \\
 \code{transport} & \code{sutherland} & \code{sutherland} or \code{constant} \\
@@ -1116,6 +1222,11 @@ Policy for changing a default:
         (\code{c\_s\_model = fds}), not the default.
   \item Water vapor from drying and combustion products are not transported.
   \item Building walls have no wall model.
+  \item \textbf{Burning structures} are a prescribed-burning model, as in the FDS case they copy: after ignition
+        the heat release per unit area follows a ramp and does not depend on the heat received, the
+        building keeps its shape as it burns (no burn-away, no openings or interior), and the walls are 1D with
+        constant properties. The incident radiation is estimated from $G$ next to the wall. In 2D the houses
+        are infinitely long walls across the wind. Not yet compared with the FDS case in 3D.
   \item With terrain the ground row of the scalars is still copied from the row above, and the burner is
         not available.
 \end{itemize}

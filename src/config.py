@@ -176,6 +176,22 @@ class Config:
     # Buildings (immersed solids): boxes standing on the ground, (x0, x1, height) in 2D and
     # (x0, x1, y0, y1, height) in 3D, in metres. Defined in the [buildings] section, one per key.
     buildings: list = field(default_factory=list)
+    # Burning structures (src/structures.py): none (inert, adiabatic buildings) or ignition (FDS-like surfaces
+    # with IGNITION_TEMPERATURE and HRRPUA). Defaults: the 'IGNITABLE WOOD WALL' and 'IGNITABLE ROOF' surfaces
+    # of the FDS C064 structures case (10 mm inert wood on 89 mm insulation).
+    structures: str = 'none'
+    structures_wall_T_ign: float = 423.15     # K (150 C)
+    structures_roof_T_ign: float = 433.15     # K (160 C)
+    structures_wall_hrrpua: float = 750e3     # W/m^2
+    structures_roof_hrrpua: float = 600e3     # W/m^2
+    structures_ramp: str = '0 0, 2 0.5, 8 1, 100 1, 120 0.8'    # time since ignition [s], fraction of hrrpua
+    structures_wall_layers: str = '0.010 400 0.10 1200, 0.089 24 0.04 840'   # m, kg/m^3, W/(m K), J/(kg K)
+    structures_roof_layers: str = '0.010 400 0.10 1200, 0.089 24 0.04 840'
+    structures_emissivity: float = 0.9
+    structures_bulk_density: float = 150.0    # kg/m^3 of building volume: combustible mass
+    structures_T_gauge: float = None          # gauge temperature of the gauge heat flux (None: T_inf)
+    structures_envelope: float = 2.0          # m around each building for its gas-phase heat release
+    structures_envelope_top: float = 5.0      # m above the roof
     wall_iterations: int = 0        # extra pressure corrections after the projection (see docs: not effective with the current collocated projection)
     # Plan-view model (model = planview): fuel-bed layer in x-y with prescribed wind
     wind_direction: float = 0.0     # direction the wind blows towards, degrees from +x (counter-clockwise)
@@ -208,6 +224,15 @@ _KEYS = {
     ('domain', 't_min'): ('t_min', float), ('domain', 't_max'): ('t_max', float),
     ('numerics', 'Nx'): ('Nx', int), ('numerics', 'Ny'): ('Ny', int), ('numerics', 'Nz'): ('Nz', int),
     ('numerics', 'z_ratio'): ('z_ratio', float), ('numerics', 'z_dz_max'): ('z_dz_max', float),
+    ('structures', 'model'): ('structures', str),
+    ('structures', 'wall_T_ign'): ('structures_wall_T_ign', float), ('structures', 'roof_T_ign'): ('structures_roof_T_ign', float),
+    ('structures', 'wall_hrrpua'): ('structures_wall_hrrpua', float), ('structures', 'roof_hrrpua'): ('structures_roof_hrrpua', float),
+    ('structures', 'ramp'): ('structures_ramp', str),
+    ('structures', 'wall_layers'): ('structures_wall_layers', str), ('structures', 'roof_layers'): ('structures_roof_layers', str),
+    ('structures', 'emissivity'): ('structures_emissivity', float),
+    ('structures', 'bulk_density'): ('structures_bulk_density', float),
+    ('structures', 'T_gauge'): ('structures_T_gauge', float),
+    ('structures', 'envelope'): ('structures_envelope', float), ('structures', 'envelope_top'): ('structures_envelope_top', float),
     ('numerics', 'Nt'): ('Nt', int), ('numerics', 'NT'): ('NT', int),
     ('numerics', 'time_method'): ('method', str),
     ('experiment', 'name'): ('experiment', str),
@@ -325,15 +350,20 @@ def load_config(path: str, **overrides) -> Config:
                             ('alpha_s', 0.002), ('sigma_s', 4000.0), ('Y_h', 0.51)):         # defaults
             if attr not in given:
                 setattr(cfg, attr, value)
+    if cfg.structures not in ('none', 'ignition'):
+        raise ValueError(f"[structures] model must be 'none' or 'ignition', not '{cfg.structures}'")
+    if cfg.structures == 'ignition' and (not cfg.buildings or cfg.legacy or not cfg.solid_temperature
+                                         or cfg.radiation != 'transport' or cfg.projection != 'face'):
+        raise NotImplementedError('[structures] model = ignition needs [buildings], the solid fuel model, '
+                                  'radiation transport and the face projection (no --legacy)')
     if cfg.fuel_fill not in ('nodes', 'exact'):
         raise ValueError(f"[fuel] fill must be 'nodes' or 'exact', not '{cfg.fuel_fill}'")
     if cfg.z_ratio != 1.0 or cfg.z_dz_max is not None:
         if cfg.z_ratio < 1.0:
             raise ValueError('[numerics] z_ratio must be >= 1 (cells growing upward)')
-        if (cfg.legacy or cfg.projection != 'face' or cfg.topography_shape != 'flat' or cfg.model != 'vertical'
-                or cfg.buildings):
+        if cfg.legacy or cfg.projection != 'face' or cfg.topography_shape != 'flat' or cfg.model != 'vertical':
             raise NotImplementedError('a stretched vertical grid needs the vertical model with the face '
-                                      'projection, flat ground, no buildings and no --legacy')
+                                      'projection, flat ground and no --legacy')
     if 'T_inf' in given and 'rho_inf' not in given and not cfg.legacy:
         cfg.rho_inf = 1.225 * T_INF / cfg.T_inf     # ideal gas at the same pressure (1.225 kg/m^3 at 15 C)
     if cfg.cp_model == 'mixture' and not cfg.solid_temperature:

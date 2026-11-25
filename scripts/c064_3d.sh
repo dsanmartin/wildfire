@@ -8,6 +8,8 @@
 #   bash scripts/c064_3d.sh sz_smoke # stretched vertical grid, exact fuel load (below)
 #   bash scripts/c064_3d.sh sz_full
 #   bash scripts/c064_3d.sh ux_full  # uniform grid, exact fuel load: the reference for sz_full
+#   bash scripts/c064_3d.sh st_smoke # stretched grid with the four burning houses of the FDS structures case
+#   bash scripts/c064_3d.sh st_full
 #
 # Case (Case_C064.fds): ambient 32 C, wind 4.6 m/s at 2 m (L = -500 m, z_0 = 0.03 m); grass plot x = 0-100 m,
 # y = -50..50 m, bed height 0.21 m, bulk density 1.33 kg/m3 (packing ratio 1.33 / 500), surface-to-volume
@@ -24,6 +26,12 @@
 # 2 m, 0.34 m at 5 m, 0.4 m above 6.4 m). The grid-comparison runs (c064_3d_sz, c064_3d_ux) use [fuel]
 # fill = exact, so that both hold the 0.21 m bed (with fill = nodes, as in c064_3d, the uniform grid holds
 # 0.25 m, 19% more, and the stretched one 0.26 m).
+# Structures (c064_3d_st): the stretched-grid run with the four 15 x 15 x 5 m houses of the FDS case
+# Case_C064_structures (x = 25-40 and 60-75 m, y = -25..-10 and 10..25 m) as burning structures ([structures]
+# model = ignition: walls ignite at 150 C with 750 kW/m2, roofs at 160 C with 600 kW/m2, 10 mm inert wood on
+# 89 mm insulation, ramp 0-2-8-100-120 s, bulk density 150 kg/m3). Side view through houses 3 and 4 (y = 17.5 m),
+# plan view at z = 2 m, as the FDS slices. Compare: python scripts/compare_structures.py data/output/c064_3d_st
+# --fds path/to/Case_C064_structures_cat_devc.csv
 # Measured: head at 15, 42 and 100 m at 27, 53 and 100 s (validation/csiro/C064_front.csv).
 # Compare: python src/firefront.py data/output/c064_3d --obs validation/csiro/C064_front.csv
 #          python scripts/compare_perimeters.py data/output/c064_3d --case C064
@@ -108,7 +116,20 @@ z_dz_max = 0.4"
 write_ini c064_3d_sz_smoke 3 600 100 0 65 "$SZ" "fill = exact"
 write_ini c064_3d_sz 120 24000 200 20 65 "$SZ" "fill = exact"
 write_ini c064_3d_ux 120 24000 200 20 201 "" "fill = exact"
-echo "parameter files in $dir: c064_3d_smoke.ini, c064_3d.ini, c064_3d_sz_smoke.ini, c064_3d_sz.ini, c064_3d_ux.ini"
+HOUSES="[buildings]
+h1 = 25, 40, -25, -10, 5
+h2 = 60, 75, -25, -10, 5
+h3 = 25, 40, 10, 25, 5
+h4 = 60, 75, 10, 25, 5
+[structures]
+model = ignition"
+for name in c064_3d_st_smoke c064_3d_st; do
+    if [ "$name" = c064_3d_st_smoke ]; then write_ini $name 3 600 100 0 65 "$SZ" "fill = exact"
+    else write_ini $name 120 24000 200 20 65 "$SZ" "fill = exact"; fi
+    sed -i.bak 's/^y_slice = .*/y_slice = 17.5/; s/^z_slice = .*/z_slice = 2/' "$dir/$name.ini" && rm -f "$dir/$name.ini.bak"
+    echo "$HOUSES" >> "$dir/$name.ini"
+done
+echo "parameter files in $dir: c064_3d_smoke.ini, c064_3d.ini, c064_3d_sz_smoke.ini, c064_3d_sz.ini, c064_3d_ux.ini, c064_3d_st_smoke.ini, c064_3d_st.ini"
 
 case "$mode" in
     write) ;;
@@ -127,5 +148,10 @@ case "$mode" in
     ux_full)
         nohup python -u src/main.py "$dir/c064_3d_ux.ini" -n c064_3d_ux --device cuda --dtype float32 > logs/c064_3d_ux.out 2>&1 &
         echo "started; follow with: tail -f logs/c064_3d_ux.out" ;;
-    *) echo "usage: bash scripts/c064_3d.sh [write|smoke|full|sz_smoke|sz_full|ux_full]"; exit 1 ;;
+    st_smoke)
+        python -u src/main.py "$dir/c064_3d_st_smoke.ini" -n c064_3d_st_smoke --device cuda --dtype float32 2>&1 | tee logs/c064_3d_st_smoke.out ;;
+    st_full)
+        nohup python -u src/main.py "$dir/c064_3d_st.ini" -n c064_3d_st --device cuda --dtype float32 > logs/c064_3d_st.out 2>&1 &
+        echo "started; follow with: tail -f logs/c064_3d_st.out" ;;
+    *) echo "usage: bash scripts/c064_3d.sh [write|smoke|full|sz_smoke|sz_full|ux_full|st_smoke|st_full]"; exit 1 ;;
 esac

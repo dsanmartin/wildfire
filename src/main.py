@@ -44,6 +44,7 @@ class Recorder:
     def __init__(self, cfg, grid, names):
         self.cfg, self.nd, self.names = cfg, cfg.ndim, names
         self.times, self.frames = [], []
+        self.structures = []                     # per-building diagnostics at each output (burning structures)
         if self.nd == 3:
             y_nodes, z_nodes = grid['y'][:-1], grid['z']
             y0 = cfg.y_slice if cfg.y_slice is not None else 0.5 * (cfg.y_min + cfg.y_max)
@@ -171,6 +172,7 @@ def run(cfg, verbose=True, restart=False):
         p = ck['p'].to(device=device, dtype=dtype)
         model.load_checkpoint_state(ck['model'])
         rec.times, rec.frames = ck['rec']['times'], ck['rec']['frames']
+        rec.structures = ck['rec'].get('structures', [])
         if 'last' in ck['rec']:
             rec.last = ck['rec']['last']
         energy, mass = ck['energy'], ck['mass']
@@ -275,6 +277,17 @@ def run(cfg, verbose=True, restart=False):
                     x_head, burnt = model.head_fire(y)
                     say(f"Head fire: x = {x_head:.1f} m, burnt {'area' if nd == 3 else 'length'} of the ground row "
                         f"{burnt:.4g} {'m^2' if nd == 3 else 'm'}")
+                if model.struct is not None:                      # burning structures, one line per building
+                    sd = model.structure_diagnostics(y)
+                    rec.structures.append(sd)
+                    for b, name in enumerate(model.struct.names):
+                        t_ign = sd['t_ignition'][b]
+                        say(f"Structure {name}: surface T mean {sd['T_s_mean'][b]:.0f} K, max {sd['T_s_max'][b]:.0f} K, "
+                            f"burning {100 * sd['burning_fraction'][b]:.0f}% of {sd['area'][b]:.0f} "
+                            f"{'m^2' if nd == 3 else 'm'}"
+                            + (f" (first at {t_ign:.1f} s)" if np.isfinite(t_ign) else "")
+                            + f", fuel release {sd['release_hrr'][b] / 1e6:.3f} MW, gas HRR around it "
+                            f"{sd['gas_hrr'][b] / 1e6:.3f} MW, gauge heat flux {sd['gauge_heat_flux'][b] / 1e6:.3f} MW")
                 say("")
                 if not np.isfinite(T_max):
                     say("Non-finite temperature: stopping")
@@ -307,7 +320,8 @@ def write_checkpoint(cfg, model, y, p, rec, energy, mass, loop):
     loop counters. Written to a temporary file and renamed."""
     path = os.path.join(cfg.save_path, 'checkpoint.pt')
     ck = {'y': y.detach().cpu().clone(), 'p': p.detach().cpu().clone(), 'model': model.checkpoint_state(),
-          'rec': {'times': list(rec.times), 'frames': list(rec.frames)}, 'energy': energy, 'mass': mass,
+          'rec': {'times': list(rec.times), 'frames': list(rec.frames), 'structures': list(rec.structures)},
+          'energy': energy, 'mass': mass,
           'loop': loop}
     if hasattr(rec, 'last'):
         ck['rec']['last'] = rec.last
@@ -323,6 +337,11 @@ def write_data(cfg, grid, rec, energy, mass):
     data['x'], data['t'] = grid['x'], np.array(rec.times)
     if grid['solid'].any():
         data['solid'] = with_periodic_ends(grid['solid'])
+    if rec.structures:                      # burning structures: S_<quantity>, shape (outputs, buildings)
+        n_s = min(len(rec.structures), len(rec.times))
+        for key in rec.structures[0]:
+            data['S_' + key] = np.stack([d[key] for d in rec.structures[:n_s]])
+        data['S_t'] = np.array(rec.times[len(rec.times) - n_s:])
     n_saved = len(rec.times)
     for key, values in energy.items():      # cumulative, in J (per metre in 2D), at the saved times
         data['E_' + key] = np.array(values[:n_saved]) * 1e3

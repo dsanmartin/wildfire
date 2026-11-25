@@ -131,6 +131,21 @@ Status: verified for consistency (radiation against an analytic slab, energy bud
 y-invariant cases, legacy mode unchanged); not yet calibrated or validated against F19. On the
 2.35 m grid of the paper case the first 3 s give a head-fire speed of about 2.4 m/s.
 
+## Stretched vertical grid, fuel load and burning structures
+
+* **Stretched vertical grid** (`[numerics] z_ratio`, `z_dz_max`): cell heights growing geometrically from the
+  ground, capped at `z_dz_max`. Same fires as the uniform grid in F19 and C064 at 2.4-3 times less cost. A
+  uniform grid runs the uniform code, bitwise as before.
+* **Fuel load** (`[fuel] fill`): `nodes` (default) puts Y = 1 on the nodes up to `Y_h`, which holds a
+  grid-dependent depth (0.4375 m of the 0.49 m F19 bed at dz = 0.125 m); `exact` gives each node the fraction of
+  its control volume inside the bed, so the load is `rho_bulk Y_h` on any grid.
+* **Burning structures** (`[structures] model = ignition`, `src/structures.py`): the buildings ignite when their
+  surface reaches an ignition temperature and then release fuel gas at a prescribed heat release rate per
+  unit area with a time ramp (FDS `IGNITION_TEMPERATURE` + `HRRPUA`), which burns in the gas phase. Each
+  building face is a surface element with 1D conduction through layered walls, heated by convection and
+  radiation. Defaults: the `IGNITABLE` wall and roof surfaces of the FDS C064 structures case. One log line per
+  building at every output; `S_*` arrays in `data.npz`.
+
 ## Output and post-processing
 
 Every run folder `data/output/NAME/` contains `input.ini` (the parameter file as given),
@@ -179,6 +194,9 @@ python src/firefront.py data/output/RUN1 data/output/RUN2 --obs data/input/f19_f
   of the position and the observed rate of spread; plot `fire_front.png` in the first run.
   `validation/csiro/F19_front.csv` and `C064_front.csv` hold the measured head-fire positions (FDS
   validation suite); `validation/csiro/*_perimeters.csv` the measured perimeters.
+* `scripts/compare_structures.py RUN [--fds CHID_devc.csv]`: per-building surface temperatures, fuel release,
+  gas-phase heat release around each house and gauge heat flux against time, with the house devices of the FDS
+  structures case (`NAME/figures/structures.png`).
 * `scripts/compare_perimeters.py RUN --case F19|C064 [--fds LABEL=CHID_devc.csv ...]`: overlays the measured
   perimeters on the model's burnt area at the measurement times, plots the head position against time
   (model, measurements, optionally FDS device files) and prints head position and half-width
@@ -190,8 +208,10 @@ Runs and checks (`scripts/`):
 |---|---|
 | `calibrate_f19_fds.sh [write\|parallel\|sequential] [direct]` | F19 in 2D, four runs (H_C 13.1 and 17.4 MJ/kg, kappa_gas 0.1 and 0.3) with the burner and the FDS fuel; CUDA graphs unless `direct` |
 | `calibrate_f19_pyro.sh [write\|parallel\|sequential]` | F19 in 2D: linear vs FDS Arrhenius pyrolysis, constant vs FDS fuel heat capacity |
-| `f19_3d.sh [write\|smoke\|full]` | F19 in 3D (FDS kinetics and fuel, sponge zone, 320 x 360 m, 11.9 M cells, float32): `smoke` is a 3 s check of speed, memory and budgets; `full` the 140 s run in the background (about 3.5 h on an RTX 4090) |
-| `c064_3d.sh [write\|smoke\|full]` | C064 in 3D, same model settings (200 x 180 m, 7.2 M cells of 1 x 1 x 0.1 m), 120 s |
+| `f19_3d.sh [write\|smoke\|full\|sz_smoke\|sz_full\|ux_full]` | F19 in 3D (FDS kinetics and fuel, sponge zone, 320 x 360 m, float32): `smoke` is a 3 s check of speed, memory and budgets; `full` the validated 140 s run (11.9 M cells, about 3.5 h on an RTX 4090); `sz_full` on the stretched grid with the exact fuel load (4.2 M cells, about 1.5 h) and `ux_full` its uniform reference |
+| `c064_3d.sh [write\|smoke\|full\|sz_*\|ux_full\|st_smoke\|st_full]` | C064 in 3D, same model settings (200 x 180 m, 1 x 1 x 0.1 m at the ground), 120 s; `sz`/`ux` as for F19; `st` with the four burning houses of the FDS structures case |
+| `houses_2d.sh [write\|tall]` | burning structures in 2D: one house, two houses 20 m apart, and the two houses with the domain top at 40 m (`tall`), in the C064 grass fire |
+| `check_stretched.py [--steps N]` | the stretched-grid code forced onto a uniform grid must match the uniform code to round-off (2D, 2D with a building, 3D) |
 | `profile_parts.py FILE --device cuda --graphs [--dtype float32 --tol 1e-6] [--angle-increment 4]` | time of each part of a step (radiation, prediction, pressure solve, finalization), PCG iterations and GPU memory |
 | `profile_step.py FILE --device cuda` | step time with the fuel slab on and off, direct and with CUDA graphs |
 | `graph_check.py FILE [steps] --device cuda` | step-by-step difference between direct execution and CUDA graphs (should be round-off) |
