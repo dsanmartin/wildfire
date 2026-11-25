@@ -17,7 +17,8 @@
 # Grid: x -40..160 m, y -90..90 m, z 0..20 m; 200 x 180 x 200 cells of 1 x 1 x 0.1 m (7.2 M cells; three
 # nodes in the 0.21 m bed). Sponge zone at x = -40..-20 m; the plot covers 56% of the width.
 # float32, pressure solver tolerance 1e-6, radiation angle increment 4; adaptive time step (CFL 0.4, at most
-# 5 ms). Output: planes every 1 s (x-z at y = 0, x-y at z = 1 m), full fields every 20 s.
+# 5 ms). Output: planes every 1 s (x-z at y = 10 m, x-y at z = 1 m), full fields every 20 s. The side view is
+# off the center line: the setup is symmetric in y and the front has a narrow notch at y = 0.
 # Stretched vertical grid (c064_3d_sz): 65 rows instead of 201, cell heights growing by 4.75% per row from
 # 0.10 m at the ground (3 nodes in the bed, as on the uniform grid) to at most 0.4 m (0.15 m at 1 m, 0.20 m at
 # 2 m, 0.34 m at 5 m, 0.4 m above 6.4 m). The grid-comparison runs (c064_3d_sz, c064_3d_ux) use [fuel]
@@ -94,7 +95,7 @@ $8
 kappa_gas = 0.1
 angle_increment = 4
 [output]
-y_slice = 0
+y_slice = 10
 z_slice = 1
 full_interval = $5
 EOF

@@ -870,8 +870,30 @@ measured fire widened from the 174~m ignition line to about 186, 194 and 205~m a
 stays at the line.
 
 \paragraph{Remarks.} The run used the burner before its power was scaled to the strip area
-(Section~\ref{sec:ignition}), so its ignition released 14\% more heat than in FDS; grid sensitivity has not
-been tested.
+(Section~\ref{sec:ignition}), so its ignition released 14\% more heat than in FDS.
+
+\paragraph{Stretched vertical grid.} F19 was repeated with the corrected burner and the exact fuel load
+(\code{fill = exact}) on the uniform grid (161 rows) and on a stretched grid (Section~\ref{sec:grid}: 57 rows,
+0.13~m at the ground growing by 4\% per row to at most 0.5~m; \code{scripts/f19\_3d.sh ux\_full},
+\code{sz\_full}):
+\begin{center}
+\small\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{lccccccc}
+\toprule
+Grid & 56~s & 86~s & 138~s & half-width at 138~s & burnt area & steps & wall clock \\
+\midrule
+measured & 80~m & 120~m & 200~m & 102~m & & & \\
+uniform, 11.9~M cells & 74~m & 123~m & 200~m & 86~m & 32\,791~m$^2$ & 37\,018 & 4.3~h \\
+stretched, 4.2~M cells & 75~m & 125~m & 200~m & 86~m & 32\,503~m$^2$ & 28\,000 & 1.5~h \\
+\bottomrule
+\end{tabular}
+\end{center}
+The head positions differ by at most 2.5~m (two cells), the half-widths are equal and the burnt areas differ
+by 0.9\%; both reach 200~m before 138~s (RMSE 3.7 and 4.1~m). The stretched run used 2.8 times fewer cells
+and, with coarser cells in the plume, held the largest step of 5~ms throughout (largest CFL number 0.34),
+against 3.8~ms on average on the uniform grid. The two ran together on the same GPU for the 1.5~h of the
+stretched run, so their times are not clean: alone, the uniform run took 3.5~h (343~ms per step), and the
+stretched grid is 2.4--3 times faster, with 3.6 instead of 9.4~GiB of GPU memory.
 
 \subsection{C064}
 The setup copies \code{Case\_C064.fds}: a $100\times100$~m plot of shorter grass (bed height 0.21~m, bulk
@@ -1053,8 +1075,9 @@ Policy for changing a default:
         a wide enough domain, the 3D model places the F19 head within 5~m of the measurements without tuning;
         in C064 it runs 6--15~m ahead while the line is lit, like FDS, and then spreads at the measured rate
         (Section~\ref{sec:validation}). Open: the flanks do not spread sideways in either case (the burnt
-        area stays at the ignition line); the head is too pointed while the F19 line is lit; grid
-        sensitivity is untested.
+        area stays at the ignition line); the head is too pointed while the F19 line is lit; only the
+        vertical grid has been varied (uniform and stretched give the same F19 fire), not the horizontal
+        spacing.
   \item \textbf{Periodic horizontal boundaries.} There are no open boundaries. With the plane-mean
         forcing and a fire large compared with the domain, the forcing over-drives the wind: in the first 3D
         run the near-ground inflow rose 20--25\% above the profile while the head grew, fire-disturbed air
@@ -1068,8 +1091,8 @@ Policy for changing a default:
         enough for the 0.49~m fuel bed up to the 20~m top, sets both the cell count and, through the vertical
         CFL limit, a time step of about 4~ms; for C064 (0.1~m vertical cells) FDS on the CPU was faster than this model
         (Appendix~\ref{app:cost}). Single precision and the radiation angle increment are used in 3D; the
-        stretched vertical grid (Section~\ref{sec:grid}) cut the cost of a 2D F19 run 2.6 times with the same
-        spread, and its 3D test is pending; \code{scripts/profile\_parts.py} measures the cost of each part
+        stretched vertical grid (Section~\ref{sec:grid}) gives the same F19 fire in 3D 2.4--3 times faster
+        (1.5~h, Section~\ref{sec:validation}); \code{scripts/profile\_parts.py} measures the cost of each part
         of a step.
   \item \textbf{Mass budget.} Exact to round-off except for the mass changed by the temperature bounds:
         negligible in 2D, a few tenths of a percent of the outflow in 3D (up to 4\% during ignition) with

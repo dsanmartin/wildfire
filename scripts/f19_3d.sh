@@ -23,7 +23,8 @@
 # Adaptive time step (CFL 0.4, at most 5 ms). Case: H_C = 13.1 MJ/kg (FDS
 # gas-phase equivalent), kappa_gas = 0.1 1/m, ambient 34 C, F19 wind (4.9 m/s at 2 m, L = -500 m), grid-based
 # filter width ((dx dy dz)^(1/3) = 0.58 m; a fixed 0.30 m would be far below the horizontal spacing).
-# Output: planes every 1 s (x-z at y = 0, x-y at z = 1 m, y-z through the head fire), full fields every 20 s.
+# Output: planes every 1 s (x-z at y = 10 m, x-y at z = 1 m, y-z through the head fire), full fields every 20 s.
+# The side view is off the center line: the setup is symmetric in y and the front has a narrow notch at y = 0.
 # Output in data/output/f19_3d_sponge (the earlier run without sponge, 240 m wide, is data/output/f19_3d).
 # Stretched vertical grid (f19_3d_sz): 57 rows instead of 161, cell heights growing by 4% per row from 0.13 m
 # at the ground (4 nodes in the fuel bed, as on the uniform grid) to at most 0.5 m (0.17 m at 1 m, 0.21 m at
@@ -87,7 +88,7 @@ $8
 kappa_gas = 0.1
 angle_increment = 4
 [output]
-y_slice = 0
+y_slice = 10
 z_slice = 1
 full_interval = $5
 EOF
