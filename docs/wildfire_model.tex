@@ -820,15 +820,19 @@ fuel, turbulent viscosity. Each run also stores its input file, all resolved par
 information and a copy of the code.
 
 %======================================================================
-\section{Validation: CSIRO grassland fire F19}\label{sec:validation}
+\section{Validation: CSIRO grassland fires F19 and C064}\label{sec:validation}
 %======================================================================
-The measured head-fire positions and perimeters of F19 used by the FDS validation suite are in
-\code{validation/csiro/}; \code{scripts/f19\_3d.sh} runs the case and \code{scripts/compare\_perimeters.py}
-compares a run with the measured perimeters. The setup copies \code{Case\_F19.fds}: fuel
+The measured head-fire positions and perimeters of the CSIRO grassland fires F19 and C064 used by the FDS
+validation suite are in \code{validation/csiro/}; \code{scripts/f19\_3d.sh} and \code{scripts/c064\_3d.sh}
+run the cases and \code{scripts/compare\_perimeters.py} compares a run with the measured perimeters. Both
+use the same model settings, and nothing was tuned.
+
+\subsection{F19}
+The setup copies \code{Case\_F19.fds}: fuel
 (Section~\ref{sec:fds-fuel}), FDS Arrhenius kinetics and fuel heat capacity, burner lit at 1.56~m\,s$^{-1}$, wind
 4.9~m\,s$^{-1}$ at 2~m with $L=-500$~m, ambient 34~$^\circ$C; with $H_\text{C}=13.1$~MJ\,kg$^{-1}$, $\kappa_\text{g}=0.1$~m$^{-1}$, a
 sponge zone, a $320\times360$~m periodic domain (the plot covers 56\% of the width) and
-$1.25\times1.25\times0.125$~m cells (11.9~M), in single precision with angle increment 4. Nothing was tuned.
+$1.25\times1.25\times0.125$~m cells (11.9~M), in single precision with angle increment 4.
 
 \paragraph{Head-fire position} ($x$ at the measurement times, and when the head reaches the end of the plot).
 \begin{center}
@@ -866,9 +870,43 @@ measured fire widened from the 174~m ignition line to about 186, 194 and 205~m a
 stays at the line.
 
 \paragraph{Remarks.} The run used the burner before its power was scaled to the strip area
-(Section~\ref{sec:ignition}), so its ignition released 14\% more heat than in FDS. A second case, C064
-(\code{scripts/c064\_3d.sh}), is needed before the FDS kinetics, the heat-capacity ramp and the sponge zone
-become defaults (Section~\ref{sec:defaults}); grid sensitivity has not been tested.
+(Section~\ref{sec:ignition}), so its ignition released 14\% more heat than in FDS; grid sensitivity has not
+been tested.
+
+\subsection{C064}
+The setup copies \code{Case\_C064.fds}: a $100\times100$~m plot of shorter grass (bed height 0.21~m, bulk
+density 1.33~kg\,m$^{-3}$, $\sigma_\text{s}=9770$~m$^{-1}$, moisture 6.3\%, $C_\text{d}=0.7$), a 50~m burner
+line ($y=\pm25$~m) lit from the center at 1.0~m\,s$^{-1}$, wind 4.6~m\,s$^{-1}$ at 2~m, ambient 32~$^\circ$C; the
+vegetation model, $H_\text{C}$, $\kappa_\text{g}$, sponge zone, precision and radiation settings are those of F19.
+Domain $200\times180\times20$~m (the plot covers 56\% of the width), $1\times1\times0.1$~m cells (7.2~M; three
+nodes in the bed), with the burner power scaled to the strip area.
+
+\paragraph{Head-fire position.}
+\begin{center}
+\small
+\begin{tabular}{lccccc}
+\toprule
+Run & 27~s & 53~s & 100~s & 100~m at & wall-clock time \\
+\midrule
+measured & 15~m & 42~m & 100~m & 100~s & \\
+this model (RTX 4090) & 21~m & 57~m & 100~m & 87~s & 1.4~h for 120~s \\
+FDS, 0.5~m (36 ranks, horus) & 18~m & 53~m & 100~m & 93~s & 0.9~h for 120~s \\
+FDS, 0.5~m (80 cores) & 18~m & 50~m & 99~m & 93~s & 0.3~h for 120~s \\
+FDS, 0.25~m (80 cores) & 20~m & 49~m & 94~m & 110~s & 5.8~h for 120~s \\
+\bottomrule
+\end{tabular}
+\end{center}
+The plot ends at $x=100$~m. Model and FDS at 0.5~m both run ahead of the measurements while the line is lit:
+over 27--53~s the model spreads at 1.38~m\,s$^{-1}$ and FDS at 1.32, against 1.04~m\,s$^{-1}$ measured. Once
+established the model's rate matches the measurement (1.26 against 1.23~m\,s$^{-1}$ after 53~s); the early lead,
++6~m at 27~s and +15~m at 53~s, makes it arrive at the end of the plot 13~s early. Since FDS shares the lead, the
+ignition (burner and lighting sequence) is the likely cause rather than the spread itself.
+
+\paragraph{Shape.} The model's fire does not widen: its burnt area stays within the 50~m burner line
+($|y|\le26$~m at 100~s, with grass up to $|y|=50$~m) while the measured fire spread to $|y|\approx24$, 32 and
+36~m at 27, 53 and 100~s. With F19, whose model flanks also stay at the ignition line, this shows that the
+model has no lateral (flank) spread at these resolutions, the main open issue of the validation
+(Section~\ref{sec:limitations}).
 
 %======================================================================
 \section{Input parameters}\label{sec:params}
@@ -1009,11 +1047,12 @@ Policy for changing a default:
 \section{Known limitations and open issues}\label{sec:limitations}
 %======================================================================
 \begin{itemize}
-  \item \textbf{F19 reproduced, one case.} With the FDS fuel, kinetics and burner, a sponge zone and a wide
-        enough domain, the 3D model places the F19 head within 5~m of the measurements without tuning
-        (Section~\ref{sec:validation}). Open: the head is too pointed while the line is lit and accelerates
-        somewhat more than measured near the end of the plot; the flanks do not spread sideways; only one
-        experiment, one grid; C064 is set up (\code{scripts/c064\_3d.sh}) but not run.
+  \item \textbf{Validation: two cases, one grid each.} With the FDS fuel, kinetics and burner, a sponge zone and
+        a wide enough domain, the 3D model places the F19 head within 5~m of the measurements without tuning;
+        in C064 it runs 6--15~m ahead while the line is lit, like FDS, and then spreads at the measured rate
+        (Section~\ref{sec:validation}). Open: the flanks do not spread sideways in either case (the burnt
+        area stays at the ignition line); the head is too pointed while the F19 line is lit; grid
+        sensitivity is untested.
   \item \textbf{Periodic horizontal boundaries.} There are no open boundaries. With the plane-mean
         forcing and a fire large compared with the domain, the forcing over-drives the wind: in the first 3D
         run the near-ground inflow rose 20--25\% above the profile while the head grew, fire-disturbed air
@@ -1022,12 +1061,14 @@ Policy for changing a default:
         forcing from the fire region and returns ambient air at the inflow; the domain stays periodic, so
         the width must leave room between the images of the fire (\code{scripts/f19\_3d.sh}: 360~m for a
         200~m plot).
-  \item \textbf{Cost.} The 3D F19 run (9.9~M cells of $1.25\times1.25\times0.125$~m, 140~s) took 14~h on an RTX
-        4090. The uniform vertical grid, fine enough for the 0.49~m fuel bed up to the 20~m top, sets
-        both the cell count and, through the vertical CFL limit, a time step of 4--5~ms; double precision is
-        slow on consumer GPUs. Options: a stretched vertical grid (a model-wide change), mixed precision, and
-        cheaper radiation (\code{angle\_increment}, \code{update\_every}); \code{scripts/profile\_parts.py}
-        measures the cost of each part of a step.
+  \item \textbf{Cost.} The 3D F19 run (11.9~M cells of $1.25\times1.25\times0.125$~m, 140~s) took 3.5~h on an RTX
+        4090 in single precision (an earlier double-precision run took 14~h). The uniform vertical grid, fine
+        enough for the 0.49~m fuel bed up to the 20~m top, sets both the cell count and, through the vertical
+        CFL limit, a time step of about 4~ms; for C064 (0.1~m vertical cells) FDS on the CPU was faster than this model
+        (Appendix~\ref{app:cost}). Single precision and the radiation angle increment are used in 3D; the
+        stretched vertical grid (Section~\ref{sec:grid}) cut the cost of a 2D F19 run 2.6 times with the same
+        spread, and its 3D test is pending; \code{scripts/profile\_parts.py} measures the cost of each part
+        of a step.
   \item \textbf{Mass budget.} Exact to round-off except for the mass changed by the temperature bounds:
         negligible in 2D, a few tenths of a percent of the outflow in 3D (up to 4\% during ignition) with
         the larger time step.
@@ -1347,13 +1388,32 @@ faster than 80 cores of the cluster node. It takes, however, 4.5 times more time
 its 0.125~m vertical cells, needed to resolve the 0.49~m fuel bed on the grid, limit the time step through the
 vertical CFL condition to about 3.8~ms, while the 0.5~m cubic cells of FDS, which represents the grass as
 Lagrangian particles, allow about 17~ms. The time to solution is therefore three times shorter than FDS on
-the same machine and 1.6 times longer than FDS on 80 cluster cores. A stretched vertical grid (fine near the
-ground, coarse above the fuel bed) would reduce both the cell count and the number of steps.
+the same machine and 1.6 times longer than FDS on 80 cluster cores. The stretched vertical grid
+(Section~\ref{sec:grid}: fine near the ground, coarse above the fuel bed) reduces both the cell count and the
+number of steps.
+
+\paragraph{C064.} The same comparison for C064 (120~s):
+\begin{center}
+\small
+\begin{tabular}{llrlrrr}
+\toprule
+Run & Hardware & Cells & Cell size & Steps & ns/cell-step & Wall clock \\
+\midrule
+FDS (dev.)$^*$ & horus CPU, 36 ranks & 2.30~M & 0.5~m & 5\,204 & 273 & 0.91~h \\
+FDS 6.8 & cluster, 80 cores & 2.30~M & 0.5~m & 4\,756 & 101 & 0.31~h \\
+FDS 6.8 & cluster, 80 cores & 18.4~M & 0.25~m & 11\,534 & 98 & 5.8~h \\
+this model & horus GPU, float32 & 7.24~M & $1^2\times0.1$~m & 31\,002 & 22 & 1.37~h \\
+\bottomrule
+\end{tabular}
+\end{center}
+$^*$Development build of January 2026. Here FDS on the CPU of horus was faster than this model on its GPU: the shorter grass (0.21~m) needs 0.1~m
+vertical cells, so this model used 3.1 times more cells than FDS at 0.5~m and, through the vertical CFL
+limit (about 3.9~ms), 6 times more time steps, which outweighs its 12 times lower cost per cell and step.
 
 The comparison is between different models and setups: FDS also models char oxidation and uses RadCal
-radiation with soot and 104 angles, and it ran a $240\times240\times20$~m domain with open boundaries; this
+radiation with soot and 104 angles, and for F19 it ran a $240\times240\times20$~m domain with open boundaries; this
 model uses gray radiation and single precision on a $320\times360\times20$~m periodic domain with a sponge zone.
-Both place the head fire within about 5~m (this model) and 10--20~m (FDS at 0.5~m, maximum-temperature
+In F19 both place the head fire within about 5~m (this model) and 10--20~m (FDS at 0.5~m, maximum-temperature
 definition of the head) of the measurements.
 
 \section*{References}
