@@ -238,7 +238,9 @@ wind's `z_0`); with both, the profile holds within about 2%. With a fire that is
 domain, the plane-mean forcing over-drives the inflow (+20-25% near the ground in the first 3D F19 run);
 `[wind] forcing = sponge` instead forces only a strip at the upstream end (`sponge_start`, `sponge_end`,
 default the first 15% of the domain; `sponge_time` 1 s), where the velocity, T and the species are
-relaxed to the initial state, so the air reaching the fire is ambient and the fire itself is not forced. Details in `docs/wildfire_model.tex`.
+relaxed to the initial state, so the air reaching the fire is ambient and the fire itself is not forced.
+There is no combustion in the strip: fuel gas carried out by a large plume (burning houses) would otherwise
+burn there as the oxygen is restored, which made a 3D run blow up. Details in `docs/wildfire_model.tex`.
 
 ## Defaults
 

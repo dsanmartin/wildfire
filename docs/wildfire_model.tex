@@ -437,6 +437,12 @@ domain), where the velocity is relaxed to the initial profile, $T$ to $T_\infty$
 so the cooled gas contracts and mass is conserved) and the species to ambient, with time scale
 \code{sponge\_time} (default 1~s) and weight $w(x)$ rising and falling as $\sin^2$ over a quarter of the
 strip at each end. Air leaving downstream re-enters as ambient air, and the fire is not forced at all.
+There is no combustion in the strip: the gas-phase reaction rate is multiplied by $1-w(x)/w_\text{max}$ (exactly 1
+outside it). Fuel gas carried out of the domain by a large plume would otherwise burn in the strip as its
+oxygen is restored, heating the gas that the strip is cooling; with four burning houses (about 1~GW,
+Section~\ref{sec:structures}) the 3D C064 run blew up there at 111~s (the time step fell from 5~ms to
+$10^{-5}$~s as the contraction drew air into the strip at up to 100~m\,s$^{-1}$). Without combustion in the
+strip the same run completed. In the runs without houses little fuel gas reaches the strip.
 Tests: a hot blob carried through the periodic boundary returned to 288.4~K, against 304--315~K with the
 plane-mean forcing; upstream of a 2D fire the wind from 1 to 5~m stayed within 2--3\% of the profile, against
 18--27\% above it with the plane-mean forcing (at 0.5~m it was 14--20\% below the profile, the fire's own
@@ -567,10 +573,46 @@ The mass budget closes to $2\times10^{-5}$\% of the domain mass in both runs, wi
 included (the two houses add 56~kg\,m$^{-1}$ to the pyrolysis and burner gas). The upwind flow keeps the
 undisturbed profile and the ambient temperature throughout: the sponge zone removes the plume that leaves
 the periodic domain. With both houses burning, the hot layer (600--900~K) reaches the 20~m top of the domain
-downwind of the second house; \code{houses\_2d\_two\_tall} repeats the two-house case with the top at 40~m
-(the grid below 20~m unchanged) to measure the effect of the domain height. In 2D a house blocks the whole
+downwind of the second house. With the top at 40~m (\code{houses\_2d\_two\_tall}, the grid below 20~m
+unchanged) the plume of the first house rises freely: the first house ignites at the same time (20.3~s), less
+of its fuel burns next to it (11.7 instead of 15.1~MW\,m$^{-1}$ within 2~m) and more is carried onto the second
+house, which ignites at 47.6~s instead of 59.6~s. Single runs of a flapping flame, so part of the 12~s may be
+run-to-run variability, but a 20~m top delays the house-to-house ignition in 2D; the 2D structure tests should
+use the 40~m top (the 3D comparison with FDS keeps the 20~m of the FDS case). In 2D a house blocks the whole
 width, so the grass fire cannot pass around it, and the plume is pressed onto it: the 2D runs test the
 coupling, not the ignition times.
+
+\paragraph{3D: C064 with four houses.} \code{scripts/c064\_3d.sh st\_full} reproduces the FDS case
+\code{Case\_C064\_structures}: the four 15~m~$\times$~15~m~$\times$~5~m houses at $x=25$--40 and 60--75~m,
+$y=\pm10$--25~m inside the C064 plot, with the same surfaces, on the stretched grid with the exact fuel load
+(120~s in 27\,409 steps of about 40~ms on the RTX 4090, all parts in CUDA graphs). It is compared with an FDS run at
+0.5~m (24 ranks on horus, 2.2~h) through the house devices of the FDS case
+(\code{scripts/compare\_structures.py}):
+\begin{center}
+\small
+\begin{tabular}{lcccc}
+\toprule
+House & ignition, model & ignition, FDS & peak HRR within 2~m, model & FDS \\
+\midrule
+1 (upwind) & 35.3~s & 32~s & 305~MW & 353~MW \\
+3 (upwind) & 35.3~s & 34~s & 323~MW & 354~MW \\
+2 (downwind) & 99.4~s & 72~s & 54~MW (at 120~s) & 360~MW \\
+4 (downwind) & 106.2~s & 68~s & 8~MW (at 120~s) & 361~MW \\
+\bottomrule
+\end{tabular}
+\end{center}
+The upwind houses ignite within 3~s of FDS and release the same fuel (their heat release within 2~m is
+9--14\% lower: part of their fuel burns further away). The houses slow the head fire in both models (along
+the center line 79~m at 100~s, FDS 88~m, against 100~m for both without houses). Two differences remain.
+(1) The downwind houses ignite about 30~s late. The grass fire passes between the houses as a tongue
+$\pm6$~m wide and does not spread sideways into the strips behind the upwind houses ($x=40$--60~m,
+$|y|=10$--25~m), so no grass fire reaches the front walls of the downwind houses, which ignite only from the
+hot gas of the upwind houses; in FDS the fire spreads sideways and reaches them at 68--72~s. This is the
+missing flank spread of F19 and C064 (Section~\ref{sec:validation}). (2) The burning walls are colder: mean
+surface temperature 750~K against 1140~K in FDS, maximum 1250 against 1750~K, and a gauge heat flux about
+three times lower. The fuel of an element enters the 1~m cell next to the wall and burns there with a mixing
+time of about 0.3~s, so in the wind the flame stands off the wall instead of lying along it. A wall at 750~K
+radiates a fifth of one at 1140~K, so burning houses also heat their neighbors less.
 
 \subsection{Terrain (immersed boundary)}
 Nodes with height between the terrain height minus $\Delta z$ and the terrain height are \emph{cut
@@ -1226,10 +1268,25 @@ Policy for changing a default:
         the heat release per unit area follows a ramp and does not depend on the heat received, the
         building keeps its shape as it burns (no burn-away, no openings or interior), and the walls are 1D with
         constant properties. The incident radiation is estimated from $G$ next to the wall. In 2D the houses
-        are infinitely long walls across the wind. Not yet compared with the FDS case in 3D.
+        are infinitely long walls across the wind. In 3D (C064 with four houses) the upwind houses ignite
+        within 3~s of FDS, but the burning walls are about 400~K colder and the downwind houses ignite about
+        30~s late (Section~\ref{sec:structures}).
   \item With terrain the ground row of the scalars is still copied from the row above, and the burner is
         not available.
 \end{itemize}
+
+\paragraph{Next steps.}
+\begin{enumerate}
+  \item \textbf{Flank spread.} The fire does not widen beyond the ignition line in F19 and C064, and in the WUI
+        case it therefore never reaches the downwind houses. To be investigated first on C064 without houses
+        (35~min per 3D run on the stretched grid): lateral heat transfer to the fuel (radiation and
+        convection at the flanks), the horizontal resolution, and the ignition of the flanks by the
+        burner line.
+  \item \textbf{Wall flames of burning structures.} The fuel released by the walls burns too far from them,
+        so the walls stay about 400~K colder than in FDS and heat their neighbors less. Options: a finer
+        horizontal grid near the houses, a shorter mixing time for the structure fuel, or releasing it in a
+        thinner layer along the wall; first, the energy balance of a burning wall.
+\end{enumerate}
 
 \appendix
 

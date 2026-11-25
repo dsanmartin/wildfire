@@ -126,7 +126,8 @@ model = ignition"
 for name in c064_3d_st_smoke c064_3d_st; do
     if [ "$name" = c064_3d_st_smoke ]; then write_ini $name 3 600 100 0 65 "$SZ" "fill = exact"
     else write_ini $name 120 24000 200 20 65 "$SZ" "fill = exact"; fi
-    sed -i.bak 's/^y_slice = .*/y_slice = 17.5/; s/^z_slice = .*/z_slice = 2/' "$dir/$name.ini" && rm -f "$dir/$name.ini.bak"
+    # side and plan views through the houses; restart checkpoints every 10 outputs (10 s)
+    sed -i.bak 's/^y_slice = .*/y_slice = 17.5/; s/^z_slice = .*/z_slice = 2/; s/^full_interval = \(.*\)/full_interval = \1\ncheckpoint_every = 10/' "$dir/$name.ini" && rm -f "$dir/$name.ini.bak"
     echo "$HOUSES" >> "$dir/$name.ini"
 done
 echo "parameter files in $dir: c064_3d_smoke.ini, c064_3d.ini, c064_3d_sz_smoke.ini, c064_3d_sz.ini, c064_3d_ux.ini, c064_3d_st_smoke.ini, c064_3d_st.ini"

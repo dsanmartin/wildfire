@@ -11,6 +11,7 @@
 #                   second one, and how much does it shelter it from the grass fire?
 #   houses_2d_two_tall  the same with the domain top at 40 m instead of 20 m (115 rows: the nodes below 20 m
 #                   are those of the 20 m grid): effect of the domain height on the burning houses and their plume
+#                   (second house ignited at 47.6 s instead of 59.6 s: use the 40 m top for 2D structure tests)
 # Houses 15 m long and 5 m tall (2D: per metre of depth, infinitely long across the wind), FDS 'IGNITABLE' surfaces
 # (defaults of [structures]). Grass of C064 (0.21 m, exact fuel load) from x = 0 to 150 m, also between and behind
 # the houses; burner as in C064; wind 4.6 m/s at 2 m; sponge zone at x = -40..-20 m. Stretched vertical grid as in

@@ -199,6 +199,10 @@ class Model:
             fall = np.sin(0.5 * np.pi * np.clip((xe - X) / ramp, 0, 1)) ** 2
             fluid = ~(grid['solid'] | grid['dead'])
             self.sponge_w = to(rise * fall * fluid) / cfg.sponge_time         # 1/s
+            # No combustion in the sponge zone: it returns ambient air, and fuel gas carried out of the domain by
+            # a large plume would otherwise burn there as the oxygen is restored, heating the gas the zone is
+            # cooling (a 3D run with burning houses blew up there). Factor 1 outside the zone (bitwise as before).
+            self.burn_factor = to(1.0 - rise * fall)
             self.sponge_u0 = [to(v) for v in state0[:nd]]
             self.sponge_Y = {nd + 4: 0.0, nd + 5: cfg.Y_O2_amb}               # ambient fuel gas and oxygen
         # Pressure solver
@@ -552,6 +556,8 @@ class Model:
         # Gas-phase combustion: the whole domain (the fuel gas burns in the plume)
         Y_F, Y_O = y[nd + 4].clamp(min=0), y[nd + 5].clamp(min=0)
         omega = rho * torch.minimum(Y_F, Y_O / c.s_O2) / self.tau_mix
+        if self.sponge_w is not None:
+            omega = omega * self.burn_factor
         # Solid fuel: the fuel slab only (rows 0..k-1); Q_conv, mdot, dY, dT_s and dW have k rows
         ys, rho = y[:, :k], rho[:k]
         T, Y, T_s, W = ys[nd], ys[nd + 1].clamp(min=0), ys[nd + 2], ys[nd + 3].clamp(min=0)
@@ -1361,6 +1367,8 @@ class Model:
         rho = self.rho(T)
         if c.solid_temperature:
             hrr = rho * torch.minimum(y[nd + 4].clamp(min=0), y[nd + 5].clamp(min=0) / c.s_O2) * c.H_C / self.tau_mix
+            if self.sponge_w is not None:
+                hrr = hrr * self.burn_factor
         else:
             hrr = rho * c.H_C * Y * self.reaction(T)
         if self.mass is not None:                                 # cell volumes (half cell at the ground)
@@ -1384,6 +1392,8 @@ class Model:
         c, nd = self.cfg, self.nd
         rho = self.rho(y[nd])
         hrr = rho * torch.minimum(y[nd + 4].clamp(min=0), y[nd + 5].clamp(min=0) / c.s_O2) * c.H_C / self.tau_mix
+        if self.sponge_w is not None:
+            hrr = hrr * self.burn_factor
         return self.struct.diagnostics(hrr, self._mass_w * self.dV)
 
     def solid_diagnostics(self, y):
@@ -1394,6 +1404,8 @@ class Model:
         fuel = Y > c.fuel_threshold
         rho = self.rho(y[nd])
         rate = rho * torch.minimum(y[nd + 4].clamp(min=0), y[nd + 5].clamp(min=0) / c.s_O2)
+        if self.sponge_w is not None:
+            rate = rate * self.burn_factor
         if self.stretched:                                        # tau_mix varies with the row
             hrr = float(self._vsum(rate * c.H_C / self.tau_mix)) * self.dV
         else:
