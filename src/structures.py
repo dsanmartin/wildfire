@@ -164,9 +164,13 @@ class Structures:
         self.T_s = torch.full((nF,), cfg.T_inf, dtype=model.dtype, device=model.device)
         self.t_ign = torch.full((nF,), 1e9, dtype=model.dtype, device=model.device)    # not ignited
         self.mass = to(cfg.structures_bulk_density * np.array(self.volume))             # combustible mass, kg
+        # per-element constants, set once (writing Python numbers into device tensors at every step would be a
+        # host-to-device copy, which CUDA graphs cannot capture)
         self.hrrpua = torch.zeros(nF, dtype=model.dtype, device=model.device)
+        self.C_nat = torch.zeros(nF, dtype=model.dtype, device=model.device)
         for g in self.groups:
             self.hrrpua[g['sel']] = g['hrrpua']
+            self.C_nat[g['sel']] = g['C_nat']
         # Surface temperature of each solid node seen by the radiation (mean of its elements; T_inf inside)
         counts = np.bincount(solid_idx, minlength=solid.size).astype(np.float64)
         self.node_weight = to(np.where(counts > 0, 1.0 / np.maximum(counts, 1), 0.0))
@@ -222,10 +226,7 @@ class Structures:
         nu = m.viscosity(T_g) / rho
         Re = torch.sqrt(speed2) / nu                              # L = 1 m
         dT = T_g - self.T_s
-        C = torch.full_like(T_g, 1.31)
-        for g in self.groups:
-            C[g['sel']] = g['C_nat']
-        h = torch.maximum(C * dT.abs() ** (1 / 3), kap * 0.037 * Re ** 0.8 * self.cfg.Pr ** (1 / 3))
+        h = torch.maximum(self.C_nat * dT.abs() ** (1 / 3), kap * 0.037 * Re ** 0.8 * self.cfg.Pr ** (1 / 3))
         q_conv = h * dT
         q_inc = (0.5 * G.view(-1)[self.fluid_idx] - SIGMA * self.T_s ** 4).clamp(min=0)
         return h, T_g, q_conv, q_inc
@@ -274,9 +275,11 @@ class Structures:
             T[:, N - 1] = d_[N - 1]
             for i in range(N - 2, -1, -1):
                 T[:, i] = d_[i] - c_[i] * T[:, i + 1]
-            self.T_s[g['sel']] = T[:, 0]
-            newly = (T[:, 0] >= g['T_ign']) & (self.t_ign[g['sel']] > 1e8)
-            self.t_ign[g['sel']] = torch.where(newly, m.t_t + dt, self.t_ign[g['sel']])
+            sel = g['sel']
+            self.T_s.index_copy_(0, sel, T[:, 0])
+            t_ign = self.t_ign.index_select(0, sel)
+            newly = (T[:, 0] >= g['T_ign']) & (t_ign > 1e8)
+            self.t_ign.index_copy_(0, sel, torch.where(newly, m.t_t + dt, t_ign))
         # surface temperature of the solid nodes for the radiation (mean of their elements)
         node = torch.zeros_like(self.T_node).view(-1).index_add_(0, self.solid_idx, self.T_s)
         self.T_node.copy_(torch.where(self.node_weight.view(self.T_node.shape) > 0,
