@@ -210,7 +210,9 @@ than the bed. With \code{[fuel] fill = exact} every node instead starts with the
 volume $[z_k-\tfrac12h_{k-1/2},\,z_k+\tfrac12h_{k+1/2}]$ (row 0 from the ground) that lies inside the bed,
 so the fuel load is $\rho_\text{b}Y_\text{h}$ per unit ground area on any grid (in the example, a fifth node
 with $Y=0.42$); the moisture follows $Y$. The default (\code{fill = nodes}) keeps the earlier runs
-reproducible. The elements are characterized by the packing ratio
+reproducible. The load matters: in a 2D F19 run (40~s, $\Delta z=0.125$~m) the exact load, 12\% more fuel than
+the \code{nodes} fill, released 8.6\% more heat and put the head 2.5~m behind; in C064 (Section~\ref{sec:validation})
+the exact load is 16\% less than the \code{nodes} fill and the head arrived 8~s earlier. The elements are characterized by the packing ratio
 $\alpha_\text{s}$, the surface-to-volume ratio $\sigma_\text{s}$ (equivalent cylinder diameter $d=4/\sigma_\text{s}$) and
 the dry bulk density $\rho_\text{b}$. Fuel surface per unit volume: $a=\alpha_\text{s}\sigma_\text{s} Y$.
 
@@ -901,30 +903,41 @@ density 1.33~kg\,m$^{-3}$, $\sigma_\text{s}=9770$~m$^{-1}$, moisture 6.3\%, $C_\
 line ($y=\pm25$~m) lit from the center at 1.0~m\,s$^{-1}$, wind 4.6~m\,s$^{-1}$ at 2~m, ambient 32~$^\circ$C; the
 vegetation model, $H_\text{C}$, $\kappa_\text{g}$, sponge zone, precision and radiation settings are those of F19.
 Domain $200\times180\times20$~m (the plot covers 56\% of the width), $1\times1\times0.1$~m cells (7.2~M; three
-nodes in the bed), with the burner power scaled to the strip area. The run used the default fuel fill (\code{fill = nodes},
-Section~\ref{sec:solid}): the three nodes up to 0.21~m hold 0.25~m of fuel, 19\% more than the bed, which may
-contribute to the early lead below; \code{scripts/c064\_3d.sh ux\_full} repeats it with the exact load.
+nodes in the bed), with the burner power scaled to the strip area. The first run used the default fuel fill
+(\code{fill = nodes}, Section~\ref{sec:solid}): its three nodes up to 0.21~m hold 0.25~m of fuel, 19\% more
+than the bed. It was repeated with the exact load (\code{fill = exact}) on the uniform grid (201 rows) and on a
+stretched grid (65 rows, 0.10~m at the ground growing by 4.75\% per row to at most 0.4~m;
+\code{scripts/c064\_3d.sh ux\_full}, \code{sz\_full}).
 
 \paragraph{Head-fire position.}
 \begin{center}
 \small
-\begin{tabular}{lccccc}
+\begin{tabular}{lcccccc}
 \toprule
-Run & 27~s & 53~s & 100~s & 100~m at & wall-clock time \\
+Run & fuel depth & 27~s & 53~s & 100~s & 100~m at & wall-clock time \\
 \midrule
-measured & 15~m & 42~m & 100~m & 100~s & \\
-this model (RTX 4090) & 21~m & 57~m & 100~m & 87~s & 1.4~h for 120~s \\
-FDS, 0.5~m (36 ranks, horus) & 18~m & 53~m & 100~m & 93~s & 0.9~h for 120~s \\
-FDS, 0.5~m (80 cores) & 18~m & 50~m & 99~m & 93~s & 0.3~h for 120~s \\
-FDS, 0.25~m (80 cores) & 20~m & 49~m & 94~m & 110~s & 5.8~h for 120~s \\
+measured & 0.21~m & 15~m & 42~m & 100~m & 100~s & \\
+this model, uniform, \code{nodes} & 0.25~m & 21~m & 57~m & 100~m & 87~s & 1.4~h \\
+this model, uniform, \code{exact} & 0.21~m & 24~m & 63~m & 100~m & 79~s & 1.6~h$^*$ \\
+this model, stretched, \code{exact} & 0.21~m & 25~m & 64~m & 100~m & 79~s & 0.6~h$^*$ \\
+FDS, 0.5~m (36 ranks, horus) & & 18~m & 53~m & 100~m & 93~s & 0.9~h \\
+FDS, 0.5~m (80 cores) & & 18~m & 50~m & 99~m & 93~s & 0.3~h \\
+FDS, 0.25~m (80 cores) & & 20~m & 49~m & 94~m & 110~s & 5.8~h \\
 \bottomrule
 \end{tabular}
+
+\smallskip
+{\footnotesize $^*$The two runs shared the GPU with each other and with other jobs. Wall-clock times for 120~s.}
 \end{center}
-The plot ends at $x=100$~m. Model and FDS at 0.5~m both run ahead of the measurements while the line is lit:
-over 27--53~s the model spreads at 1.38~m\,s$^{-1}$ and FDS at 1.32, against 1.04~m\,s$^{-1}$ measured. Once
-established the model's rate matches the measurement (1.26 against 1.23~m\,s$^{-1}$ after 53~s); the early lead,
-+6~m at 27~s and +15~m at 53~s, makes it arrive at the end of the plot 13~s early. Since FDS shares the lead, the
-ignition (burner and lighting sequence) is the likely cause rather than the spread itself.
+The plot ends at $x=100$~m. All runs are ahead of the measurements from the start. Over 27--53~s FDS at 0.5~m
+spreads at 1.32~m\,s$^{-1}$ against 1.04~m\,s$^{-1}$ measured, so part of the lead comes with the ignition
+(burner and lighting sequence), which both models share. This model is faster still: 1.38~m\,s$^{-1}$ with the
+\code{nodes} fill and 1.50~m\,s$^{-1}$ with the exact load. After 53~s it spreads at 1.26 (\code{nodes}) and
+1.4~m\,s$^{-1}$ (\code{exact}), against 1.23~m\,s$^{-1}$ measured and about 1.2~m\,s$^{-1}$ for FDS. The exact load,
+16\% less fuel than the \code{nodes} fill, thus makes the fire faster (as in 2D F19,
+Section~\ref{sec:solid}): with less fuel to heat ahead of the front, the head reaches the end of the plot
+at 79~s instead of 87~s (measured 100~s). The stretched and uniform grids agree within 1~m at the head,
+2~m in half-width and 2.3\% in burnt area.
 
 \paragraph{Shape.} The model's fire does not widen: its burnt area stays within the 50~m burner line
 ($|y|\le26$~m at 100~s, with grass up to $|y|=50$~m) while the measured fire spread to $|y|\approx24$, 32 and
@@ -1073,7 +1086,8 @@ Policy for changing a default:
 \begin{itemize}
   \item \textbf{Validation: two cases, one grid each.} With the FDS fuel, kinetics and burner, a sponge zone and
         a wide enough domain, the 3D model places the F19 head within 5~m of the measurements without tuning;
-        in C064 it runs 6--15~m ahead while the line is lit, like FDS, and then spreads at the measured rate
+        in C064, with the exact fuel load, it is 9--21~m ahead at 27--53~s (FDS: 3--11~m) and about 15\% faster
+        than measured afterwards, reaching the end of the plot at 79~s instead of 100~s
         (Section~\ref{sec:validation}). Open: the flanks do not spread sideways in either case (the burnt
         area stays at the ignition line); the head is too pointed while the F19 line is lit; only the
         vertical grid has been varied (uniform and stretched give the same F19 fire), not the horizontal
@@ -1090,9 +1104,9 @@ Policy for changing a default:
         4090 in single precision (an earlier double-precision run took 14~h). The uniform vertical grid, fine
         enough for the 0.49~m fuel bed up to the 20~m top, sets both the cell count and, through the vertical
         CFL limit, a time step of about 4~ms; for C064 (0.1~m vertical cells) FDS on the CPU was faster than this model
-        (Appendix~\ref{app:cost}). Single precision and the radiation angle increment are used in 3D; the
-        stretched vertical grid (Section~\ref{sec:grid}) gives the same F19 fire in 3D 2.4--3 times faster
-        (1.5~h, Section~\ref{sec:validation}); \code{scripts/profile\_parts.py} measures the cost of each part
+        on the uniform grid, and slower than it on the stretched grid (Appendix~\ref{app:cost}). Single precision and the radiation angle increment are used in 3D; the
+        stretched vertical grid (Section~\ref{sec:grid}) gives the same fire in 3D 2.4--3 times faster
+        (F19 in 1.5~h, C064 in 35~min; Section~\ref{sec:validation}); \code{scripts/profile\_parts.py} measures the cost of each part
         of a step.
   \item \textbf{Mass budget.} Exact to round-off except for the mass changed by the temperature bounds:
         negligible in 2D, a few tenths of a percent of the outflow in 3D (up to 4\% during ignition) with
@@ -1428,12 +1442,18 @@ FDS (dev.)$^*$ & horus CPU, 36 ranks & 2.30~M & 0.5~m & 5\,204 & 273 & 0.91~h \\
 FDS 6.8 & cluster, 80 cores & 2.30~M & 0.5~m & 4\,756 & 101 & 0.31~h \\
 FDS 6.8 & cluster, 80 cores & 18.4~M & 0.25~m & 11\,534 & 98 & 5.8~h \\
 this model & horus GPU, float32 & 7.24~M & $1^2\times0.1$~m & 31\,002 & 22 & 1.37~h \\
+this model$^\dagger$ & horus GPU, shared & 2.34~M & stretched & 24\,000 & 37 & 0.58~h \\
 \bottomrule
 \end{tabular}
 \end{center}
-$^*$Development build of January 2026. Here FDS on the CPU of horus was faster than this model on its GPU: the shorter grass (0.21~m) needs 0.1~m
-vertical cells, so this model used 3.1 times more cells than FDS at 0.5~m and, through the vertical CFL
-limit (about 3.9~ms), 6 times more time steps, which outweighs its 12 times lower cost per cell and step.
+$^*$Development build of January 2026. $^\dagger$Stretched vertical grid (65 rows, 0.10 to 0.4~m), exact fuel
+load, sharing the GPU with other jobs (so its cost per cell and step is overestimated). On the uniform grid
+FDS on the CPU of horus was faster than this model on its GPU: the shorter grass (0.21~m) needs 0.1~m
+vertical cells, so this model used 3.1 times more cells than FDS at 0.5~m and, through the vertical CFL limit
+(about 3.9~ms), 6 times more time steps, which outweighs its 12 times lower cost per cell and step. The
+stretched grid needs the 0.1~m cells only near the ground: with 3.1 times fewer cells and the largest step of
+5~ms throughout, it ran in 35~min, faster than FDS on the same machine (55~min) even on a shared GPU, with
+the same fire as the uniform grid.
 
 The comparison is between different models and setups: FDS also models char oxidation and uses RadCal
 radiation with soot and 104 angles, and for F19 it ran a $240\times240\times20$~m domain with open boundaries; this
