@@ -359,7 +359,10 @@ temperature is $T_\infty$ except for the hot-gas ignition below.
 $\dot q''_b/H_\text{C}$ per unit area, which burns through the combustion model like the FDS burner. The gas
 enters through the ground face into the half cell of the ground row, as the volume source
 $\dot m'''=\dot q''_b f(t-t_\text{ign})/(H_\text{C}\,\Delta z/2)$, added to the pyrolysis source in the species
-and in the constraint \eqref{eq:div}. Each point is lit at $t_\text{ign}=r/v_\text{ign}$, its distance $r$ to the
+and in the constraint \eqref{eq:div}. The nodes inside the strip cover a whole number of cells, which can
+be wider than the strip (two 1~m cells for the 1.6~m strip of C064), so the heat release is scaled by the
+strip area over the area of those cells and the total power is that of the strip, as for an FDS vent (this
+scaling was added after the first 3D F19 runs, whose burner released 14\% more heat). Each point is lit at $t_\text{ign}=r/v_\text{ign}$, its distance $r$ to the
 origin divided by the spread rate (0: all at once), and follows the ramp $f$, piecewise linear in the
 time since it was lit. The ramp is evaluated on the device from the simulation time, so it also runs
 inside CUDA graphs. Defaults (FDS Case F19):
@@ -657,12 +660,20 @@ exact for a uniform cell. All directions advance together, about 15 tensor opera
 The cost is set by three parameters, as in FDS: the number of directions (\code{n\_polar} $\times$
 \code{n\_azimuth}, 12 $\times$ 16 by default; 2D keeps half of the azimuths), the number of steps between
 radiation updates (\code{update\_every}, default 5; FDS \code{TIME\_STEP\_INCREMENT}, default 3), and the
-angle increment (\code{angle\_increment}, default 1; FDS \code{ANGLE\_INCREMENT}, default 5): the
-directions are split into that many groups by azimuth (group $k$ holds the azimuths with index $\equiv k$
-modulo the increment, with every polar band), each update solves one group in turn, and $G$ is the sum of
-the latest contribution of every group, so the whole field is refreshed every
-\code{update\_every} $\times$ \code{angle\_increment} steps. The sum of the groups equals the full solve to
-round-off, and a uniform temperature still gives $G=4\sigma T^4$ exactly.
+angle increment (\code{angle\_increment}, default 1; FDS \code{ANGLE\_INCREMENT}, default 5). With an
+angle increment $N_\text{a}$ the directions are split into $N_\text{a}$ groups by azimuth: group $k$ holds the
+azimuths with index $\equiv k$ modulo $N_\text{a}$, with every polar band, so each group has upward and
+downward directions spread over the whole sphere. Each update solves one group in turn, and
+\begin{equation}
+  G=\sum_{k=0}^{N_\text{a}-1}G_k,
+\end{equation}
+where $G_k$ is the contribution of group $k$ from the last update that solved it; the whole field is
+refreshed every \code{update\_every} $\times\,N_\text{a}$ steps. The sum of the groups equals the full solve
+to round-off, and a uniform temperature still gives $G=4\sigma T^4$ exactly. Each group reads its own
+index arrays, so with CUDA graphs every group is captured as a graph of its own. With $N_\text{a}=4$, one
+radiation update of the 3D F19 case took 178~ms instead of 1003~ms and the whole step 707~ms instead of
+872~ms (RTX 4090, double precision), and in a 100~s 2D F19 run the head-fire positions agreed with the full
+solve within 1~m and the heat released within 0.3\%.
 Verification: exact equilibrium at uniform temperature; for an isothermal layer of optical
 thickness $\tau$ the result matches $G=2\sigma T^4(1-E_2(\tau))$ within 0.3\% for $\tau=1$ with 16
 polar bands (10\% low for $\tau=0.1$ with 6 bands).
@@ -744,6 +755,17 @@ the outflow for the hot-gas ignition and about 30\% with the burner, and a hot b
 no combustion, lost 6--10~kg\,m$^{-1}$ in 3~s while $\int T\dd V$ stayed constant to $10^{-5}$: the
 volume-weighted mixing of $T$ described in Section~\ref{sec:gas}.
 
+\subsection{Restart}
+At the end of a run, and every \code{checkpoint\_every} outputs (\code{[output]}; 0: only at the end, $-1$:
+never), the file \code{checkpoint.pt} is written in the output folder. It holds everything the next step needs, at full
+precision: the state, the pressure, the face fluxes, the radiation field and its direction groups, the eddy
+viscosity (it sets the next time step), the friction velocity of the wall model, the step and time counters,
+the budgets and the outputs recorded so far. \code{main.py INPUT -n NAME --restart} continues the run in
+\code{data/output/NAME}; with a larger \code{t\_max} (and \code{Nt} scaled with it, so that the maximum time
+step is unchanged) it extends a finished run. The log is appended to, the provenance of the restart is stored
+in a \code{restart\_<date>} subfolder, and the continued run is bitwise identical to an uninterrupted one
+(verified in 2D and 3D; with CUDA graphs, to round-off).
+
 \subsection{Log diagnostics and output}
 Besides the extreme values and the budgets, the log reports the total heat release rate and the gas
 temperature weighted by the local heat release rate, $T_\text{flame}=\sum\dot q_\text{c} T/\sum\dot q_\text{c}$, which is
@@ -757,6 +779,56 @@ head fire), the fuel left per column and the final full fields. Full snapshots a
 rate (including the burner gas), convective heating of the fuel, $G$, net radiative heating of gas and
 fuel, turbulent viscosity. Each run also stores its input file, all resolved parameters, git
 information and a copy of the code.
+
+%======================================================================
+\section{Validation: CSIRO grassland fire F19}\label{sec:validation}
+%======================================================================
+The measured head-fire positions and perimeters of F19 used by the FDS validation suite are in
+\code{validation/csiro/}; \code{scripts/f19\_3d.sh} runs the case and \code{scripts/compare\_perimeters.py}
+compares a run with the measured perimeters. The setup copies \code{Case\_F19.fds}: fuel
+(Section~\ref{sec:fds-fuel}), FDS Arrhenius kinetics and fuel heat capacity, burner lit at 1.56~m\,s$^{-1}$, wind
+4.9~m\,s$^{-1}$ at 2~m with $L=-500$~m, ambient 34~$^\circ$C; with $H_\text{C}=13.1$~MJ\,kg$^{-1}$, $\kappa_\text{g}=0.1$~m$^{-1}$, a
+sponge zone, a $320\times360$~m periodic domain (the plot covers 56\% of the width) and
+$1.25\times1.25\times0.125$~m cells (11.9~M), in single precision with angle increment 4. Nothing was tuned.
+
+\paragraph{Head-fire position} ($x$ at the measurement times, and when the head reaches the end of the plot).
+\begin{center}
+\small
+\begin{tabular}{lccccc}
+\toprule
+Run & 56~s & 86~s & 138~s & 200~m at & wall-clock time \\
+\midrule
+measured & 80~m & 120~m & 200~m & 138~s & \\
+this model (RTX 4090) & 76~m & 125~m & 200~m & 126~s & 3.5~h for 140~s \\
+FDS, 0.5~m (24 cores) & 64~m & 111~m & 189~m & 146~s & 13.5~h for 180~s \\
+FDS, 0.5~m (80 cores) & 66~m & 113~m & 187~m & 149~s & 2.8~h for 180~s \\
+FDS, 0.25~m (80 cores) & 59~m & 97~m & 159~m & 172~s & 50.5~h for 180~s \\
+\bottomrule
+\end{tabular}
+\end{center}
+The model is within 5~m of the measured positions (RMSE 3.6~m). The head definitions differ: the model uses
+the most downwind point where half of the fuel column is gone, FDS the location of the maximum temperature
+below 1~m. On the same machine the GPU model ran about three times faster than FDS on 24 cores.
+
+\paragraph{How the spread rate came down.} Each step changed the head-fire spread rate:
+\begin{itemize}
+  \item 2D, linear pyrolysis from 400~K: 4.7--5.2~m\,s$^{-1}$, insensitive to $H_\text{C}$ (8\%) and $\kappa_\text{g}$ (4\%);
+  \item 2D, FDS Arrhenius kinetics: 2.65~m\,s$^{-1}$, and with the FDS fuel heat capacity 2.26~m\,s$^{-1}$;
+  \item 3D with linear pyrolysis, 240~m-wide domain and plane-mean forcing: about 2.8~m\,s$^{-1}$;
+  \item 3D with the FDS kinetics and heat capacity, sponge zone and 360~m-wide domain: 1.6~m\,s$^{-1}$
+        while the line is lit, 1.9~m\,s$^{-1}$ near the end of the plot (measured: 1.43, 1.33 and
+        1.54~m\,s$^{-1}$ over 0--56, 56--86 and 86--138~s).
+\end{itemize}
+
+\paragraph{Shape.} At 86~s the burnt area matches the measured perimeter closely. At 56~s the model's head is
+a sharp V while the measured one is already rounded, and the model's flanks do not spread sideways: the
+measured fire widened from the 174~m ignition line to about 186, 194 and 205~m at 56, 86 and 138~s, the model's
+stays at the line.
+
+\paragraph{Remarks.} The run used the burner before its power was scaled to the strip area
+(Section~\ref{sec:ignition}), so its ignition released 14\% more heat than in FDS. A second case, C064
+(\code{scripts/c064\_3d.sh}), is needed before the FDS kinetics, the heat-capacity ramp and the sponge zone
+become defaults (Section~\ref{sec:defaults}); grid sensitivity has not been tested.
 
 %======================================================================
 \section{Input parameters}\label{sec:params}
@@ -857,6 +929,7 @@ any name & -- & building box \code{x0, x1, height} (3D: \code{x0, x1, y0, y1, he
 \code{full\_interval} & 0 (off) & seconds between full snapshots \\
 \code{full\_dtype} & \code{float32} & precision of the snapshots \\
 \code{save\_every} & 20 & outputs between partial writes of \code{data.npz}; 0: only at the end \\
+\code{checkpoint\_every} & 0 & outputs between restart checkpoints; 0: only at the end, $-1$: never \\
 \end{longtable}
 
 \subsection{Defaults and calibration policy}\label{sec:defaults}
@@ -893,17 +966,11 @@ Policy for changing a default:
 \section{Known limitations and open issues}\label{sec:limitations}
 %======================================================================
 \begin{itemize}
-  \item \textbf{Spread rate of F19 not yet reproduced.} The FDS validation data for F19 place the head
-        fire at 80, 120 and 200~m at 56, 86 and 138~s (1.47~m\,s$^{-1}$; file
-        \code{data/input/f19\_front\_fds.csv}). With linear pyrolysis the 2D runs spread at
-        4.7--5.2~m\,s$^{-1}$ and reach the end of the plot (200~m) at 52~s; $H_\text{C}$ (13.1 to 17.4~MJ\,kg$^{-1}$)
-        and $\kappa_\text{g}$ (0.1 to 0.3~m$^{-1}$) change this by only 8\% and 4\%. A 2D run is an infinitely wide
-        line fire without lateral entrainment, the fastest case. The first 3D run (240~m-wide periodic
-        domain, plane-mean wind forcing) spread at about 2.8~m\,s$^{-1}$, with the head at 139~m at 56~s and
-        at 200~m at 78~s: 3D effects halve the spread rate, but it remains about twice the observed one.
-        Candidates, under test: the pyrolysis kinetics (the linear model releases gas from 400~K, the FDS
-        Arrhenius kinetics need 700--900~K; \code{scripts/calibrate\_f19\_pyro.sh}), the fuel heat capacity,
-        and the boundaries (next item).
+  \item \textbf{F19 reproduced, one case.} With the FDS fuel, kinetics and burner, a sponge zone and a wide
+        enough domain, the 3D model places the F19 head within 5~m of the measurements without tuning
+        (Section~\ref{sec:validation}). Open: the head is too pointed while the line is lit and accelerates
+        somewhat more than measured near the end of the plot; the flanks do not spread sideways; only one
+        experiment, one grid; C064 is set up (\code{scripts/c064\_3d.sh}) but not run.
   \item \textbf{Periodic horizontal boundaries.} There are no open boundaries. With the plane-mean
         forcing and a fire large compared with the domain, the forcing over-drives the wind: in the first 3D
         run the near-ground inflow rose 20--25\% above the profile while the head grew, fire-disturbed air

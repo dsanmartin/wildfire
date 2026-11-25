@@ -177,7 +177,12 @@ python src/firefront.py data/output/RUN1 data/output/RUN2 --obs data/input/f19_f
 * `firefront.py`: head and back fire positions over time (`NAME/figures/fire_front.csv`), the rate of
   spread fitted over `--window`, the burnt area (3D), and with `--obs` (CSV of `t [s], x [m]`) the RMSE
   of the position and the observed rate of spread; plot `fire_front.png` in the first run.
-  `data/input/f19_front_fds.csv` holds the F19 head-fire positions of the FDS validation suite.
+  `validation/csiro/F19_front.csv` and `C064_front.csv` hold the measured head-fire positions (FDS
+  validation suite); `validation/csiro/*_perimeters.csv` the measured perimeters.
+* `scripts/compare_perimeters.py RUN --case F19|C064 [--fds LABEL=CHID_devc.csv ...]`: overlays the measured
+  perimeters on the model's burnt area at the measurement times, plots the head position against time
+  (model, measurements, optionally FDS device files) and prints head position and half-width
+  (`NAME/figures/perimeters.png`).
 
 Runs and checks (`scripts/`):
 
@@ -185,10 +190,16 @@ Runs and checks (`scripts/`):
 |---|---|
 | `calibrate_f19_fds.sh [write\|parallel\|sequential] [direct]` | F19 in 2D, four runs (H_C 13.1 and 17.4 MJ/kg, kappa_gas 0.1 and 0.3) with the burner and the FDS fuel; CUDA graphs unless `direct` |
 | `calibrate_f19_pyro.sh [write\|parallel\|sequential]` | F19 in 2D: linear vs FDS Arrhenius pyrolysis, constant vs FDS fuel heat capacity |
-| `f19_3d.sh [write\|smoke\|full]` | F19 in 3D (sponge zone, 320 x 360 m, 11.9 M cells): `smoke` is a 3 s check of speed, memory and budgets; `full` the 140 s run in the background |
+| `f19_3d.sh [write\|smoke\|full]` | F19 in 3D (FDS kinetics and fuel, sponge zone, 320 x 360 m, 11.9 M cells, float32): `smoke` is a 3 s check of speed, memory and budgets; `full` the 140 s run in the background (about 3.5 h on an RTX 4090) |
+| `c064_3d.sh [write\|smoke\|full]` | C064 in 3D, same model settings (200 x 180 m, 7.2 M cells of 1 x 1 x 0.1 m), 120 s |
 | `profile_parts.py FILE --device cuda --graphs [--dtype float32 --tol 1e-6] [--angle-increment 4]` | time of each part of a step (radiation, prediction, pressure solve, finalization), PCG iterations and GPU memory |
 | `profile_step.py FILE --device cuda` | step time with the fuel slab on and off, direct and with CUDA graphs |
 | `graph_check.py FILE [steps] --device cuda` | step-by-step difference between direct execution and CUDA graphs (should be round-off) |
+
+Restart: a run writes `checkpoint.pt` at the end (and every `[output] checkpoint_every` outputs if > 0;
+-1: never). `python src/main.py INPUT.ini -n NAME --restart` continues it in `data/output/NAME/`; with a
+larger `t_max` (and `Nt` scaled with it) a finished run is extended. The continued run is bitwise identical to
+an uninterrupted one; the log is appended to and the provenance of the restart goes to `restart_<date>/`.
 
 Typical workflow on the GPU machine: write and check with the smoke mode, then launch the full run;
 follow `tail -f logs/NAME.out` (the scripts write the console output of each run to `logs/`) (head-fire position and budgets in every output); run `firefront.py` and
